@@ -1,228 +1,59 @@
-# Hệ thống PCGD
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
-## 1. Tổng quan
+<p align="center">
+<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+</p>
 
-Bài toán PCGD là hệ thống theo dõi, quản lý tiến độ đi học của trẻ em trong từng độ tuổi từ mầm non, tiểu học cơ sở , trung học cơ sở và CMC trên từng địa bàn (xã/phường, quận/huyện, tỉnh/thành phố) để báo cáo lên Bộ Giáo dục và Đào tạo.
+## About Laravel
 
-> Output là báo cáo phổ cập theo Nghị định 20/2014/NĐ-CP của Nhà nước.
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
-Theo nghị định, các cấp cần thực hiện gồm:
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
-- Mầm non
-- Tiểu học
-- Trung học cơ sở
-- Xóa mù chữ
+Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
----
+## Learning Laravel
 
-## 2. Mầm non
+Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
 
-### 2.1 Đối tượng phổ cập giáo dục mầm non
+If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
 
-Đối tượng là trẻ em 5 tuổi chưa hoàn thành chương trình giáo dục mầm non.
+## Laravel Sponsors
 
-### 2.2 Chương trình giáo dục
+We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
 
-Chương trình giáo dục mầm non dành cho mẫu giáo 5 - 6 tuổi.
+### Premium Partners
 
-### 2.3 Tiêu chuẩn công nhận đạt chuẩn
+- **[Vehikl](https://vehikl.com)**
+- **[Tighten Co.](https://tighten.co)**
+- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
+- **[64 Robots](https://64robots.com)**
+- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
+- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
+- **[Redberry](https://redberry.international/laravel-development)**
+- **[Active Logic](https://activelogic.com)**
 
-#### Cá nhân
+## Contributing
 
-- Hoàn thành chương trình mầm non.
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
 
-#### Cấp xã/phường
+## Code of Conduct
 
-- Tỷ lệ trẻ 5 tuổi đến lớp đạt tối thiểu 95%.
-- Ở vùng khó khăn đạt tối thiểu 90%.
-- Tỷ lệ trẻ em 5 tuổi hoàn thành chương trình đạt tối thiểu 85%.
-- Ở vùng khó khăn đạt tối thiểu 80%.
+In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
 
----
+## Security Vulnerabilities
 
-## 3. Tiểu học
+If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
 
-### 3.1 Đối tượng
+## License
 
-Trẻ em trong độ tuổi từ 6 đến 14 chưa hoàn thành chương trình giáo dục tiểu học.
-
-### 3.2 Chương trình giáo dục
-
-Chương trình giáo dục phổ thông cấp tiểu học.
-
-### 3.3 Tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục tiểu học mức độ 1
-
-#### Cá nhân
-
-- Hoàn thành chương trình giáo dục tiểu học.
-
-#### Xã
-
-- Tỷ lệ trẻ em 6 tuổi vào lớp 1 đạt ít nhất 90%.
-- Tỷ lệ trẻ em từ 6 đến 14 tuổi hoàn thành chương trình tiểu học đạt ít nhất 80%.
-- Ở vùng khó khăn đạt ít nhất 70%.
-
-#### Huyện
-
-- Có ít nhất 90% số xã được công nhận đạt chuẩn phổ cập giáo dục tiểu học mức độ 1.
-
-#### Tỉnh
-
-- Có 100% số huyện được công nhận đạt chuẩn phổ cập giáo dục tiểu học mức độ 1.
-
-### 3.4 Tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục tiểu học mức độ 2
-
-#### Xã
-
-1. Bảo đảm tiêu chuẩn mức độ 1.
-2. Tỷ lệ trẻ em 6 tuổi vào lớp 1 đạt ít nhất 95%.
-3. Tỷ lệ trẻ em 11 tuổi hoàn thành chương trình tiểu học đạt ít nhất 80%; ở vùng khó khăn đạt ít nhất 70%.
-4. Các trẻ em 11 tuổi còn lại đều đang học các lớp tiểu học.
-
-#### Huyện
-
-- Có ít nhất 90% số xã được công nhận đạt chuẩn mức độ 2.
-
-#### Tỉnh
-
-- Có 100% số huyện được công nhận đạt chuẩn mức độ 2.
-
-### 3.5 Tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục tiểu học mức độ 3
-
-#### Xã
-
-1. Bảo đảm tiêu chuẩn mức độ 2.
-2. Tỷ lệ trẻ em 6 tuổi vào lớp 1 đạt ít nhất 98%.
-3. Tỷ lệ trẻ em 11 tuổi hoàn thành chương trình tiểu học đạt ít nhất 90%; đối với xã có điều kiện kinh tế - xã hội đặc biệt khó khăn đạt ít nhất 80%.
-4. Các trẻ em 11 tuổi còn lại đều đang học các lớp tiểu học.
-
-#### Huyện
-
-- Có ít nhất 90% số xã được công nhận đạt chuẩn mức độ 3.
-
-#### Tỉnh
-
-- Có 100% số huyện được công nhận đạt chuẩn mức độ 3.
-
----
-
-## 4. Giáo dục trung học cơ sở
-
-### 4.1 Đối tượng
-
-Thanh niên, thiếu niên trong độ tuổi từ 11 đến 18 đã hoàn thành chương trình giáo dục tiểu học, chưa tốt nghiệp trung học cơ sở.
-
-### 4.2 Chương trình giáo dục
-
-Chương trình giáo dục phổ thông cấp trung học cơ sở.
-
-### 4.3 Tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục trung học cơ sở mức độ 1
-
-#### Cá nhân
-
-- Được cấp bằng tốt nghiệp trung học cơ sở.
-
-#### Xã
-
-1. Bảo đảm tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục tiểu học mức độ 1 và tiêu chuẩn công nhận đạt chuẩn xóa mù chữ mức độ 1.
-2. Tỷ lệ thanh niên, thiếu niên trong độ tuổi từ 15 đến 18 tốt nghiệp trung học cơ sở đạt tối thiểu 80%; ở vùng khó khăn đạt tối thiểu 70%.
-
-#### Huyện
-
-- Có ít nhất 90% số xã đạt chuẩn phổ cập giáo dục trung học cơ sở mức độ 1.
-
-#### Tỉnh
-
-- Có 100% số huyện đạt chuẩn phổ cập giáo dục trung học cơ sở mức độ 1.
-
-### 4.4 Tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục trung học cơ sở mức độ 2
-
-#### Xã
-
-1. Bảo đảm tiêu chuẩn mức độ 1.
-2. Tỷ lệ thanh niên, thiếu niên trong độ tuổi từ 15 đến 18 tốt nghiệp trung học cơ sở đạt tối thiểu 90%; ở vùng khó khăn đạt tối thiểu 80%.
-
-#### Huyện
-
-- Có ít nhất 95% số xã đạt chuẩn mức độ 2.
-
-#### Tỉnh
-
-- Có 100% số huyện đạt chuẩn mức độ 2.
-
-### 4.5 Tiêu chuẩn công nhận đạt chuẩn phổ cập giáo dục trung học cơ sở mức độ 3
-
-#### Xã
-
-1. Bảo đảm tiêu chuẩn mức độ 2.
-2. Tỷ lệ thanh niên, thiếu niên trong độ tuổi từ 15 đến 18 tốt nghiệp trung học cơ sở đạt tối thiểu 95%; ở vùng khó khăn đạt tối thiểu 90%.
-3. Tỷ lệ thanh niên, thiếu niên trong độ tuổi từ 15 đến 18 đang học chương trình giáo dục phổ thông hoặc giáo dục thường xuyên cấp trung học phổ thông hoặc giáo dục nghề nghiệp đạt tối thiểu 80%; ở vùng khó khăn đạt tối thiểu 70%.
-
-#### Huyện
-
-- Có 100% số xã đạt chuẩn mức độ 3.
-
-#### Tỉnh
-
-- Có 100% số huyện đạt chuẩn mức độ 3.
-
----
-
-## 5. Xóa mù chữ
-
-### 5.1 Đối tượng
-
-Những người trong độ tuổi từ 15 đến 60 chưa biết chữ.
-
-### 5.2 Chương trình giáo dục
-
-- Chương trình giáo dục phổ thông cấp tiểu học
-- Chương trình xóa mù chữ và giáo dục tiếp tục sau khi biết chữ
-
-### 5.3 Tiêu chuẩn công nhận cá nhân đạt chuẩn biết chữ
-
-#### Mức độ 1
-
-- Hoàn thành giai đoạn 1 chương trình xóa mù chữ và giáo dục tiếp tục sau khi biết chữ.
-- Hoặc hoàn thành lớp 3 chương trình giáo dục tiểu học.
-
-#### Mức độ 2
-
-- Hoàn thành giai đoạn 2 chương trình xóa mù chữ và giáo dục tiếp tục sau khi biết chữ.
-- Hoặc hoàn thành chương trình giáo dục tiểu học.
-
-### 5.4 Tiêu chuẩn công nhận đạt chuẩn xóa mù chữ mức độ 1
-
-#### Xã
-
-- Có ít nhất 90% số người trong độ tuổi từ 15 đến 35 được công nhận đạt chuẩn biết chữ mức độ 1.
-- Với xã có điều kiện kinh tế - xã hội đặc biệt khó khăn: có ít nhất 90% số người trong độ tuổi từ 15 đến 25 được công nhận đạt chuẩn biết chữ mức độ 1.
-
-#### Huyện
-
-- Có ít nhất 90% số xã được công nhận đạt chuẩn xóa mù chữ mức độ 1.
-
-#### Tỉnh
-
-- Có ít nhất 90% số huyện được công nhận đạt chuẩn xóa mù chữ mức độ 1.
-
-### 5.5 Tiêu chuẩn công nhận đạt chuẩn xóa mù chữ mức độ 2
-
-#### Xã
-
-- Có ít nhất 90% số người trong độ tuổi từ 15 đến 60 được công nhận đạt chuẩn biết chữ mức độ 2.
-- Với xã có điều kiện kinh tế - xã hội đặc biệt khó khăn: có ít nhất 90% số người trong độ tuổi từ 15 đến 35 được công nhận đạt chuẩn biết chữ mức độ 2.
-
-#### Huyện
-
-- Có ít nhất 90% số xã được công nhận đạt chuẩn xóa mù chữ mức độ 2.
-
-#### Tỉnh
-
-- Có 100% số huyện được công nhận đạt chuẩn xóa mù chữ mức độ 2.
-
----
-
-## 6. Kết luận
-
-Hệ thống PCGD tập trung vào việc đánh giá và theo dõi các chỉ tiêu phổ cập giáo dục theo từng cấp học, từng địa bàn và từng mức độ chuẩn hóa, nhằm hỗ trợ công tác báo cáo và quản lý theo đúng quy định của Nhà nước.
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).

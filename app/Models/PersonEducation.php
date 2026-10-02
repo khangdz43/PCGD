@@ -13,14 +13,10 @@ class PersonEducation extends Model
         'person_id',
         'import_log_id',
         'school_year',
-        'is_preschool',
         'academic_block',
         'current_class',
-        'is_repeating',
-        'has_9_10_sessions',
         'school_code',
         'graduation_level',
-        'diploma_number',
         'is_complementary',
         'graduation_year',
         'vocational_grad_level',
@@ -38,9 +34,6 @@ class PersonEducation extends Model
     // ép sang boolean để sql nó biết lưu chữ nó lưu 0 1
     protected $casts = [
         'is_complementary' => 'boolean',
-        'is_preschool' => 'boolean',
-        'is_repeating' => 'boolean',
-        'has_9_10_sessions' => 'boolean',
     ];
 
     public function person(): BelongsTo

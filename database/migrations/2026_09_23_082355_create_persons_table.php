@@ -30,7 +30,7 @@ return new class extends Migration
             $table->string('last_name', 50);
             $table->date('dob')->nullable();
             $table->string('dob_str', 20)->nullable()->comment('Lưu nguyên bản chuỗi ngày sinh từ Excel nếu bị sai format');
-            $table->enum('gender', ['NAM', 'NU', 'KHAC'])->default('NAM');// không cho khác tí sửa lại
+            $table->enum('gender', ['NAM', 'NU'])->default('NAM');// không cho khác tí sửa lại
             $table->string('ethnicity', 50)->nullable();
             $table->string('religion', 50)->nullable(); //tôn giáo
             $table->string('priority_type', 100)->nullable(); // diện ưu tiên

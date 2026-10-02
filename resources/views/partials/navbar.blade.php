@@ -1,72 +1,47 @@
-<style>
-    .my-navbar {
-        background-color: #1e3c72;
-        font-family: Arial, sans-serif;
-    }
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
+    <div class="container">
+        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar">
+            <span class="navbar-toggler-icon"></span>
+        </button>
 
-    .my-navbar ul {
-        list-style: none;
-        margin: 0;
-        padding: 0;
-        display: flex;
-    }
+        <div class="collapse navbar-collapse" id="mainNavbar">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                {{-- Trang chủ: Active khi ở trang chủ (route name = 'home' hoặc uri = '/') --}}
+                <li class="nav-item">
+                    <a class="nav-link {{ request()->is('/') ? 'active' : '' }}" href="/">
+                        <i class="fa-solid fa-house me-1"></i> Trang chủ
+                    </a>
+                </li>
 
-    .my-navbar li {
-        position: relative;
-    }
+                {{-- Dropdown Danh mục: Active khi Route hiện tại thuộc nhóm 'villages.*' HOẶC 'schools.*' --}}
+                @php
+                $isCategoryActive = request()->routeIs('villages.*') || request()->routeIs('schools.*');
+                @endphp
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle {{ $isCategoryActive ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
+                        <i class="fa-solid fa-list me-1"></i> Danh mục
+                    </a>
+                    <ul class="dropdown-menu">
+                        <li>
+                            <a class="dropdown-item {{ request()->routeIs('villages.*') ? 'active' : '' }}" href="{{ route('villages.index') }}">
+                                1. Danh sách Thôn / Xóm
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item {{ request()->routeIs('schools.*') ? 'active' : '' }}" href="{{ route('schools.index') }}">
+                                2. Danh sách Trường học
+                            </a>
+                        </li>
+                    </ul>
+                </li>
 
-    .my-navbar a {
-        color: white;
-        padding: 12px 20px;
-        display: block;
-        text-decoration: none;
-        font-size: 14px;
-    }
-
-    .my-navbar a:hover {
-        background-color: #0b486b;
-    }
-
-    .sub-menu {
-        display: none;
-        position: absolute;
-        top: 100%;
-        left: 0;
-        background-color: #2c3e50;
-        min-width: 200px;
-        box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.3);
-        z-index: 9999;
-    }
-
-    .sub-menu a {
-        padding: 10px 15px;
-        border-bottom: 1px solid #34495e;
-    }
-
-    .sub-menu a:hover {
-        background-color: #1a252f;
-    }
-
-    .my-navbar li:hover .sub-menu {
-        display: block;
-    }
-</style>
-
-<div class="my-navbar">
-    <ul>
-
-        <li>
-            <a href="#">Danh mục : </a>
-            <div class="sub-menu">
-              
-                <a href="">1. Danh sách Thôn xóm</a>
-                <a href="">2. Danh sách Trường</a>
-
-            </div>
-        </li>
-
-        <li>
-            <a href="#">Phiếu điều tra</a>
-        </li>
-    </ul>
-</div>
+                {{-- Phiếu điều tra: Active khi Route hiện tại thuộc nhóm 'households.*' --}}
+                <li class="nav-item">
+                    <a class="nav-link {{ request()->routeIs('households.*') ? 'active' : '' }}" href="{{ route('households.index') }}">
+                        <i class="fa-solid fa-file-pen me-1"></i> Phiếu điều tra
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>

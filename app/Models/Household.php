@@ -10,6 +10,7 @@ class Household extends Model
 {
     protected $fillable = [
         'household_code',
+        'school_year',
         'head_first_name',
         'head_last_name',
         'province_code',
@@ -20,11 +21,13 @@ class Household extends Model
         'residence_status',
         'import_log_id'
     ];
-    public function province(): BelongsTo{
+    public function province(): BelongsTo
+    {
         return $this->belongsTo(Province::class, 'province_code', 'code');
     }
 
-    public function commune():BelongsTo{
+    public function commune(): BelongsTo
+    {
         return $this->belongsTo(Commune::class, 'commune_code', 'code');
     }
 
@@ -42,8 +45,4 @@ class Household extends Model
     {
         return $this->belongsTo(ImportLog::class);
     }
-
-
-
-
 }

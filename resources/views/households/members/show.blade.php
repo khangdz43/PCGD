@@ -6,7 +6,7 @@
 <div class="container">
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
         <div>
-            <a class="small text-decoration-none" href="{{ route('households.show', $household) }}">&larr; Hộ {{ $household->household_code }}</a>
+            <a class="small text-decoration-none" href="{{ route('households.show', $household, false) }}">&larr; Hộ {{ $household->household_code }}</a>
             <div class="d-flex align-items-center gap-2 mt-2">
                 <h1 class="h4 mb-0">{{ trim($person->last_name . ' ' . $person->first_name) }}</h1>
                 @if ($person->relationship_with_head === 'Chủ hộ')
@@ -15,7 +15,7 @@
             </div>
             <p class="small text-muted mb-0">{{ $person->relationship_with_head ?: 'Thành viên hộ' }} · Hộ {{ $household->household_code }}</p>
         </div>
-        <a class="btn btn-sm btn-outline-primary" href="{{ route('households.members.edit', [$household, $person->id]) }}">
+        <a class="btn btn-sm btn-outline-primary" href="{{ route('households.members.edit', [$household, $person->id], false) }}">
             <i class="fa-solid fa-pen me-1" aria-hidden="true"></i> Sửa hồ sơ
         </a>
     </div>

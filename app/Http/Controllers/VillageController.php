@@ -37,7 +37,7 @@ class VillageController extends Controller
         return view('villages.index', compact('villages', 'provinces'));
     }
 
- 
+
 
     // render view
     public function create()
@@ -59,7 +59,7 @@ class VillageController extends Controller
 
         Village::create($data);
 
-        return redirect()->route('villages.index')
+        return redirect()->to(route('villages.index', [], false))
             // session success  
             ->with('success', 'Thêm mới thôn/bản thành công!');
     }
@@ -88,7 +88,7 @@ class VillageController extends Controller
 
         $village->update($data);
 
-        return redirect()->route('villages.index')
+        return redirect()->to(route('villages.index', [], false))
             ->with('success', 'Cập nhật thông tin thôn/bản thành công!');
     }
 
@@ -98,7 +98,7 @@ class VillageController extends Controller
         $village = Village::where('code', $code)->firstOrFail();
         $village->delete();
 
-        return redirect()->route('villages.index')
+        return redirect()->to(route('villages.index', [], false))
             ->with('success', 'Đã xóa thôn/bản thành công!');
     }
 

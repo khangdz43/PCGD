@@ -17,6 +17,10 @@
     @if ($method !== 'POST')
     @method($method)
     @endif
+    @php
+    $relationshipOptions = ['Vợ', 'Chồng', 'Con', 'Cha', 'Mẹ', 'Anh', 'Chị', 'Em', 'Ông', 'Bà', 'Bác', 'Cô', 'Chú', 'Dì', 'Cậu', 'Cháu', 'Khác'];
+    $selectedRelationship = old('relationship_with_head', $person->relationship_with_head);
+    @endphp
 
     <div class="row g-4">
         <div class="col-lg-5">
@@ -37,7 +41,7 @@
                 <div class="row g-3">
                     <div class="col-sm-6">
                         <label for="dob" class="form-label">Ngày sinh <span class="text-danger">*</span></label>
-                        <input id="dob" name="dob" type="date" class="form-control @error('dob') is-invalid @enderror" value="{{ old('dob', $person->dob?->format('Y-m-d')) }}" required>
+                        <input id="dob" name="dob" type="date" max="{{ now()->toDateString() }}" class="form-control @error('dob') is-invalid @enderror" value="{{ old('dob', $person->dob?->format('Y-m-d')) }}" required>
                         @error('dob') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     <div class="col-sm-6">
@@ -54,7 +58,7 @@
                         <select id="ethnicity-code" name="ethnicity_code" class="form-select @error('ethnicity_code') is-invalid @enderror" required>
                             <option value="">-- Chọn dân tộc --</option>
                             @foreach ($ethnicities as $ethnicity)
-                            <option value="{{ $ethnicity->code }}" @selected(old('ethnicity_code', $person->ethnicity_code) === $ethnicity->code)>{{ $ethnicity->name }}</option>
+                            <option value="{{ $ethnicity->code }}" @selected(old('ethnicity_code', $person->ethnicity_code ?: 'DT01') === $ethnicity->code)>{{ $ethnicity->name }}</option>
                             @endforeach
                         </select>
                         @error('ethnicity_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
@@ -67,7 +71,15 @@
                     @unless ($isHouseholdHead)
                     <div class="col-12">
                         <label for="relationship" class="form-label">Quan hệ với chủ hộ <span class="text-danger">*</span></label>
-                        <input id="relationship" name="relationship_with_head" class="form-control @error('relationship_with_head') is-invalid @enderror" value="{{ old('relationship_with_head', $person->relationship_with_head) }}" maxlength="100" placeholder="Vợ/chồng, con, cha/mẹ..." required>
+                        <select id="relationship" name="relationship_with_head" class="form-select @error('relationship_with_head') is-invalid @enderror" required>
+                            <option value="">-- Chọn quan hệ --</option>
+                            @foreach ($relationshipOptions as $relationshipOption)
+                            <option value="{{ $relationshipOption }}" @selected($selectedRelationship===$relationshipOption)>{{ $relationshipOption }}</option>
+                            @endforeach
+                            @if ($selectedRelationship && $selectedRelationship !== 'Chủ hộ' && !in_array($selectedRelationship, $relationshipOptions, true))
+                            <option value="{{ $selectedRelationship }}" selected>{{ $selectedRelationship }}</option>
+                            @endif
+                        </select>
                         @error('relationship_with_head') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     @else
@@ -216,7 +228,8 @@
                     </div>
                     <div class="col-sm-6">
                         <label for="graduation-year" class="form-label">Năm tốt nghiệp</label>
-                        <input id="graduation-year" name="education[graduation_year]" class="form-control" value="{{ old('education.graduation_year', $education->graduation_year) }}" maxlength="20">
+                        <input id="graduation-year" name="education[graduation_year]" class="form-control @error('education.graduation_year') is-invalid @enderror" value="{{ old('education.graduation_year', $education->graduation_year) }}" maxlength="20">
+                        @error('education.graduation_year') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     <div class="col-sm-6 d-flex align-items-end">
                         <label class="form-check mb-2">
@@ -230,7 +243,8 @@
                     </div>
                     <div class="col-sm-6">
                         <label for="vocational-year" class="form-label">Năm tốt nghiệp nghề</label>
-                        <input id="vocational-year" name="education[vocational_grad_year]" class="form-control" value="{{ old('education.vocational_grad_year', $education->vocational_grad_year) }}" maxlength="20">
+                        <input id="vocational-year" name="education[vocational_grad_year]" class="form-control @error('education.vocational_grad_year') is-invalid @enderror" value="{{ old('education.vocational_grad_year', $education->vocational_grad_year) }}" maxlength="20">
+                        @error('education.vocational_grad_year') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     <div class="col-sm-6">
                         <label for="finished-class" class="form-label">Học xong lớp</label>
@@ -238,7 +252,8 @@
                     </div>
                     <div class="col-sm-6">
                         <label for="finished-year" class="form-label">Năm học xong</label>
-                        <input id="finished-year" name="education[finished_year]" class="form-control" value="{{ old('education.finished_year', $education->finished_year) }}" maxlength="20">
+                        <input id="finished-year" name="education[finished_year]" class="form-control @error('education.finished_year') is-invalid @enderror" value="{{ old('education.finished_year', $education->finished_year) }}" maxlength="20">
+                        @error('education.finished_year') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     <div class="col-sm-6">
                         <label for="dropped-class" class="form-label">Bỏ học lớp</label>
@@ -246,7 +261,8 @@
                     </div>
                     <div class="col-sm-6">
                         <label for="dropped-year" class="form-label">Năm bỏ học</label>
-                        <input id="dropped-year" name="education[dropped_year]" class="form-control" value="{{ old('education.dropped_year', $education->dropped_year) }}" maxlength="20">
+                        <input id="dropped-year" name="education[dropped_year]" class="form-control @error('education.dropped_year') is-invalid @enderror" value="{{ old('education.dropped_year', $education->dropped_year) }}" maxlength="20">
+                        @error('education.dropped_year') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                 </div>
             </fieldset>
@@ -283,7 +299,7 @@
         <button class="btn btn-primary" type="submit">
             <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i> {{ $method === 'POST' ? ($isHouseholdHead ? 'Lưu thông tin chủ hộ' : 'Thêm thành viên') : 'Lưu thay đổi' }}
         </button>
-        <a class="btn btn-outline-secondary" href="{{ route('households.show', $household) }}">Hủy</a>
+        <a class="btn btn-outline-secondary" href="{{ route('households.show', $household, false) }}">Hủy</a>
     </div>
 </form>
 

@@ -53,7 +53,7 @@ class SchoolController extends Controller
 
         School::create($data);
 
-        return redirect()->route('schools.index')
+        return redirect()->to(route('schools.index', [], false))
             ->with('success', 'Thêm trường học thành công.');
     }
 
@@ -72,7 +72,7 @@ class SchoolController extends Controller
         $school = School::findOrFail($id);
         $school->update($request->validate($this->rules($request)));
 
-        return redirect()->route('schools.index')
+        return redirect()->to(route('schools.index', [], false))
             ->with('success', 'Cập nhật trường học thành công.');
     }
 
@@ -80,7 +80,7 @@ class SchoolController extends Controller
     {
         School::findOrFail($id)->delete();
 
-        return redirect()->route('schools.index')
+        return redirect()->to(route('schools.index', [], false))
             ->with('success', 'Đã xóa trường học.');
     }
 

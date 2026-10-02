@@ -42,6 +42,6 @@
         <button class="btn btn-primary" type="submit">
             <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i> {{ $method === 'POST' ? 'Lưu thôn/xóm' : 'Lưu thay đổi' }}
         </button>
-        <a class="btn btn-outline-secondary" href="{{ route('villages.index') }}">Hủy</a>
+        <a class="btn btn-outline-secondary" href="{{ route('villages.index', [], false) }}">Hủy</a>
     </div>
 </form>

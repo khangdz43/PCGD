@@ -5,7 +5,7 @@
 @section('content')
 <div class="container">
     <div class="mb-4">
-        <a class="text-decoration-none" href="{{ route('households.index') }}">&larr; Phiếu điều tra hộ</a>
+        <a class="text-decoration-none" href="{{ route('households.index', [], false) }}">&larr; Phiếu điều tra hộ</a>
         <h1 class="h3 mt-3 mb-1">Nhập dữ liệu phiếu điều tra</h1>
         <p class="text-muted mb-0">Chọn địa bàn áp dụng cho file, sau đó tải lên file đã nhập theo mẫu.</p>
     </div>
@@ -22,7 +22,7 @@
     @endif
 
     <section class="bg-white border rounded-2 p-4">
-        <form id="household-import-form" method="POST" action="{{ route('households.import.store') }}" enctype="multipart/form-data">
+        <form id="household-import-form" method="POST" action="{{ route('households.import.store', [], false) }}" enctype="multipart/form-data">
             @csrf
             <div class="mb-3">
                 <label for="excel-file" class="form-label">File Excel <span class="text-danger">*</span></label>
@@ -59,28 +59,73 @@
                 <button class="btn btn-primary" id="household-import-submit" type="submit">
                     <i class="fa-solid fa-file-import me-1" aria-hidden="true"></i> Nhập dữ liệu
                 </button>
-                <a class="btn btn-outline-secondary" href="{{ route('households.template') }}">
+                <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}">
                     <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải mẫu Excel
                 </a>
-                <a class="btn btn-outline-secondary" href="{{ route('households.index') }}">Hủy</a>
+                <a class="btn btn-outline-secondary" href="{{ route('households.index', [], false) }}">Hủy</a>
             </div>
         </form>
     </section>
 </div>
 
 @push('scripts')
+<style>
+    .import-loading-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        background: rgba(15, 23, 42, 0.72);
+        color: #fff;
+        text-align: center;
+    }
+
+    .import-loading-overlay[hidden] {
+        display: none;
+    }
+
+    .import-loading-content {
+        display: grid;
+        justify-items: center;
+        gap: 0.75rem;
+    }
+</style>
 <script>
-    document.getElementById('household-import-form').addEventListener('submit', (event) => {
+    const importForm = document.getElementById('household-import-form');
+    let importInProgress = false;
+
+    importForm.addEventListener('submit', (event) => {
         const submitButton = document.getElementById('household-import-submit');
 
-        if (submitButton.disabled) {
+        if (importInProgress) {
             event.preventDefault();
             return;
         }
 
+        event.preventDefault();
+        importInProgress = true;
         submitButton.disabled = true;
         submitButton.setAttribute('aria-busy', 'true');
         submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Đang nhập...';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'import-loading-overlay';
+        overlay.setAttribute('role', 'status');
+        overlay.setAttribute('aria-live', 'assertive');
+        overlay.setAttribute('tabindex', '-1');
+        overlay.innerHTML = '<div class="import-loading-content"><span class="spinner-border" aria-hidden="true"></span><strong>Đang nhập và xử lý file Excel...</strong><span>Vui lòng chờ, không đóng hoặc rời khỏi trang.</span></div>';
+
+        Array.from(document.body.children).forEach((element) => {
+            element.inert = true;
+        });
+        document.body.setAttribute('aria-busy', 'true');
+        importForm.setAttribute('aria-busy', 'true');
+        document.body.appendChild(overlay);
+        overlay.focus();
+
+        window.requestAnimationFrame(() => importForm.submit());
     });
 </script>
 @endpush

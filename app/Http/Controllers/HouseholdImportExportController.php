@@ -107,6 +107,8 @@ class HouseholdImportExportController extends Controller
 
             if ($birthDate['date'] === null) {
                 $errors[] = "Dòng {$row}: cần có ngày, tháng và năm sinh hợp lệ.";
+            } elseif ($birthDate['date'] > now()->toDateString()) {
+                $errors[] = "Dòng {$row}: ngày sinh không được ở tương lai.";
             }
             // 
             $schoolCode = $this->cell($sheet, 'V' . $row);
@@ -167,6 +169,19 @@ class HouseholdImportExportController extends Controller
                 'note' => $this->nullableCell($sheet, 'AY' . $row),
             ];
 
+            foreach (
+                [
+                    'graduation_year' => 'Năm tốt nghiệp',
+                    'vocational_grad_year' => 'Năm tốt nghiệp nghề',
+                    'finished_year' => 'Năm học xong',
+                    'dropped_year' => 'Năm bỏ học',
+                ] as $field => $label
+            ) {
+                if ($this->hasFutureYear($record[$field])) {
+                    $errors[] = "Dòng {$row}: {$label} không được lớn hơn " . now()->year . '.';
+                }
+            }
+
             // lấy value của key householdCode trong mảng groups
             $recordsByCode = $groups[$householdCode] ?? [];
             // push thêm nhân khẩu vào 
@@ -197,7 +212,7 @@ class HouseholdImportExportController extends Controller
 
         foreach ($groups as $householdCode => $records) {
             // records là value của từng householdCode(key)
-            $headRows = [];
+            $headRecords = [];
             // lấy value của mảng[key = headlastname]
             $headLastName = $this->firstValue($records, 'head_last_name');
             $headFirstName = $this->firstValue($records, 'head_first_name');
@@ -209,13 +224,29 @@ class HouseholdImportExportController extends Controller
                         && $this->normalize($record['first_name']) === $this->normalize($headFirstName));
 
                 if ($isHead) {
-                    // tạo list danh sách các row
-                    $headRows[] = $record['row'];
+                    $headRecords[] = $record;
                 }
             }
 
-            if (count($headRows) > 1) {
+            if (count($headRecords) > 1) {
+                $headRows = array_column($headRecords, 'row');
                 $errors[] = "Phiếu '{$householdCode}' có nhiều chủ hộ ở dòng " . implode(', ', $headRows) . '.';
+            } elseif (count($headRecords) === 1) {
+                $headRecord = $headRecords[0];
+                foreach ($records as $record) {
+                    if ($record['row'] === $headRecord['row'] || $record['dob']['date'] === null) {
+                        continue;
+                    }
+
+                    $ageError = $this->relationshipAgeError(
+                        (string) $record['relationship_with_head'],
+                        $record['dob']['date'],
+                        $headRecord['dob']['date'],
+                    );
+                    if ($ageError !== null) {
+                        $errors[] = "Dòng {$record['row']}: {$ageError}";
+                    }
+                }
             }
         }
 
@@ -356,7 +387,7 @@ class HouseholdImportExportController extends Controller
             'success_rows' => $totalRows,
         ]);
 
-        return redirect()->route('households.index')->with('success', "Đã nhập {$totalRows} dòng nhân khẩu từ file Excel.");
+        return redirect()->to(route('households.index', [], false))->with('success', "Đã nhập {$totalRows} dòng nhân khẩu từ file Excel.");
     }
 
 
@@ -573,6 +604,46 @@ class HouseholdImportExportController extends Controller
         }
 
         return ['date' => null, 'raw' => substr("{$day}/{$month}/{$year}", 0, 20)];
+    }
+
+    private function hasFutureYear(?string $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        preg_match_all('/(?<!\d)\d{4}(?!\d)/', $value, $matches);
+
+        foreach ($matches[0] as $year) {
+            if ((int) $year > now()->year) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function relationshipAgeError(string $relationship, string $birthDate, ?string $headBirthDate): ?string
+    {
+        if ($headBirthDate === null) {
+            return null;
+        }
+
+        $relationship = $this->normalize($relationship);
+        $isYounger = in_array($relationship, ['con', 'em', 'chau'], true) || str_starts_with($relationship, 'con');
+        $isOlder = in_array($relationship, ['cha', 'bo', 'me', 'anh', 'chi', 'ong', 'ba', 'bac', 'co', 'chu', 'di', 'cau'], true)
+            || str_starts_with($relationship, 'anh')
+            || str_starts_with($relationship, 'chi');
+
+        if ($isYounger && $birthDate <= $headBirthDate) {
+            return 'Người có quan hệ con/em/cháu phải nhỏ tuổi hơn chủ hộ.';
+        }
+
+        if ($isOlder && $birthDate >= $headBirthDate) {
+            return 'Người có quan hệ cha/mẹ/anh/chị/ông/bà phải lớn tuổi hơn chủ hộ.';
+        }
+
+        return null;
     }
 
 

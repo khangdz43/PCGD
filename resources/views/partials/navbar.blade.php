@@ -23,12 +23,12 @@
                     </a>
                     <ul class="dropdown-menu">
                         <li>
-                            <a class="dropdown-item {{ request()->routeIs('villages.*') ? 'active' : '' }}" href="{{ route('villages.index') }}">
+                            <a class="dropdown-item {{ request()->routeIs('villages.*') ? 'active' : '' }}" href="{{ route('villages.index', [], false) }}">
                                 1. Danh sách Thôn / Xóm
                             </a>
                         </li>
                         <li>
-                            <a class="dropdown-item {{ request()->routeIs('schools.*') ? 'active' : '' }}" href="{{ route('schools.index') }}">
+                            <a class="dropdown-item {{ request()->routeIs('schools.*') ? 'active' : '' }}" href="{{ route('schools.index', [], false) }}">
                                 2. Danh sách Trường học
                             </a>
                         </li>
@@ -37,7 +37,7 @@
 
                 {{-- Phiếu điều tra: Active khi Route hiện tại thuộc nhóm 'households.*' --}}
                 <li class="nav-item">
-                    <a class="nav-link {{ request()->routeIs('households.*') ? 'active' : '' }}" href="{{ route('households.index') }}">
+                    <a class="nav-link {{ request()->routeIs('households.*') ? 'active' : '' }}" href="{{ route('households.index', [], false) }}">
                         <i class="fa-solid fa-file-pen me-1"></i> Phiếu điều tra
                     </a>
                 </li>

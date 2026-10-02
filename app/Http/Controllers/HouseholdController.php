@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Models\Household;
 use App\Models\Province;
-use App\Models\School;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -62,9 +61,8 @@ class HouseholdController extends Controller
 
         $households = $query->orderBy('household_code')->paginate(15)->withQueryString();
         $provinces = Province::orderBy('name')->get(['code', 'name']);
-        $schools = School::orderBy('code')->get(['code', 'name']);
 
-        return view('households.index', compact('households', 'provinces', 'schools'));
+        return view('households.index', compact('households', 'provinces'));
     }
 
     public function create()
@@ -86,7 +84,7 @@ class HouseholdController extends Controller
         $data['household_code'] = $this->nextHouseholdCode($data['school_year']);
         $household = Household::create($data);
 
-        return redirect()->route('households.members.create', [$household, 'is_head' => 1])
+        return redirect()->to(route('households.members.create', [$household, 'is_head' => 1], false))
             ->with('status', 'Đã lưu thông tin hộ. Tiếp theo, nhập thông tin chủ hộ vào danh sách nhân khẩu.');
     }
 
@@ -119,7 +117,7 @@ class HouseholdController extends Controller
             ]);
         });
 
-        return redirect()->route('households.show', $household)
+        return redirect()->to(route('households.show', $household, false))
             ->with('success', 'Đã cập nhật phiếu điều tra.');
     }
 
@@ -127,7 +125,7 @@ class HouseholdController extends Controller
     {
         $household->delete();
 
-        return redirect()->route('households.index')->with('success', 'Đã xóa phiếu điều tra.');
+        return redirect()->to(route('households.index', [], false))->with('success', 'Đã xóa phiếu điều tra.');
     }
 
     public function bulkDestroy(Request $request)
@@ -143,7 +141,7 @@ class HouseholdController extends Controller
         $filters = $request->only(['q', 'school_code', 'school_year', 'province_code', 'commune_code', 'village_code', 'page']);
 
 
-        return redirect()->route('households.index', $filters)
+        return redirect()->to(route('households.index', $filters, false))
             ->with('success', "Đã xóa {$deletedCount} phiếu điều tra.");
     }
 

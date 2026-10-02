@@ -13,7 +13,7 @@
 
     <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
         <div>
-            <a class="text-decoration-none" href="{{ route('households.index') }}">&larr; Danh sách phiếu</a>
+            <a class="text-decoration-none" href="{{ route('households.index', [], false) }}">&larr; Danh sách phiếu</a>
             <h1 class="h4 mt-2 mb-1">Hộ {{ $household->household_code }}</h1>
             <div class="d-flex align-items-center gap-2">
                 <h2 class="h5 mb-0">{{ $headPerson ? trim($headPerson->last_name . ' ' . $headPerson->first_name) : trim($household->head_last_name . ' ' . $household->head_first_name) }}</h2>
@@ -21,15 +21,15 @@
             </div>
         </div>
         <div class="d-flex gap-2">
-            <a class="btn btn-outline-primary" href="{{ route('households.edit', $household) }}">
+            <a class="btn btn-outline-primary" href="{{ route('households.edit', $household, false) }}">
                 <i class="fa-solid fa-pen me-1" aria-hidden="true"></i> Sửa hộ
             </a>
             @if ($headPerson)
-            <a class="btn btn-primary" href="{{ route('households.members.create', $household) }}">
+            <a class="btn btn-primary" href="{{ route('households.members.create', $household, false) }}">
                 <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Thêm thành viên
             </a>
             @else
-            <a class="btn btn-primary" href="{{ route('households.members.create', [$household, 'is_head' => 1]) }}">
+            <a class="btn btn-primary" href="{{ route('households.members.create', [$household, 'is_head' => 1], false) }}">
                 <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i> Nhập thông tin chủ hộ
             </a>
             @endif
@@ -71,7 +71,7 @@
             </thead>
             <tbody>
                 @forelse ($persons as $person)
-                <tr class="person-row" data-url="{{ route('households.members.show', [$household, $person->id]) }}" style="cursor: pointer;">
+                <tr class="person-row" data-url="{{ route('households.members.show', [$household, $person->id], false) }}" style="cursor: pointer;">
                     <td class="fw-medium">{{ trim($person->last_name . ' ' . $person->first_name) }}</td>
                     <td>
                         @if ($person->relationship_with_head === 'Chủ hộ')
@@ -84,10 +84,10 @@
                     <td>{{ ['NAM' => 'Nam', 'NU' => 'Nữ'][$person->gender] ?? '—' }}</td>
                     <td>{{ $person->ethnicity->name ?? '—' }}</td>
                     <td class="text-end text-nowrap">
-                        <a class="btn btn-sm btn-outline-primary" href="{{ route('households.members.edit', [$household, $person->id]) }}" title="Sửa thành viên" aria-label="Sửa {{ $person->first_name }}">
+                        <a class="btn btn-sm btn-outline-primary" href="{{ route('households.members.edit', [$household, $person->id], false) }}" title="Sửa thành viên" aria-label="Sửa {{ $person->first_name }}">
                             <i class="fa-solid fa-pen" aria-hidden="true"></i>
                         </a>
-                        <form class="d-inline" method="POST" action="{{ route('households.members.destroy', [$household, $person->id]) }}" onsubmit="return confirm('Bạn có chắc muốn xóa thành viên này khỏi hộ?')">
+                        <form class="d-inline" method="POST" action="{{ route('households.members.destroy', [$household, $person->id], false) }}" onsubmit="return confirm('Bạn có chắc muốn xóa thành viên này khỏi hộ?')">
                             @csrf
                             @method('DELETE')
                             <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa thành viên" aria-label="Xóa {{ $person->first_name }}">

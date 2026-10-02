@@ -6,6 +6,7 @@ $villageName = $villageName ?? 'village_code';
 $showVillage = $showVillage ?? false;
 $provinceRequired = $provinceRequired ?? false;
 $communeRequired = $communeRequired ?? false;
+$inline = $inline ?? false;
 // nếu mà submit lỗi thì lấy value cũ
 ////////
 $selectedProvinceCode = old($provinceName, $provinceCode ?? request($provinceName, ''));
@@ -13,10 +14,10 @@ $selectedCommuneCode = old($communeName, $communeCode ?? request($communeName, '
 $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, ''));
 @endphp
 
-<div class="row g-3" data-location-picker data-provinces-url="{{ url('/api/provinces') }}" data-communes-url="{{ url('/api/communes') }}">
-    <div class="col-md-4">
-        <label for="{{ $pickerId }}-province" class="form-label">Tỉnh/Thành phố @if ($provinceRequired)<span class="text-danger">*</span>@endif</label>
-        <select id="{{ $pickerId }}-province" name="{{ $provinceName }}" class="form-select @error($provinceName) is-invalid @enderror" data-province @if ($provinceRequired) required @endif>
+<div class="{{ $inline ? 'location-picker-inline' : 'row g-3' }}" data-location-picker data-provinces-url="/api/provinces" data-communes-url="/api/communes">
+    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
+        <label for="{{ $pickerId }}-province" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Tỉnh/Thành phố @if ($provinceRequired)<span class="text-danger">*</span>@endif</label>
+        <select id="{{ $pickerId }}-province" name="{{ $provinceName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($provinceName) is-invalid @enderror" data-province @if ($provinceRequired) required @endif>
             <option value="">-- Chọn Tỉnh/Thành phố --</option>
             @foreach ($provinces as $province)
             @php
@@ -31,9 +32,9 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
         @enderror
     </div>
 
-    <div class="col-md-4">
-        <label for="{{ $pickerId }}-commune" class="form-label">Xã/Phường @if ($communeRequired)<span class="text-danger">*</span>@endif</label>
-        <select id="{{ $pickerId }}-commune" name="{{ $communeName }}" class="form-select @error($communeName) is-invalid @enderror" data-commune data-selected-code="{{ $selectedCommuneCode }}" disabled @if ($communeRequired) required @endif>
+    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
+        <label for="{{ $pickerId }}-commune" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Xã/Phường @if ($communeRequired)<span class="text-danger">*</span>@endif</label>
+        <select id="{{ $pickerId }}-commune" name="{{ $communeName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($communeName) is-invalid @enderror" data-commune data-selected-code="{{ $selectedCommuneCode }}" disabled @if ($communeRequired) required @endif>
             <option value="">-- Chọn Xã/Phường --</option>
         </select>
         @error($communeName)
@@ -42,9 +43,9 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
     </div>
 
     @if ($showVillage)
-    <div class="col-md-4">
-        <label for="{{ $pickerId }}-village" class="form-label">Thôn/Bản</label>
-        <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select @error($villageName) is-invalid @enderror" data-village data-selected-code="{{ $selectedVillageCode }}" disabled>
+    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
+        <label for="{{ $pickerId }}-village" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Thôn/Bản</label>
+        <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($villageName) is-invalid @enderror" data-village data-selected-code="{{ $selectedVillageCode }}" disabled>
             <option value="">-- Chọn Thôn/Bản --</option>
         </select>
         @error($villageName)
@@ -53,7 +54,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
     </div>
     @endif
 
-    <div class="col-12">
+    <div class="{{ $inline ? 'location-picker-status' : 'col-12' }}">
         <p class="small text-muted mb-0" data-location-status role="status" aria-live="polite"></p>
     </div>
 </div>

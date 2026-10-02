@@ -25,11 +25,11 @@ class HouseholdPersonController extends Controller
 
         // excep
         if ($isHouseholdHead && $headPersonExists) {
-            return redirect()->route('households.show', $household)->with('warning', 'Hộ này đã có hồ sơ chủ hộ.');
+            return redirect()->to(route('households.show', $household, false))->with('warning', 'Hộ này đã có hồ sơ chủ hộ.');
         }
 
         if (!$isHouseholdHead && !$headPersonExists) {
-            return redirect()->route('households.members.create', [$household, 'is_head' => 1])
+            return redirect()->to(route('households.members.create', [$household, 'is_head' => 1], false))
                 ->with('warning', 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.');
         }
 
@@ -51,19 +51,25 @@ class HouseholdPersonController extends Controller
     public function store(Request $request, Household $household)
     {
         $isHouseholdHead = $request->boolean('is_head');
-        $headPersonExists = $household->persons()->where('relationship_with_head', 'Chủ hộ')->exists();
+        $headPerson = $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
+        $headPersonExists = $headPerson !== null;
 
         // xu li excep
         if (!$isHouseholdHead && !$headPersonExists) {
-            return redirect()->route('households.members.create', [$household, 'is_head' => 1])
+            return redirect()->to(route('households.members.create', [$household, 'is_head' => 1], false))
                 ->with('warning', 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.');
         }
 
         if ($isHouseholdHead && $headPersonExists) {
-            return redirect()->route('households.show', $household)->with('warning', 'Hộ này đã có hồ sơ chủ hộ.');
+            return redirect()->to(route('households.show', $household, false))->with('warning', 'Hộ này đã có hồ sơ chủ hộ.');
         }
 
         $data = $request->validate($this->rules($request, $isHouseholdHead));
+        $relationshipAgeError = $this->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
+        if ($relationshipAgeError !== null) {
+            return back()->withErrors(['relationship_with_head' => $relationshipAgeError])->withInput();
+        }
+
         if ($isHouseholdHead) {
             $data['last_name'] = $household->head_last_name;
             $data['first_name'] = $household->head_first_name;
@@ -80,7 +86,7 @@ class HouseholdPersonController extends Controller
             $person->disability()->create($disabilityData);
         });
 
-        return redirect()->route('households.show', $household)->with('success', $isHouseholdHead
+        return redirect()->to(route('households.show', $household, false))->with('success', $isHouseholdHead
             ? 'Đã thêm chủ hộ vào danh sách nhân khẩu. Bây giờ có thể thêm các thành viên khác.'
             : 'Đã thêm thành viên vào hộ.');
     }
@@ -109,10 +115,16 @@ class HouseholdPersonController extends Controller
         // người trong hộ này 
         $person = $household->persons()->findOrFail($personId);
         $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
+        $headPerson = $isHouseholdHead ? null : $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
         // tìm năm học mới nhất vì trong bảng education sẽ có nhiều năm (varchar )
         $education = $person->educations()->orderByDesc('school_year')->first();
         // validate
         $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education));
+        $relationshipAgeError = $this->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
+        if ($relationshipAgeError !== null) {
+            return back()->withErrors(['relationship_with_head' => $relationshipAgeError])->withInput();
+        }
+
         if ($isHouseholdHead) {
             // nếu education tồn tại thì lấy năm ra , còn null thì lấy năm của chủ hộ còn k lấy năm hiện tại ở form sửa
             $data['education']['school_year'] = $education?->school_year ?: ($household->school_year ?: $this->currentSchoolYear());
@@ -138,7 +150,7 @@ class HouseholdPersonController extends Controller
             });
         }
 
-        return redirect()->route('households.show', $household)->with('success', 'Đã cập nhật thành viên.');
+        return redirect()->to(route('households.show', $household, false))->with('success', 'Đã cập nhật thành viên.');
     }
 
     public function destroy(Household $household, int $personId)
@@ -149,13 +161,13 @@ class HouseholdPersonController extends Controller
             $person->relationship_with_head === 'Chủ hộ'
             && $household->persons()->where('relationship_with_head', '!=', 'Chủ hộ')->exists()
         ) {
-            return redirect()->route('households.show', $household)
+            return redirect()->to(route('households.show', $household, false))
                 ->with('warning', 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.');
         }
 
         $person->delete();
 
-        return redirect()->route('households.show', $household)->with('success', $person->relationship_with_head === 'Chủ hộ'
+        return redirect()->to(route('households.show', $household, false))->with('success', $person->relationship_with_head === 'Chủ hộ'
             ? 'Đã xóa hồ sơ chủ hộ. Cần nhập lại chủ hộ trước khi thêm thành viên.'
             : 'Đã xóa thành viên khỏi hộ.');
     }
@@ -192,7 +204,7 @@ class HouseholdPersonController extends Controller
         $rules = [
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:50',
-            'dob' => 'required|date',
+            'dob' => 'required|date|before_or_equal:today',
             'gender' => 'required|in:NAM,NU',
             'ethnicity_code' => 'required|exists:ethnicities,code',
             'religion' => 'nullable|string|max:50',
@@ -219,6 +231,16 @@ class HouseholdPersonController extends Controller
             $schoolYearRules[] = $uniqueSchoolYear;
         }
 
+        $notFutureYear = function ($attribute, $value, $fail) {
+            preg_match_all('/(?<!\d)\d{4}(?!\d)/', (string) $value, $matches);
+            foreach ($matches[0] as $year) {
+                if ((int) $year > now()->year) {
+                    $fail('Năm không được lớn hơn ' . now()->year . '.');
+                    return;
+                }
+            }
+        };
+
         $rules += [
             'school_province_code' => 'nullable|exists:provinces,code',
             'school_commune_code' => 'nullable|exists:communes,code',
@@ -233,13 +255,13 @@ class HouseholdPersonController extends Controller
             ],
             'education.graduation_level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
             'education.is_complementary' => 'nullable|boolean',
-            'education.graduation_year' => 'nullable|string|max:20',
+            'education.graduation_year' => ['nullable', 'string', 'max:20', $notFutureYear],
             'education.vocational_grad_level' => 'nullable|string|max:50',
-            'education.vocational_grad_year' => 'nullable|string|max:20',
+            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', $notFutureYear],
             'education.finished_class' => 'nullable|string|max:20',
-            'education.finished_year' => 'nullable|string|max:20',
+            'education.finished_year' => ['nullable', 'string', 'max:20', $notFutureYear],
             'education.dropped_class' => 'nullable|string|max:20',
-            'education.dropped_year' => 'nullable|string|max:20',
+            'education.dropped_year' => ['nullable', 'string', 'max:20', $notFutureYear],
             'education.literacy_current_class' => 'nullable|string|max:20',
             'education.literacy_completed_class' => 'nullable|string|max:20',
             'education.literacy_relapse_level' => 'nullable|integer|between:1,2',
@@ -257,6 +279,27 @@ class HouseholdPersonController extends Controller
         ];
 
         return $rules;
+    }
+
+    private function relationshipAgeError(?string $relationship, string $birthDate, ?Person $headPerson): ?string
+    {
+        if (!$headPerson?->dob || $relationship === null) {
+            return null;
+        }
+
+        $headBirthDate = substr((string) $headPerson->getRawOriginal('dob'), 0, 10);
+        $isYoungerRelationship = in_array($relationship, ['Con', 'Em', 'Cháu'], true);
+        $isOlderRelationship = in_array($relationship, ['Cha', 'Mẹ', 'Anh', 'Chị', 'Ông', 'Bà', 'Bác', 'Cô', 'Chú', 'Dì', 'Cậu'], true);
+
+        if ($isYoungerRelationship && $birthDate <= $headBirthDate) {
+            return "Người có quan hệ {$relationship} phải nhỏ tuổi hơn chủ hộ.";
+        }
+
+        if ($isOlderRelationship && $birthDate >= $headBirthDate) {
+            return "Người có quan hệ {$relationship} phải lớn tuổi hơn chủ hộ.";
+        }
+
+        return null;
     }
 
     private function formData(Person $person, bool $isHouseholdHead, ?string $householdSchoolYear = null): array

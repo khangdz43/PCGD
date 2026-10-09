@@ -14,10 +14,6 @@
         </a>
     </div>
 
-    @if (session('success'))
-    <div class="alert alert-success" role="status">{{ session('success') }}</div>
-    @endif
-
     <form id="school-filter-form" method="GET" action="{{ route('schools.index', [], false) }}" class="directory-filter-form bg-white border rounded-2 p-2 mb-3">
         <div class="directory-filter-field">
             <label for="school-search" class="visually-hidden">Mã hoặc tên trường</label>
@@ -27,7 +23,7 @@
             <label for="level" class="visually-hidden">Cấp học</label>
             <select id="level" name="level" class="form-select form-select-sm">
                 <option value="">-- Tất cả cấp học --</option>
-                @foreach (['MN', 'TH', 'THCS'] as $level)
+                @foreach (['MN', 'TH', 'THCS','THPT'] as $level)
                 <option value="{{ $level }}" @selected(request('level')===$level)>{{ $level }}</option>
                 @endforeach
             </select>
@@ -36,6 +32,8 @@
         'pickerId' => 'school-filter-location',
         'provinces' => $provinces,
         'inline' => true,
+        'provinceCode' => request('province_code', auth()->user()->province_code),
+        'communeCode' => request('commune_code', auth()->user()->commune_code),
         ])
         <button class="btn btn-sm btn-outline-secondary directory-filter-clear" type="button" id="clear-school-filters" title="Xóa bộ lọc" aria-label="Xóa bộ lọc">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -60,18 +58,18 @@
                     @forelse ($schools as $school)
                     <tr>
                         <td class="text-nowrap">{{ $school->code }}</td>
-                        <td>{{ $school->name }}</td>
+                        <td>{{ $school->display_name }}</td>
                         <td>{{ $school->level ?: '—' }}</td>
                         <td>{{ $school->province->name ?? '—' }}</td>
                         <td>{{ $school->commune->name ?? '—' }}</td>
                         <td class="text-end text-nowrap">
-                            <a class="btn btn-sm btn-outline-primary" href="{{ route('schools.edit', $school, false) }}" title="Sửa" aria-label="Sửa {{ $school->name }}">
+                            <a class="btn btn-sm btn-outline-primary" href="{{ route('schools.edit', $school, false) }}" title="Sửa" aria-label="Sửa {{ $school->display_name }}">
                                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
                             </a>
                             <form class="d-inline" method="POST" action="{{ route('schools.destroy', $school, false) }}" onsubmit="return confirm('Bạn có chắc muốn xóa trường học này?')">
                                 @csrf
                                 @method('DELETE')
-                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa" aria-label="Xóa {{ $school->name }}">
+                                <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa" aria-label="Xóa {{ $school->display_name }}">
                                     <i class="fa-solid fa-trash" aria-hidden="true"></i>
                                 </button>
                             </form>

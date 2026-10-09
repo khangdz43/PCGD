@@ -49,19 +49,41 @@
                 </li>
                 @endif
 
-                @foreach ($elements as $element)
-                @if (is_string($element))
-                <li class="page-item disabled" aria-disabled="true"><span class="page-link">{{ $element }}</span></li>
-                @endif
+                @php
+                    $lastPage = $paginator->lastPage();
+                    $currentPage = $paginator->currentPage();
+                    if ($lastPage <= 4) {
+                        $visiblePages = range(1, $lastPage);
+                    } else {
+                        $startPage = max(1, $currentPage - 1);
+                        $endPage = min($lastPage, $currentPage === 1 ? 2 : $currentPage);
+                        $visiblePageNumbers = array_values(array_unique([
+                            ...range($startPage, $endPage),
+                            ...range($lastPage - 1, $lastPage),
+                        ]));
+                        sort($visiblePageNumbers);
 
-                @if (is_array($element))
-                @foreach ($element as $page => $url)
+                        $visiblePages = [];
+                        $previousPage = null;
+                        foreach ($visiblePageNumbers as $pageNumber) {
+                            if ($previousPage !== null && $pageNumber > $previousPage + 1) {
+                                $visiblePages[] = '...';
+                            }
+                            $visiblePages[] = $pageNumber;
+                            $previousPage = $pageNumber;
+                        }
+                    }
+                @endphp
+                @foreach ($visiblePages as $page)
+                @if (is_string($page))
+                <li class="page-item disabled" aria-hidden="true"><span class="page-link">{{ $page }}</span></li>
+                @else
+                @php($url = $paginator->url($page))
                 @if ($page == $paginator->currentPage())
                 <li class="page-item active" aria-current="page"><span class="page-link">{{ $page }}</span></li>
                 @else
                 <li class="page-item"><a class="page-link" href="{{ $url }}">{{ $page }}</a></li>
                 @endif
-                @endforeach
                 @endif
                 @endforeach
 

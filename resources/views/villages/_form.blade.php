@@ -1,14 +1,3 @@
-@if ($errors->any())
-<div class="alert alert-danger" role="alert">
-    <p class="mb-1">Vui lòng kiểm tra lại thông tin:</p>
-    <ul class="mb-0">
-        @foreach ($errors->all() as $error)
-        <li>{{ $error }}</li>
-        @endforeach
-    </ul>
-</div>
-@endif
-
 <form method="POST" action="{{ $action }}">
     @csrf
     @if ($method !== 'POST')
@@ -32,7 +21,7 @@
         'pickerId' => 'village-form-location',
         'provinces' => $provinces,
         'provinceCode' => $provinceCode ?? '',
-        'communeCode' => $village->commune_code,
+        'communeCode' => $communeCode ?? $village->commune_code,
         'provinceRequired' => true,
         'communeRequired' => true,
         ])

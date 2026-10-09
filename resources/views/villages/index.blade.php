@@ -14,10 +14,6 @@
         </a>
     </div>
     <!-- check cái truyền từ controller success í -->
-    @if (session('success'))
-    <div class="alert alert-success" role="status">{{ session('success') }}</div>
-    @endif
-
     <form id="village-filter-form" method="GET" action="{{ route('villages.index', [], false) }}" class="directory-filter-form bg-white border rounded-2 p-2 mb-3">
         <div class="directory-filter-field">
             <label for="village-search" class="visually-hidden">Mã hoặc tên thôn/xóm</label>
@@ -26,6 +22,8 @@
         @include('partials.location-picker', [
         'pickerId' => 'village-filter-location',
         'provinces' => $provinces,
+        'provinceCode' => $provinceCode,
+        'communeCode' => $communeCode,
         'inline' => true,
         ])
         <button class="btn btn-sm btn-outline-secondary directory-filter-clear" type="button" id="clear-village-filters" title="Xóa bộ lọc" aria-label="Xóa bộ lọc">
@@ -57,7 +55,7 @@
                             <a class="btn btn-sm btn-outline-primary" href="{{ route('villages.edit', $village->code, false) }}" title="Sửa" aria-label="Sửa {{ $village->name }}">
                                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
                             </a>
-                            <form class="d-inline" method="POST" action="{{ route('villages.destroy', $village->code, false) }}" onsubmit="return confirm('Bạn có chắc muốn xóa thôn/xóm này?')">
+                            <form class="d-inline village-delete-form" method="POST" action="{{ route('villages.destroy', $village->code, false) }}" data-village-name="{{ $village->name }}">
                                 {{-- sinh csrdf chống tấn công --}}
                                 @csrf
                                 @method('DELETE')
@@ -170,11 +168,13 @@
             villageResults.innerHTML = nextResults.innerHTML;
             window.history.replaceState({}, '', `${url.pathname}${url.search}`);
             updateVillageClearButton();
+            return true;
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error('Không tải được danh sách thôn/xóm:', error);
                 villageFilterStatus.textContent = 'Không tải được kết quả lọc. Vui lòng thử lại.';
             }
+            return false;
         } finally {
             if (villageFilterRequest === requestController) {
                 villageFilterRequest = null;
@@ -213,6 +213,54 @@
         if (pageLink) {
             event.preventDefault();
             refreshVillages(new URL(pageLink.href, window.location.href));
+        }
+    });
+
+    villageResults.addEventListener('submit', async (event) => {
+        const form = event.target.closest('.village-delete-form');
+        if (!form) return;
+
+        event.preventDefault();
+        if (!window.confirm(`Bạn có chắc muốn xóa thôn/xóm "${form.dataset.villageName}"?`)) return;
+
+        const submitButton = form.querySelector('button[type="submit"]');
+        submitButton.disabled = true;
+        form.setAttribute('aria-busy', 'true');
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                body: new FormData(form),
+            });
+            const isJsonResponse = response.headers.get('content-type')?.includes('application/json');
+            const result = isJsonResponse ? await response.json() : {};
+            if (!response.ok) {
+                throw new Error(result.message || 'Không thể xóa thôn/xóm. Vui lòng thử lại.');
+            }
+            if (!isJsonResponse) {
+                throw new Error('Máy chủ trả về phản hồi không hợp lệ. Vui lòng thử lại.');
+            }
+
+            const row = form.closest('tr');
+            const remainingRows = row.parentElement.querySelectorAll('tr:not(.d-none)');
+            const refreshUrl = new URL(window.location.href);
+            const currentPage = Number(refreshUrl.searchParams.get('page') || 1);
+            if (remainingRows.length === 1 && currentPage > 1) {
+                refreshUrl.searchParams.set('page', String(currentPage - 1));
+            }
+
+            row.remove();
+            window.showAppNotification('success', result.message || 'Đã xóa thôn/xóm thành công!');
+            await refreshVillages(refreshUrl);
+        } catch (error) {
+            console.error('Không xóa được thôn/xóm:', error);
+            window.showAppNotification('error', error.message || 'Không thể xóa thôn/xóm. Vui lòng thử lại.');
+            submitButton.disabled = false;
+            form.removeAttribute('aria-busy');
         }
     });
 

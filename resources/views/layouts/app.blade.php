@@ -3,7 +3,15 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelector('meta[name="viewport"]')?.setAttribute(
+                'content',
+                'width=device-width, initial-scale=1.0',
+            );
+        }, { once: true });
+    </script>
     <title>@yield('title', 'PCGD-XMC - Phổ cập giáo dục')</title>
 
     <!-- Bootstrap 5 CSS -->
@@ -11,7 +19,706 @@
     <!-- FontAwesome (Icons) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
 
+    <style>
+        .app-breadcrumb-wrap {
+            background: #f1f5f9;
+            border-bottom: 1px solid #dbe3ed;
+        }
+
+        .app-breadcrumb {
+            margin: 0;
+            padding: .7rem 1rem;
+            background: #fff;
+            border: 1px solid #dbe3ed;
+            border-left: 4px solid #0d6efd;
+            border-radius: .5rem;
+            box-shadow: 0 .125rem .35rem rgb(15 23 42 / 8%);
+            --bs-breadcrumb-divider: '›';
+        }
+
+        .app-breadcrumb .breadcrumb-item,
+        .app-breadcrumb .breadcrumb-item a {
+            font-size: 1rem;
+        }
+
+        .app-breadcrumb .breadcrumb-item a {
+            display: inline-block;
+            padding: .15rem .25rem;
+            color: #0a58ca;
+            font-weight: 600;
+            text-decoration: none;
+            border-radius: .25rem;
+        }
+
+        .app-breadcrumb .breadcrumb-item a:hover,
+        .app-breadcrumb .breadcrumb-item a:focus-visible {
+            color: #084298;
+            background: #e7f1ff;
+            text-decoration: underline;
+        }
+
+        .app-breadcrumb .breadcrumb-item.active {
+            color: #212529;
+            font-weight: 700;
+        }
+
+        .app-notifications {
+            display: grid;
+            gap: .65rem;
+            margin: 0 auto 1rem;
+        }
+
+        .app-notification {
+            --notice-color: #2563eb;
+            --notice-bg: #eff6ff;
+            --notice-border: #bfdbfe;
+            display: flex;
+            align-items: flex-start;
+            gap: .8rem;
+            padding: .9rem 1rem;
+            border: 1px solid var(--notice-border);
+            border-left: 4px solid var(--notice-color);
+            border-radius: .75rem;
+            background: var(--notice-bg);
+            color: #1e293b;
+            box-shadow: 0 .25rem .75rem rgb(15 23 42 / 6%);
+            transition: opacity .2s ease, transform .2s ease;
+        }
+
+        .app-notification-success {
+            --notice-color: #15803d;
+            --notice-bg: #f0fdf4;
+            --notice-border: #bbf7d0;
+        }
+
+        .app-notification-warning {
+            --notice-color: #b45309;
+            --notice-bg: #fffbeb;
+            --notice-border: #fde68a;
+        }
+
+        .app-notification-danger {
+            --notice-color: #b91c1c;
+            --notice-bg: #fef2f2;
+            --notice-border: #fecaca;
+        }
+
+        .app-notification-info {
+            --notice-color: #0369a1;
+            --notice-bg: #f0f9ff;
+            --notice-border: #bae6fd;
+        }
+
+        .app-notification-icon {
+            display: grid;
+            width: 2rem;
+            height: 2rem;
+            flex: 0 0 2rem;
+            place-items: center;
+            border-radius: 50%;
+            background: color-mix(in srgb, var(--notice-color) 12%, white);
+            color: var(--notice-color);
+        }
+
+        .app-notification-content {
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .app-notification-title {
+            margin: .1rem 0 .2rem;
+            color: #0f172a;
+            font-size: .95rem;
+            font-weight: 700;
+        }
+
+        .app-notification-message {
+            margin: 0;
+            overflow-wrap: anywhere;
+            font-size: .9rem;
+        }
+
+        .app-notification-details {
+            margin: .45rem 0 0;
+            padding-left: 1.15rem;
+            font-size: .875rem;
+        }
+
+        .app-notification-close {
+            display: grid;
+            width: 2rem;
+            height: 2rem;
+            flex: 0 0 2rem;
+            place-items: center;
+            border: 0;
+            border-radius: .5rem;
+            background: transparent;
+            color: #475569;
+        }
+
+        .app-notification-close:hover {
+            background: rgb(15 23 42 / 7%);
+        }
+
+        .app-notification.is-hiding {
+            opacity: 0;
+            transform: translateY(-.35rem);
+        }
+
+        .app-inline-note {
+            display: flex;
+            align-items: flex-start;
+            gap: .65rem;
+            padding: .75rem .9rem;
+            border: 1px solid #bae6fd;
+            border-left: 3px solid #0284c7;
+            border-radius: .6rem;
+            background: #f0f9ff;
+            color: #334155;
+            font-size: .9rem;
+        }
+
+        .app-inline-note > i {
+            margin-top: .15rem;
+            color: #0369a1;
+        }
+    </style>
+
     @stack('styles')
+    <style>
+        html {
+            min-width: 320px;
+            scroll-padding-top: 1rem;
+        }
+
+        body {
+            overflow-x: clip;
+        }
+
+        .app-header-content,
+        .app-brand,
+        .app-account {
+            min-width: 0;
+        }
+
+        .app-brand-title {
+            font-size: clamp(1rem, 2vw, 1.5rem);
+            line-height: 1.25;
+        }
+
+        .app-account-name {
+            display: inline-block;
+            max-width: min(32vw, 20rem);
+            overflow-wrap: anywhere;
+        }
+
+        .app-account-location {
+            max-width: min(42vw, 28rem);
+            overflow-wrap: anywhere;
+        }
+
+        .navbar-toggler {
+            min-width: 2.75rem;
+            min-height: 2.75rem;
+        }
+
+        .navbar-nav .nav-link,
+        .navbar-nav .dropdown-item {
+            overflow-wrap: anywhere;
+        }
+
+        main {
+            min-width: 0;
+        }
+
+        main > .container,
+        main > .container-fluid {
+            min-width: 0;
+        }
+
+        .table-responsive {
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .table-responsive > .table {
+            margin-bottom: 0;
+        }
+
+        .location-picker-field,
+        .directory-filter-field {
+            min-width: 0;
+        }
+
+        .table th,
+        .table td {
+            vertical-align: middle;
+        }
+
+        .pagination {
+            flex-wrap: wrap;
+            gap: .2rem;
+        }
+
+        .pagination .page-link {
+            min-width: 2.5rem;
+            text-align: center;
+        }
+
+        .form-control,
+        .form-select {
+            min-width: 0;
+        }
+
+        button,
+        a {
+            touch-action: manipulation;
+        }
+
+        :focus-visible {
+            outline: 3px solid rgb(13 110 253 / 45%);
+            outline-offset: 2px;
+        }
+
+        @media (max-width: 991.98px) {
+            .app-header-content {
+                flex-wrap: wrap;
+                row-gap: .65rem;
+            }
+
+            .app-brand {
+                flex: 1 1 100%;
+            }
+
+            .app-brand-title {
+                max-width: 100%;
+            }
+
+            .app-account {
+                flex: 1 1 100%;
+                justify-content: space-between;
+                gap: .75rem !important;
+            }
+
+            .app-account-name,
+            .app-account-location {
+                max-width: min(68vw, 34rem);
+            }
+
+            .navbar-collapse {
+                max-height: calc(100dvh - 5rem);
+                overflow-y: auto;
+                overscroll-behavior: contain;
+            }
+
+            .navbar-nav .nav-link {
+                min-height: 2.75rem;
+                display: flex;
+                align-items: center;
+            }
+
+            .navbar-nav .dropdown-menu {
+                margin: 0 0 .5rem .75rem;
+            }
+
+            .navbar-nav .dropdown-item {
+                display: flex;
+                min-height: 2.75rem;
+                align-items: center;
+            }
+
+            .tree-node.level-commune,
+            .tree-node.level-village {
+                margin-left: .75rem;
+            }
+
+            .organization-tree {
+                max-height: 55vh !important;
+            }
+        }
+
+        @media (max-width: 991.98px) {
+            .app-navbar {
+                position: relative;
+                z-index: 1030;
+            }
+
+            .app-navbar > .container {
+                position: relative;
+            }
+
+            .app-navbar .navbar-collapse {
+                position: absolute;
+                top: calc(100% + .35rem);
+                right: .75rem;
+                left: .75rem;
+                z-index: 1031;
+                max-height: calc(100dvh - 7rem);
+                padding: .5rem;
+                overflow-y: auto;
+                border: 1px solid #dbe3ed;
+                border-radius: .75rem;
+                background: #fff;
+                box-shadow: 0 .75rem 2rem rgb(15 23 42 / 18%);
+            }
+
+            .app-navbar .navbar-nav {
+                gap: .15rem;
+            }
+
+            .app-navbar .navbar-nav .nav-link {
+                min-height: 2.8rem;
+                padding: .65rem .75rem;
+                border-radius: .5rem;
+                color: #334155;
+                font-weight: 600;
+            }
+
+            .app-navbar .navbar-nav .nav-link:hover,
+            .app-navbar .navbar-nav .nav-link:focus-visible,
+            .app-navbar .navbar-nav .nav-link.active {
+                background: #eff6ff;
+                color: #0a58ca;
+            }
+
+            .app-navbar .navbar-nav .dropdown-menu {
+                margin: 0 0 .35rem .75rem;
+                padding: .25rem;
+                border: 0;
+                border-left: 2px solid #bfdbfe;
+                border-radius: 0;
+                box-shadow: none;
+            }
+
+            .app-navbar .navbar-nav .dropdown-item {
+                min-height: 2.65rem;
+                padding: .6rem .75rem;
+                border-radius: .4rem;
+                color: #475569;
+            }
+
+            .app-navbar .navbar-nav .dropdown-item:hover,
+            .app-navbar .navbar-nav .dropdown-item.active {
+                background: #eff6ff;
+                color: #0a58ca;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            main.py-4 {
+                padding-top: 1rem !important;
+                padding-bottom: 1rem !important;
+            }
+
+            main > .container,
+            main > .container-fluid {
+                padding-right: 1rem;
+                padding-left: 1rem;
+            }
+
+            .app-breadcrumb {
+                padding: .55rem .75rem;
+            }
+
+            .app-breadcrumb .breadcrumb-item,
+            .app-breadcrumb .breadcrumb-item a {
+                font-size: .9rem;
+            }
+
+            .directory-filter-form {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .directory-filter-form .directory-filter-field:first-child {
+                grid-column: 1 / -1;
+            }
+
+            .directory-filter-form .directory-filter-clear {
+                min-height: 2.25rem;
+                width: 100%;
+            }
+
+            .person-survey-form .form-control,
+            .person-survey-form .form-select {
+                min-height: 2.75rem;
+                font-size: 1rem;
+            }
+
+            .table-responsive > .table:not(.member-table) {
+                min-width: 38rem;
+            }
+
+            .household-table-scroll > .table {
+                min-width: 54rem;
+                table-layout: fixed;
+            }
+
+            .household-table-scroll > .table th,
+            .household-table-scroll > .table td {
+                white-space: nowrap;
+            }
+
+            .household-table-scroll > .table td.household-code-cell > span {
+                display: block;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .household-table-scroll > .table td.household-head-cell {
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
+
+            .household-table-scroll > .table th:nth-child(1),
+            .household-table-scroll > .table td:nth-child(1) {
+                width: 3.5rem;
+            }
+
+            .household-table-scroll > .table th:nth-child(2),
+            .household-table-scroll > .table td:nth-child(2) {
+                width: 8rem;
+            }
+
+            .household-table-scroll > .table th:nth-child(3),
+            .household-table-scroll > .table td:nth-child(3) {
+                width: 13rem;
+            }
+
+            .household-table-scroll > .table th:nth-child(4),
+            .household-table-scroll > .table td:nth-child(4) {
+                width: 16rem;
+            }
+
+            .household-table-scroll > .table th:nth-child(5),
+            .household-table-scroll > .table td:nth-child(5) {
+                width: 6rem;
+            }
+
+            .household-table-scroll > .table th:nth-child(6),
+            .household-table-scroll > .table td:nth-child(6) {
+                width: 7.5rem;
+            }
+
+            .household-table-hint {
+                display: flex;
+                align-items: center;
+                gap: .4rem;
+                color: #64748b;
+                font-size: .8rem;
+            }
+
+            .household-bulk-actions .btn,
+            .member-browser-actions form,
+            .member-browser-actions .btn {
+                width: 100%;
+            }
+
+            .member-browser-heading {
+                align-items: flex-start !important;
+            }
+
+            .member-browser-actions {
+                width: 100%;
+                align-items: stretch !important;
+                flex-direction: column;
+            }
+
+            .member-browser-actions #member-selection-summary {
+                text-align: left;
+            }
+
+            .tree-header,
+            .scope-header {
+                gap: .55rem;
+                padding: .7rem;
+            }
+
+            .tree-body-inner,
+            .scope-body-inner {
+                padding-right: .65rem;
+                padding-left: .65rem;
+            }
+
+            .organization-tree .card-body {
+                padding: .5rem !important;
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            .app-header-content {
+                padding-top: .25rem;
+                padding-bottom: .25rem;
+            }
+
+            .app-brand {
+                gap: .65rem !important;
+            }
+
+            .app-brand-mark {
+                width: 42px !important;
+                height: 42px !important;
+                font-size: .8rem;
+            }
+
+            .app-brand-title {
+                font-size: .95rem;
+            }
+
+            .app-brand-subtitle {
+                display: block;
+                font-size: .75rem;
+                line-height: 1.25;
+            }
+
+            .app-account {
+                align-items: flex-start !important;
+            }
+
+            .app-account .text-end {
+                min-width: 0;
+                flex: 1 1 auto;
+                text-align: left !important;
+            }
+
+            .app-account-name,
+            .app-account-location {
+                max-width: 100%;
+            }
+
+            .app-account-location {
+                line-height: 1.35;
+            }
+
+            .app-account .btn {
+                min-height: 2.75rem;
+                white-space: nowrap;
+            }
+
+            .app-navbar .navbar-collapse {
+                right: .5rem;
+                left: .5rem;
+            }
+
+            main > .container,
+            main > .container-fluid {
+                padding-right: .75rem;
+                padding-left: .75rem;
+            }
+
+            main h1.h1,
+            main h1.h2,
+            main h1.h3 {
+                font-size: 1.35rem;
+                line-height: 1.3;
+            }
+
+            main .card-body,
+            main section.p-4 {
+                padding: 1rem !important;
+            }
+
+            .container > .d-flex.justify-content-between {
+                align-items: stretch !important;
+            }
+
+            .container > .d-flex.justify-content-between > .btn,
+            .container > .d-flex.justify-content-between > .d-flex {
+                width: 100%;
+            }
+
+            .container > .d-flex.justify-content-between > .d-flex {
+                flex-wrap: wrap;
+            }
+
+            .container > .d-flex.justify-content-between > .d-flex > .btn {
+                flex: 1 1 auto;
+            }
+
+            main .btn:not(.btn-sm) {
+                min-height: 2.75rem;
+            }
+
+            main .btn-sm {
+                min-width: 2.5rem;
+                min-height: 2.5rem;
+            }
+
+            main form .form-control,
+            main form .form-select,
+            main form .form-control-sm,
+            main form .form-select-sm {
+                min-height: 2.75rem;
+                font-size: 1rem;
+            }
+
+            main form input[type="checkbox"],
+            main form input[type="radio"] {
+                min-width: 1.25rem;
+                min-height: 1.25rem;
+            }
+
+            main input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+            main select,
+            main textarea {
+                font-size: 16px !important;
+            }
+
+            .table {
+                font-size: .875rem;
+            }
+
+            .member-table-scroll > .member-table {
+                min-width: 75rem;
+            }
+
+            .tree-controls {
+                justify-content: stretch !important;
+            }
+
+            .tree-controls .btn {
+                flex: 1 1 0;
+                min-height: 2.5rem;
+            }
+
+            .role-card,
+            .user-card {
+                gap: .6rem;
+                padding: .7rem;
+            }
+
+            .role-card .role-info,
+            .user-card .user-info {
+                min-width: 0;
+            }
+
+            .role-card .role-name,
+            .user-card .user-name {
+                overflow-wrap: anywhere;
+            }
+
+            .pagination .page-link {
+                min-width: 2.25rem;
+                padding: .4rem .55rem;
+            }
+
+            .pagination .page-item:first-child .page-link,
+            .pagination .page-item:last-child .page-link {
+                padding-right: .55rem;
+                padding-left: .55rem;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                scroll-behavior: auto !important;
+                animation-duration: .01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: .01ms !important;
+            }
+        }
+    </style>
+    @include('partials.password-toggle')
 </head>
 
 <body class="bg-light">
@@ -24,6 +731,10 @@
 
     {{-- Content --}}
     <main class="py-4">
+        @include('partials.breadcrumbs')
+        <div class="container app-notifications-wrap">
+            @include('partials.notifications')
+        </div>
         @yield('content')
     </main>
 
@@ -65,6 +776,69 @@
 
         document.addEventListener('input', clearRequiredFieldError, true);
         document.addEventListener('change', clearRequiredFieldError, true);
+
+        document.querySelectorAll('.app-notification').forEach((notification) => {
+            const closeButton = notification.querySelector('.app-notification-close');
+            const dismiss = () => {
+                notification.classList.add('is-hiding');
+                window.setTimeout(() => notification.remove(), 220);
+            };
+
+            closeButton.addEventListener('click', dismiss);
+            if (notification.hasAttribute('data-notification-autohide')) {
+                window.setTimeout(dismiss, 6500);
+            }
+        });
+
+        window.showAppNotification = (type, message, title) => {
+            const notificationTypes = {
+                success: { title: 'Thao tác thành công', icon: 'fa-circle-check', className: 'success' },
+                info: { title: 'Thông tin', icon: 'fa-circle-info', className: 'info' },
+                warning: { title: 'Cần lưu ý', icon: 'fa-triangle-exclamation', className: 'warning' },
+                error: { title: 'Thao tác chưa thành công', icon: 'fa-circle-exclamation', className: 'danger' },
+            };
+            const typeInfo = notificationTypes[type] || notificationTypes.info;
+            const container = document.querySelector('.app-notifications-wrap');
+            const notification = document.createElement('div');
+            const icon = document.createElement('span');
+            const iconElement = document.createElement('i');
+            const content = document.createElement('div');
+            const heading = document.createElement('h2');
+            const body = document.createElement('p');
+            const closeButton = document.createElement('button');
+            const closeIcon = document.createElement('i');
+
+            notification.className = `app-notification app-notification-${typeInfo.className}`;
+            notification.setAttribute('role', type === 'error' || type === 'warning' ? 'alert' : 'status');
+            notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+            icon.className = 'app-notification-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            iconElement.className = `fa-solid ${typeInfo.icon}`;
+            icon.appendChild(iconElement);
+            content.className = 'app-notification-content';
+            heading.className = 'app-notification-title';
+            heading.textContent = title || typeInfo.title;
+            body.className = 'app-notification-message';
+            body.textContent = message;
+            content.append(heading, body);
+            closeButton.className = 'app-notification-close';
+            closeButton.type = 'button';
+            closeButton.setAttribute('aria-label', 'Đóng thông báo');
+            closeIcon.className = 'fa-solid fa-xmark';
+            closeIcon.setAttribute('aria-hidden', 'true');
+            closeButton.appendChild(closeIcon);
+            notification.append(icon, content, closeButton);
+            container.appendChild(notification);
+
+            const dismiss = () => {
+                notification.classList.add('is-hiding');
+                window.setTimeout(() => notification.remove(), 220);
+            };
+            closeButton.addEventListener('click', dismiss);
+            if (type === 'success' || type === 'info') {
+                window.setTimeout(dismiss, 6500);
+            }
+        };
     </script>
 </body>
 

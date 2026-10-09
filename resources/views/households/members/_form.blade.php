@@ -1,14 +1,3 @@
-@if ($errors->any())
-<div class="alert alert-danger" role="alert">
-    <p class="mb-1">Vui lòng kiểm tra lại thông tin:</p>
-    <ul class="mb-0">
-        @foreach ($errors->all() as $error)
-        <li>{{ $error }}</li>
-        @endforeach
-    </ul>
-</div>
-@endif
-
 <form method="POST" action="{{ $action }}" class="person-survey-form">
     @csrf
     @if ($method === 'POST' && $isHouseholdHead)
@@ -182,12 +171,34 @@
                     </div>
                     <div class="col-sm-6">
                         <label for="current-class" class="form-label">Lớp học</label>
-                        <input id="current-class" name="education[current_class]" class="form-control" value="{{ old('education.current_class', $education->current_class) }}" maxlength="50">
+
+                        <input
+                            id="current-class"
+                            name="education[current_class]"
+                            class="form-control @error('education.current_class') is-invalid @enderror"
+                            value="{{ old('education.current_class', $education->current_class) }}"
+                            maxlength="50"
+                            autocomplete="off">
+
+                        @error('education.current_class')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
+
                     <div class="col-sm-6">
                         <label for="academic-block" class="form-label">Khối lớp</label>
-                        <input id="academic-block" name="education[academic_block]" class="form-control @error('education.academic_block') is-invalid @enderror" value="{{ old('education.academic_block', $education->academic_block) }}" maxlength="50">
-                        @error('education.academic_block') <div class="invalid-feedback">{{ $message }}</div> @enderror
+
+                        <input
+                            id="academic-block"
+                            name="education[academic_block]"
+                            class="form-control @error('education.academic_block') is-invalid @enderror"
+                            value="{{ old('education.academic_block', $education->academic_block) }}"
+                            maxlength="10"
+                            readonly>
+
+                        @error('education.academic_block')
+                        <div class="invalid-feedback">{{ $message }}</div>
+                        @enderror
                     </div>
                     <div class="col-12" data-school-picker>
                         <label class="form-label">Địa bàn trường</label>
@@ -205,7 +216,7 @@
                         <select id="school-code" name="education[school_code]" class="form-select @error('education.school_code') is-invalid @enderror" data-school-select>
                             <option value="">-- Chọn trường --</option>
                             @foreach ($schools as $school)
-                            <option value="{{ $school->code }}" data-province-code="{{ $school->province_code }}" data-commune-code="{{ $school->commune_code }}" @selected(old('education.school_code', $education->school_code) === $school->code)>{{ $school->name }}{{ $school->level ? ' (' . $school->level . ')' : '' }}</option>
+                            <option value="{{ $school->code }}" data-province-code="{{ $school->province_code }}" data-commune-code="{{ $school->commune_code }}" @selected(old('education.school_code', $education->school_code) === $school->code)>{{ $school->display_name }}{{ $school->level ? ' (' . $school->level . ')' : '' }}</option>
                             @endforeach
                         </select>
                         @error('education.school_code') <div class="invalid-feedback">{{ $message }}</div> @enderror
@@ -299,13 +310,47 @@
         <button class="btn btn-primary" type="submit">
             <i class="fa-solid fa-floppy-disk me-1" aria-hidden="true"></i> {{ $method === 'POST' ? ($isHouseholdHead ? 'Lưu thông tin chủ hộ' : 'Thêm thành viên') : 'Lưu thay đổi' }}
         </button>
+        @can('view-households')
         <a class="btn btn-outline-secondary" href="{{ route('households.show', $household, false) }}">Hủy</a>
+        @else
+        <a class="btn btn-outline-secondary" href="{{ route('index', [], false) }}">Hủy</a>
+        @endcan
     </div>
 </form>
 
 @push('scripts')
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        const classInput = document.getElementById('current-class');
+        const academicBlockInput = document.getElementById('academic-block');
+
+        if (classInput && academicBlockInput) {
+
+            function updateAcademicBlock() {
+                const className = classInput.value.trim();
+
+                // Lấy các số ở đầu tên lớp
+                // 7A   -> 7
+                // 7A1  -> 7
+                // 10A  -> 10
+                // 10B1 -> 10
+                // 12C  -> 12
+                const match = className.match(/^(\d+)/);
+
+                if (match) {
+                    academicBlockInput.value = match[1];
+                } else {
+                    academicBlockInput.value = '';
+                }
+            }
+
+            // Người dùng nhập đến đâu -> khối hiện đến đó
+            classInput.addEventListener('input', updateAcademicBlock);
+
+            // Khi mở trang sửa dữ liệu cũ
+            updateAcademicBlock();
+        }
+
         const schoolPicker = document.querySelector('[data-school-picker]');
         const schoolSelect = document.querySelector('[data-school-select]');
         if (!schoolPicker || !schoolSelect) return;

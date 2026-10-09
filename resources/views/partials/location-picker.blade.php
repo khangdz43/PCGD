@@ -6,7 +6,9 @@ $villageName = $villageName ?? 'village_code';
 $showVillage = $showVillage ?? false;
 $provinceRequired = $provinceRequired ?? false;
 $communeRequired = $communeRequired ?? false;
+$villageRequired = $villageRequired ?? false;
 $inline = $inline ?? false;
+$villagePlaceholder = $villagePlaceholder ?? '-- Chọn Thôn/Bản --';
 // nếu mà submit lỗi thì lấy value cũ
 ////////
 $selectedProvinceCode = old($provinceName, $provinceCode ?? request($provinceName, ''));
@@ -45,8 +47,8 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
     @if ($showVillage)
     <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
         <label for="{{ $pickerId }}-village" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Thôn/Bản</label>
-        <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($villageName) is-invalid @enderror" data-village data-selected-code="{{ $selectedVillageCode }}" disabled>
-            <option value="">-- Chọn Thôn/Bản --</option>
+        <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($villageName) is-invalid @enderror" data-village data-placeholder="{{ $villagePlaceholder }}" data-selected-code="{{ $selectedVillageCode }}" disabled @if ($villageRequired) required @endif>
+            <option value="">{{ $villagePlaceholder }}</option>
         </select>
         @error($villageName)
         <div class="invalid-feedback">{{ $message }}</div>
@@ -54,7 +56,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
     </div>
     @endif
 
-    <div class="{{ $inline ? 'location-picker-status' : 'col-12' }}">
+    <div class="{{ $inline ? 'location-picker-status' : 'col-12' }}" data-location-status-wrap hidden>
         <p class="small text-muted mb-0" data-location-status role="status" aria-live="polite"></p>
     </div>
 </div>
@@ -67,6 +69,12 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
             const communeSelect = picker.querySelector('[data-commune]');
             const villageSelect = picker.querySelector('[data-village]');
             const status = picker.querySelector('[data-location-status]');
+            const statusWrap = picker.querySelector('[data-location-status-wrap]');
+
+            function setStatus(message) {
+                status.textContent = message;
+                statusWrap.hidden = !message;
+            }
 
             function resetSelect(select, placeholder) {
                 if (!select) return;
@@ -82,7 +90,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
             }
 
             async function loadVillages(communeCode, selectedCode = '') {
-                resetSelect(villageSelect, '-- Chọn Thôn/Bản --');
+                resetSelect(villageSelect, villageSelect?.dataset.placeholder || '-- Chọn Thôn/Bản --');
                 if (!villageSelect || !communeCode) return;
 
                 try {
@@ -95,14 +103,14 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                     villageSelect.value = selectedCode;
                 } catch (error) {
                     console.error('Lỗi tải danh sách thôn/bản:', error);
-                    status.textContent = 'Không tải được danh sách thôn/bản.';
+                    setStatus('Không tải được danh sách thôn/bản.');
                 }
             }
 
             async function loadCommunes(provinceCode, selectedCode = '') {
                 resetSelect(communeSelect, '-- Chọn Xã/Phường --');
                 resetSelect(villageSelect, '-- Chọn Thôn/Bản --');
-                status.textContent = '';
+                setStatus('');
                 if (!provinceCode) return;
 
                 try {
@@ -125,7 +133,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                     }
                 } catch (error) {
                     console.error('Lỗi tải danh sách xã/phường:', error);
-                    status.textContent = 'Không tải được danh sách xã/phường.';
+                    setStatus('Không tải được danh sách xã/phường.');
                 }
             }
 

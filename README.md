@@ -1,59 +1,63 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# PCGD-XMC
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Ứng dụng web quản lý dữ liệu Phổ cập giáo dục - Xóa mù chữ, xây dựng trên Laravel 12.
 
-## About Laravel
+## Cấu trúc ứng dụng
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- `app/Http/Controllers/Geography`: tỉnh, xã và thôn/xóm.
+- `app/Http/Controllers/Education`: trường học.
+- `app/Http/Controllers/Households`: hộ gia đình, nhân khẩu và nhập/xuất dữ liệu.
+- `app/Http/Controllers/Admin/AccessControl`: nhóm người dùng/phòng ban và quản lý tài khoản theo địa bàn.
+- `app/Http/Controllers/Auth`: đăng nhập và đăng xuất.
+- `app/Models`: Eloquent models, giữ namespace ổn định `App\Models`.
+- `app/Support`: định nghĩa quyền và giới hạn truy cập dữ liệu theo địa bàn.
+- `routes/web.php`: các luồng nghiệp vụ web đã xác thực.
+- `routes/auth.php`: đăng nhập, đăng xuất.
+- `routes/admin.php`: các màn hình quản trị.
+- `resources/views`: giao diện Blade, tổ chức theo nghiệp vụ.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+Controller được nhóm theo miền nghiệp vụ; models giữ tại `App\Models` để các quan hệ và phần tích hợp hiện tại không bị phá vỡ.
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## Cài đặt và tạo quản trị viên đầu tiên
 
-## Learning Laravel
+Sau khi cài dependencies và cấu hình cơ sở dữ liệu trong `.env`, chạy:
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+```bash
+php artisan migrate
+php artisan app:create-admin
+```
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Lệnh `app:create-admin` hỏi tên, email và mật khẩu tương tác; mật khẩu phải có ít nhất 12 ký tự và không được lưu sẵn trong mã nguồn. Tài khoản này có quyền quản trị toàn hệ thống và khởi tạo các quyền nghiệp vụ. Trước khi tạo tài khoản tỉnh, Trung ương tạo một nhóm quyền cấp Tỉnh phù hợp; các tài khoản tỉnh/xã tự tạo nhóm quyền cấp dưới trong phạm vi của mình.
 
-## Laravel Sponsors
+## Mô hình phân quyền
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+- Nhóm người dùng áp dụng đúng một cấp địa bàn và tài khoản phải được gán nhóm cùng cấp. Trung ương chỉ tạo tài khoản cấp tỉnh; quản trị viên tỉnh chỉ tạo tài khoản cấp xã; quản trị viên xã chỉ tạo tài khoản cấp thôn/xóm. Không được nhảy qua cấp dưới và không tạo thêm tài khoản cùng cấp.
+- Mỗi tỉnh chỉ có một tài khoản quản trị tỉnh đang hoạt động; mỗi xã chỉ có một tài khoản quản trị xã đang hoạt động. Tài khoản đã thu hồi quyền đăng nhập không chiếm chỗ, nên có thể tạo quản trị thay thế.
+- Khi tạo tài khoản, cấp hoạt động được giới hạn theo phân cấp và địa bàn quản lý. Trung ương tạo nhóm cấp Tỉnh để khởi tạo tài khoản tỉnh; mỗi tài khoản tỉnh/xã tự tạo nhóm quyền dùng riêng cho cấp dưới trực tiếp. Tài khoản địa phương chỉ thấy nhóm đang được gán cho mình và các nhóm do chính tài khoản đó tạo; nhóm của tài khoản khác không được dùng chung.
+- Quyền nhóm được giới hạn theo chức năng đã triển khai và cấp áp dụng: cấp tỉnh quản lý trường học, nhóm quyền và tài khoản, không quản trị phiếu/nhân khẩu; cấp xã quản lý thôn/xóm và phiếu/nhân khẩu; cấp thôn/xóm chỉ có các quyền phiếu/nhân khẩu được giao chi tiết. Tài khoản tỉnh có thể tạo nhóm cấp xã với quyền nghiệp vụ của cấp xã nhưng không nhận các quyền đó cho tài khoản tỉnh.
+- Vai trò không đúng cấp tài khoản không được gán; nhóm toàn hệ thống chỉ dành cho quản trị Trung ương. Quyền ngoài cấp bị chặn cả ở biểu mẫu lẫn khi kiểm tra quyền lúc chạy.
+- Quyền quản lý nhóm/tài khoản chỉ được giao cho cấp dưới khi người quản lý được cấp quyền tương ứng; việc tạo tài khoản và phân công địa bàn vẫn bị giới hạn trong phạm vi được giao.
+- Nhóm quyền nghiệp vụ không được tạo sẵn dùng chung. Mỗi tài khoản quản lý tự tạo nhóm phù hợp với nghiệp vụ và cấp dưới mình phụ trách.
+- Các chức năng chưa được triển khai trong ứng dụng như phê duyệt/báo cáo liên cấp không được thêm thành quyền giả lập.
+- Tạo, sửa, xóa, nhập và xuất phiếu yêu cầu quyền xem phiếu; khi gán các quyền này, hệ thống tự gán kèm quyền xem. Quyền xem riêng không cấp quyền thao tác khác.
+- Danh mục thôn/xóm và trường học có quyền quản lý riêng; quyền quản lý danh mục cũ được chuyển thành cả hai quyền khi nâng cấp.
+- Việc truy vấn, nhập/xuất và thao tác dữ liệu được giới hạn theo địa bàn của tài khoản. Mã trường học chỉ là thông tin giáo dục, không còn xác định phạm vi quyền quản lý.
+- Quản trị hệ thống vẫn có toàn quyền nghiệp vụ; giới hạn cấp tỉnh ở trên áp dụng cho việc tạo nhóm/tài khoản địa bàn.
+- Tạo, sửa, xóa, nhập và xuất phiếu yêu cầu quyền xem phiếu; khi gán các quyền này, hệ thống tự gán kèm quyền xem. Quyền xem riêng không cấp quyền thao tác khác.
+- Danh mục thôn/xóm và trường học có quyền quản lý riêng; quyền quản lý danh mục cũ được chuyển thành cả hai quyền khi nâng cấp.
+- Việc truy vấn, nhập/xuất và thao tác dữ liệu được giới hạn theo địa bàn của tài khoản. Mã trường học chỉ là thông tin giáo dục, không còn xác định phạm vi quyền quản lý.
+- Quản trị hệ thống quản lý danh mục quyền thao tác; nhóm người dùng và tài khoản được quản lý trong phạm vi địa bàn, nếu tài khoản được cấp quyền tương ứng.
 
-### Premium Partners
+## Kiểm thử
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+```bash
+php artisan test
+```
 
-## Contributing
+Để tạo bộ tài khoản thử nghiệm quyền trên DB local, đặt biến môi trường `PCGD_TEST_ACCOUNT_PASSWORD` thành mật khẩu tạm tối thiểu 12 ký tự rồi chạy:
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+```bash
+php artisan db:seed --class=AccessControlTestAccountsSeeder
+```
 
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Các tài khoản có email `pcgd-test-*@example.test`; seeder chỉ tạo/cập nhật các tài khoản mang tiền tố này và không tự chạy trong `DatabaseSeeder`. Hãy thu hồi hoặc xóa các tài khoản test sau khi kiểm tra xong.

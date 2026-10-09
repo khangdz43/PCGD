@@ -16,6 +16,13 @@ class School extends Model
         'commune_code',
     ];
 
+    public function getDisplayNameAttribute(): string
+    {
+        $name = trim((string) $this->name);
+
+        return $name !== '' ? $name : "Chưa cập nhật tên ({$this->code})";
+    }
+
     public function province(): BelongsTo
     {
         return $this->belongsTo(Province::class, 'province_code', 'code');

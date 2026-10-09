@@ -5,21 +5,9 @@
 @section('content')
 <div class="container">
     <div class="mb-4">
-        <a class="text-decoration-none" href="{{ route('households.index', [], false) }}">&larr; Phiếu điều tra hộ</a>
-        <h1 class="h3 mt-3 mb-1">Nhập dữ liệu phiếu điều tra</h1>
-        <p class="text-muted mb-0">Chọn địa bàn áp dụng cho file, sau đó tải lên file đã nhập theo mẫu.</p>
+        <h1 class="h3 mb-1">Nhập dữ liệu phiếu điều tra</h1>
+        <p class="text-muted mb-0">Chọn địa bàn trong phạm vi được giao, sau đó tải lên file đã nhập theo mẫu.</p>
     </div>
-
-    @if ($errors->any())
-    <div class="alert alert-danger" role="alert">
-        <p class="mb-1">Không thể nhập file:</p>
-        <ul class="mb-0">
-            @foreach ($errors->all() as $error)
-            <li>{{ $error }}</li>
-            @endforeach
-        </ul>
-    </div>
-    @endif
 
     <section class="bg-white border rounded-2 p-4">
         <form id="household-import-form" method="POST" action="{{ route('households.import.store', [], false) }}" enctype="multipart/form-data">
@@ -52,6 +40,10 @@
                 'provinceRequired' => true,
                 'communeRequired' => true,
                 'showVillage' => true,
+                'provinceCode' => $provinceCode,
+                'communeCode' => $communeCode,
+                'villageCode' => $villageCode,
+                'villageRequired' => $villageRequired,
                 ])
             </div>
 
@@ -62,7 +54,11 @@
                 <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}">
                     <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải mẫu Excel
                 </a>
-                <a class="btn btn-outline-secondary" href="{{ route('households.index', [], false) }}">Hủy</a>
+                @can('view-households')
+                    <a class="btn btn-outline-secondary" href="{{ route('households.index', [], false) }}">Hủy</a>
+                @else
+                    <a class="btn btn-outline-secondary" href="{{ route('index', [], false) }}">Hủy</a>
+                @endcan
             </div>
         </form>
     </section>

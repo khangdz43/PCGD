@@ -21,7 +21,7 @@
                             <a class="btn btn-outline-primary" href="{{ route('households.import.create', [], false) }}">Nhập dữ liệu</a>
                         @endcan
                         @can('export-households')
-                            <a class="btn btn-outline-success" href="{{ route('households.export', [], false) }}">Xuất dữ liệu</a>
+                            <a class="btn btn-outline-success" href="{{ route('households.export', [], false) }}" data-turbo="false">Xuất dữ liệu</a>
                         @endcan
                     </div>
                 @else

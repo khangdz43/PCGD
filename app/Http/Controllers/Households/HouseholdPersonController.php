@@ -183,24 +183,40 @@ class HouseholdPersonController extends Controller
         return redirect()->to(route('households.show', $household, false))->with('success', 'Đã cập nhật thành viên.');
     }
 
-    public function destroy(Household $household, int $personId)
+    public function destroy(Request $request, Household $household, int $personId)
     {
-        $this->assertHouseholdAccess(request(), $household);
-        $person = $this->scopePersonQuery($household->persons(), request())->findOrFail($personId);
+        $this->assertHouseholdAccess($request, $household);
+        $person = $this->scopePersonQuery($household->persons(), $request)->findOrFail($personId);
 
         if (
             $person->relationship_with_head === 'Chủ hộ'
             && $household->persons()->where('relationship_with_head', '!=', 'Chủ hộ')->exists()
         ) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.',
+                ], 422);
+            }
+
             return redirect()->to(route('households.show', $household, false))
                 ->with('warning', 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.');
         }
 
+        $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
         $person->delete();
-
-        return redirect()->to(route('households.show', $household, false))->with('success', $person->relationship_with_head === 'Chủ hộ'
+        $message = $isHouseholdHead
             ? 'Đã xóa hồ sơ chủ hộ. Cần nhập lại chủ hộ trước khi thêm thành viên.'
-            : 'Đã xóa thành viên khỏi hộ.');
+            : 'Đã xóa thành viên khỏi hộ.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $message,
+                'is_household_head' => $isHouseholdHead,
+                'remaining_count' => $household->persons()->count(),
+            ]);
+        }
+
+        return redirect()->to(route('households.show', $household, false))->with('success', $message);
     }
 
     public function bulkDestroy(Request $request)
@@ -223,6 +239,12 @@ class HouseholdPersonController extends Controller
                     ->where('relationship_with_head', '!=', 'Chủ hộ')
                     ->exists()
             ) {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'message' => 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.',
+                    ], 422);
+                }
+
                 return back()->with('warning', 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.');
             }
         }
@@ -231,7 +253,16 @@ class HouseholdPersonController extends Controller
             Person::whereIn('id', $persons->modelKeys())->delete();
         });
 
-        return back()->with('success', "Đã xóa {$persons->count()} thành viên đã chọn.");
+        $message = "Đã xóa {$persons->count()} thành viên đã chọn.";
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $message,
+                'deleted_ids' => $persons->modelKeys(),
+            ]);
+        }
+
+        return back()->with('success', $message);
     }
 
     private function rules(Request $request, bool $isHouseholdHead = false, ?Person $person = null, ?PersonEducation $education = null): array

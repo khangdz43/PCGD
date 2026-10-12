@@ -14,10 +14,10 @@
         <div class="household-page-actions d-flex flex-wrap gap-2">
             <!-- request()->query())  là lấy toàn bộ tham số lọc trên url truyền sang route này -->
             @can('export-households')
-                <a class="btn btn-outline-success" id="export-households-button" href="{{ route('households.export', request()->query(), false) }}">
+                <a class="btn btn-outline-success" id="export-households-button" href="{{ route('households.export', request()->query(), false) }}" data-turbo="false">
                     <i class="fa-solid fa-file-export me-1" aria-hidden="true"></i> Xuất dữ liệu
                 </a>
-                <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}">
+                <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}" data-turbo="false">
                     <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải mẫu Excel
                 </a>
             @endcan
@@ -67,7 +67,7 @@
 
     <div id="household-results" aria-live="polite">
         @can('delete-households')
-            <form id="bulk-delete-form" method="POST" action="{{ route('households.bulk-destroy', request()->query(), false) }}" class="household-bulk-actions d-flex align-items-center gap-2 mb-3" onsubmit="return confirm('Xóa các phiếu đã chọn sẽ xóa cả danh sách thành viên trong hộ. Bạn có chắc không?')">
+            <form id="bulk-delete-form" method="POST" action="{{ route('households.bulk-destroy', request()->query(), false) }}" class="household-bulk-actions d-flex align-items-center gap-2 mb-3" data-confirm="Xóa các phiếu đã chọn sẽ xóa cả danh sách thành viên trong hộ. Bạn có chắc không?" data-confirm-title="Xác nhận xóa phiếu">
                 @csrf
                 @method('DELETE')
                 <button class="btn btn-outline-danger" type="submit" id="bulk-delete-button" disabled>
@@ -128,7 +128,7 @@
                                 </a>
                             @endcan
                             @can('delete-households')
-                                <form class="d-inline" method="POST" action="{{ route('households.destroy', $household, false) }}" onsubmit="return confirm('Xóa hộ này sẽ xóa danh sách nhân khẩu của hộ. Bạn có chắc không?')">
+                                <form class="d-inline" method="POST" action="{{ route('households.destroy', $household, false) }}" data-confirm="Xóa hộ này sẽ xóa danh sách nhân khẩu của hộ. Bạn có chắc không?" data-confirm-title="Xác nhận xóa hộ">
                                     @csrf
                                     @method('DELETE')
                                     <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa hộ" aria-label="Xóa hộ {{ $household->household_code }}">
@@ -147,9 +147,48 @@
             </table>
         </div>
 
-        <div class="mt-3">
-            {{ $households->links('pagination::bootstrap-5') }}
-        </div>
+        @if ($households->hasPages())
+            <nav class="d-flex justify-content-end mt-3" aria-label="Phân trang phiếu điều tra">
+                <ul class="pagination pagination-sm mb-0 align-items-center">
+                    <li class="page-item {{ $households->onFirstPage() ? 'disabled' : '' }}">
+                        @if ($households->onFirstPage())
+                            <span class="page-link px-3" aria-disabled="true" aria-label="Trang trước">&lsaquo;</span>
+                        @else
+                            <a class="page-link px-3" href="{{ $households->previousPageUrl() }}" rel="prev" aria-label="Trang trước">&lsaquo;</a>
+                        @endif
+                    </li>
+                    <li class="page-item">
+                        <form method="GET" action="{{ route('households.index', [], false) }}" class="d-flex h-100">
+                            @foreach (request()->except('page') as $key => $value)
+                                @if (is_scalar($value))
+                                    <input type="hidden" name="{{ $key }}" value="{{ $value }}">
+                                @endif
+                            @endforeach
+                            <label for="household-page-select" class="visually-hidden">Chọn trang phiếu điều tra</label>
+                            <select
+                                id="household-page-select"
+                                name="page"
+                                class="form-select form-select-sm rounded-0"
+                                style="width: 4rem; min-height: 100%"
+                                aria-label="Chọn trang phiếu điều tra"
+                                data-household-page-select
+                            >
+                                @for ($page = 1; $page <= $households->lastPage(); $page++)
+                                    <option value="{{ $page }}" @selected($page === $households->currentPage())>{{ $page }}</option>
+                                @endfor
+                            </select>
+                        </form>
+                    </li>
+                    <li class="page-item {{ $households->hasMorePages() ? '' : 'disabled' }}">
+                        @if ($households->hasMorePages())
+                            <a class="page-link px-3" href="{{ $households->nextPageUrl() }}" rel="next" aria-label="Trang sau">&rsaquo;</a>
+                        @else
+                            <span class="page-link px-3" aria-disabled="true" aria-label="Trang sau">&rsaquo;</span>
+                        @endif
+                    </li>
+                </ul>
+            </nav>
+        @endif
 
         <section class="member-browser mt-4">
             <div class="member-browser-heading d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
@@ -160,7 +199,7 @@
                 <div class="member-browser-actions d-flex align-items-center gap-2">
                     <span class="small text-muted" id="member-selection-summary">Chưa chọn hộ</span>
                     @can('delete-households')
-                        <form id="bulk-member-delete-form" method="POST" action="{{ route('households.members.bulk-destroy', [], false) }}" onsubmit="return confirm('Xóa các thành viên đã chọn?')">
+                        <form id="bulk-member-delete-form" method="POST" action="{{ route('households.members.bulk-destroy', [], false) }}" data-ajax-bulk-member-delete data-confirm="Xóa các thành viên đã chọn?" data-confirm-title="Xác nhận xóa thành viên">
                             @csrf
                             @method('DELETE')
                             <button class="btn btn-sm btn-outline-danger" type="submit" id="bulk-member-delete-button" disabled>
@@ -179,7 +218,6 @@
                                     <th class="text-center member-fixed-column member-sticky-column member-sticky-select" rowspan="2">Chọn</th>
                                 @endcan
                                 <th class="member-fixed-column member-sticky-column member-sticky-index" rowspan="2">STT</th>
-                                <th class="member-fixed-column member-sticky-column member-sticky-household" rowspan="2">Hộ</th>
                                 <th class="member-group member-group-person" colspan="9">Thông tin đối tượng</th>
                                 <th class="member-group member-group-education" colspan="17">Thông tin học tập</th>
                                 <th class="member-group member-group-support" colspan="13">Khuyết tật và hoàn cảnh</th>
@@ -241,7 +279,6 @@
                                     </td>
                                 @endcan
                                 <td class="member-sticky-column member-sticky-index">{{ $memberIndex + 1 }}</td>
-                                <td class="text-nowrap member-sticky-column member-sticky-household">{{ $household->household_code }}</td>
                                 <td class="fw-medium text-nowrap member-sticky-column member-sticky-name">{{ trim($person->last_name . ' ' . $person->first_name) }}</td>
                                 <td class="text-nowrap">{{ $person->dob?->format('d/m/Y') ?? $person->dob_str ?? '—' }}</td>
                                 <td>{{ ['NAM' => 'Nam', 'NU' => 'Nữ'][$person->gender] ?? '—' }}</td>
@@ -400,7 +437,6 @@
         font-size: 0.78rem;
         --member-select-width: 3rem;
         --member-index-width: 2.25rem;
-        --member-household-width: 7rem;
         --member-name-width: 9rem;
     }
 
@@ -472,19 +508,8 @@
         max-width: var(--member-index-width);
     }
 
-    .member-table .member-sticky-household {
-        left: calc(var(--member-select-width) + var(--member-index-width));
-        width: var(--member-household-width);
-        min-width: var(--member-household-width);
-        max-width: var(--member-household-width);
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-        overflow: visible;
-        text-overflow: clip;
-    }
-
     .member-table .member-sticky-name {
-        left: calc(var(--member-select-width) + var(--member-index-width) + var(--member-household-width));
+        left: calc(var(--member-select-width) + var(--member-index-width));
         width: var(--member-name-width);
         min-width: var(--member-name-width);
         max-width: var(--member-name-width);
@@ -502,17 +527,12 @@
         left: 0;
     }
 
-    .member-table:not(.member-table-has-select) .member-sticky-household {
+    .member-table:not(.member-table-has-select) .member-sticky-name {
         left: var(--member-index-width);
     }
 
-    .member-table:not(.member-table-has-select) .member-sticky-name {
-        left: calc(var(--member-index-width) + var(--member-household-width));
-    }
-
     .member-table.member-hide-select .member-sticky-select,
-    .member-table.member-hide-index .member-sticky-index,
-    .member-table.member-hide-household .member-sticky-household {
+    .member-table.member-hide-index .member-sticky-index {
         transform: translateX(-105%);
         opacity: 0;
         pointer-events: none;
@@ -522,23 +542,11 @@
         left: 0;
     }
 
-    .member-table.member-hide-select .member-sticky-household {
+    .member-table.member-hide-select .member-sticky-name {
         left: var(--member-index-width);
     }
 
-    .member-table.member-hide-select .member-sticky-name {
-        left: calc(var(--member-index-width) + var(--member-household-width));
-    }
-
-    .member-table.member-hide-select.member-hide-index .member-sticky-household {
-        left: 0;
-    }
-
     .member-table.member-hide-select.member-hide-index .member-sticky-name {
-        left: var(--member-household-width);
-    }
-
-    .member-table.member-hide-select.member-hide-index.member-hide-household .member-sticky-name {
         left: 0;
     }
 
@@ -559,7 +567,6 @@
         .member-table {
             --member-select-width: 2.5rem;
             --member-index-width: 1.75rem;
-            --member-household-width: 4rem;
             --member-name-width: 6rem;
             font-size: 0.72rem;
         }
@@ -683,6 +690,7 @@
     }
 </style>
 <script>
+    (() => {
     const filterForm = document.getElementById('household-filter-form');
     const results = document.getElementById('household-results');
     const filterStatus = document.getElementById('household-filter-status');
@@ -731,6 +739,49 @@
         if (button) button.disabled = !results.querySelector('.member-checkbox:checked');
     }
 
+    document.addEventListener('submit', async (event) => {
+        const form = event.target;
+        if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-ajax-bulk-member-delete')) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (!await window.appConfirm(form.dataset.confirm, {
+            title: form.dataset.confirmTitle,
+            confirmText: 'Xóa thành viên',
+        })) return;
+
+        const button = form.querySelector('button[type="submit"]');
+        const personIds = new FormData(form).getAll('person_ids[]').map(Number);
+        if (!button || personIds.length === 0) return;
+        button.disabled = true;
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'DELETE',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': form.querySelector('input[name="_token"]').value,
+                },
+                body: JSON.stringify({ person_ids: personIds }),
+                credentials: 'same-origin',
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || 'Không thể xóa thành viên.');
+
+            const deletedIds = new Set(result.deleted_ids.map(String));
+            results.querySelectorAll('.member-row').forEach((row) => {
+                if (deletedIds.has(row.querySelector('.member-checkbox')?.value)) row.remove();
+            });
+            updateMemberTable();
+            window.showAppNotification('success', result.message);
+        } catch (error) {
+            button.disabled = false;
+            window.showAppNotification('error', error.message || 'Không thể xóa thành viên.');
+        }
+    }, true);
+
     function filterUrl() {
         const url = new URL(filterForm.action, window.location.href);
         url.search = '';
@@ -744,7 +795,7 @@
         clearFiltersButton.disabled = ![...new FormData(filterForm).values()].some((value) => String(value).trim());
     }
 
-    async function refreshHouseholds(url = filterUrl()) {
+    async function refreshHouseholds(url = filterUrl(), historyMode = 'replaceState') {
         activeRequest?.abort();
         const requestController = new AbortController();
         activeRequest = requestController;
@@ -767,7 +818,9 @@
             if (!nextResults) throw new Error('Household results were not found in the response.');
 
             results.innerHTML = nextResults.innerHTML;
-            window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+            if (historyMode !== 'none') {
+                window.history[historyMode]({}, '', `${url.pathname}${url.search}`);
+            }
             if (exportButton) {
                 const exportUrl = new URL(exportButton.href, window.location.href);
                 exportUrl.search = url.search;
@@ -819,7 +872,11 @@
     });
 
     results.addEventListener('change', (event) => {
-        if (event.target.id === 'select-all-households') {
+        if (event.target.matches('[data-household-page-select]')) {
+            const pageUrl = new URL(event.target.form.action, window.location.href);
+            pageUrl.search = new URLSearchParams(new FormData(event.target.form)).toString();
+            refreshHouseholds(pageUrl, 'pushState');
+        } else if (event.target.id === 'select-all-households') {
             results.querySelectorAll('.household-checkbox').forEach((checkbox) => {
                 checkbox.checked = event.target.checked;
             });
@@ -831,6 +888,18 @@
         } else if (event.target.matches('.member-checkbox')) {
             updateBulkMemberDeleteState();
         }
+    });
+
+    results.addEventListener('click', (event) => {
+        const link = event.target.closest('nav[aria-label="Phân trang phiếu điều tra"] a[href]');
+        if (!link || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+        event.preventDefault();
+        refreshHouseholds(new URL(link.href, window.location.href), 'pushState');
+    });
+
+    window.addEventListener('popstate', () => {
+        refreshHouseholds(new URL(window.location.href), 'none');
     });
 
     let lastMemberScrollLeft = 0;
@@ -865,7 +934,7 @@
             if (columnSteps > 0) {
                 hiddenMemberColumns = Math.max(
                     0,
-                    Math.min(3, hiddenMemberColumns + columnSteps * direction),
+                    Math.min(2, hiddenMemberColumns + columnSteps * direction),
                 );
                 memberScrollDistance %= 18;
             }
@@ -873,7 +942,6 @@
 
         table.classList.toggle('member-hide-select', hiddenMemberColumns >= 1);
         table.classList.toggle('member-hide-index', hiddenMemberColumns >= 2);
-        table.classList.toggle('member-hide-household', hiddenMemberColumns >= 3);
     }, true);
 
     function markMemberRow(row) {
@@ -974,6 +1042,7 @@
     });
 
     updateClearButton();
+    })();
 </script>
 @endpush
 @endsection

@@ -10,7 +10,7 @@
     </div>
 
     <section class="bg-white border rounded-2 p-4">
-        <form id="household-import-form" method="POST" action="{{ route('households.import.store', [], false) }}" enctype="multipart/form-data">
+        <form id="household-import-form" method="POST" action="{{ route('households.import.store', [], false) }}" enctype="multipart/form-data" data-turbo="false">
             @csrf
             <div class="mb-3">
                 <label for="excel-file" class="form-label">File Excel <span class="text-danger">*</span></label>
@@ -20,15 +20,11 @@
             </div>
 
             <div class="mb-3">
-                <label for="import-school-year" class="form-label">Năm học <span class="text-danger">*</span></label>
-                <select id="import-school-year" name="school_year" class="form-select @error('school_year') is-invalid @enderror" required>
-                    <option value="">-- Chọn năm học --</option>
-                    @php($lastSchoolYear = now()->month >= 8 ? now()->year : now()->year - 1)
-                    @for ($year = 2020; $year <= $lastSchoolYear; $year++)
-                        @php($schoolYear=$year . '-' . ($year + 1))
-                        <option value="{{ $schoolYear }}" @selected(old('school_year')===$schoolYear)>{{ $schoolYear }}</option>
-                        @endfor
-                </select>
+                @php($currentSchoolYearStart = now()->month >= 8 ? now()->year : now()->year - 1)
+                @php($currentSchoolYear = $currentSchoolYearStart . '-' . ($currentSchoolYearStart + 1))
+                <label for="import-school-year" class="form-label">Năm học áp dụng</label>
+                <input id="import-school-year" class="form-control @error('school_year') is-invalid @enderror" value="{{ $currentSchoolYear }}" readonly>
+                <input type="hidden" name="school_year" value="{{ $currentSchoolYear }}">
                 @error('school_year') <div class="invalid-feedback">{{ $message }}</div> @enderror
             </div>
 
@@ -44,6 +40,8 @@
                 'communeCode' => $communeCode,
                 'villageCode' => $villageCode,
                 'villageRequired' => $villageRequired,
+                'initialCommune' => $initialCommune,
+                'initialVillages' => $initialVillages,
                 ])
             </div>
 
@@ -51,7 +49,7 @@
                 <button class="btn btn-primary" id="household-import-submit" type="submit">
                     <i class="fa-solid fa-file-import me-1" aria-hidden="true"></i> Nhập dữ liệu
                 </button>
-                <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}">
+                <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}" data-turbo="false">
                     <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải mẫu Excel
                 </a>
                 @can('view-households')
@@ -59,70 +57,55 @@
                 @else
                     <a class="btn btn-outline-secondary" href="{{ route('index', [], false) }}">Hủy</a>
                 @endcan
+                <a class="btn btn-outline-info" href="{{ route('households.import-history', [], false) }}">
+                    <i class="fa-solid fa-clock-rotate-left me-1" aria-hidden="true"></i> Lịch sử tải lên
+                </a>
             </div>
         </form>
+
     </section>
 </div>
 
 @push('scripts')
-<style>
-    .import-loading-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 2000;
-        display: grid;
-        place-items: center;
-        padding: 1rem;
-        background: rgba(15, 23, 42, 0.72);
-        color: #fff;
-        text-align: center;
-    }
-
-    .import-loading-overlay[hidden] {
-        display: none;
-    }
-
-    .import-loading-content {
-        display: grid;
-        justify-items: center;
-        gap: 0.75rem;
-    }
-</style>
 <script>
-    const importForm = document.getElementById('household-import-form');
-    let importInProgress = false;
+    (() => {
+        const importForm = document.getElementById('household-import-form');
+        if (!importForm || importForm.dataset.queueReady === 'true') return;
+        importForm.dataset.queueReady = 'true';
 
-    importForm.addEventListener('submit', (event) => {
         const submitButton = document.getElementById('household-import-submit');
 
-        if (importInProgress) {
+        importForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            return;
-        }
+            if (submitButton.disabled) return;
 
-        event.preventDefault();
-        importInProgress = true;
-        submitButton.disabled = true;
-        submitButton.setAttribute('aria-busy', 'true');
-        submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Đang nhập...';
+            submitButton.disabled = true;
+            submitButton.setAttribute('aria-busy', 'true');
+            submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Đang tải lên...';
 
-        const overlay = document.createElement('div');
-        overlay.className = 'import-loading-overlay';
-        overlay.setAttribute('role', 'status');
-        overlay.setAttribute('aria-live', 'assertive');
-        overlay.setAttribute('tabindex', '-1');
-        overlay.innerHTML = '<div class="import-loading-content"><span class="spinner-border" aria-hidden="true"></span><strong>Đang nhập và xử lý file Excel...</strong><span>Vui lòng chờ, không đóng hoặc rời khỏi trang.</span></div>';
+            try {
+                const response = await fetch(importForm.action, {
+                    method: 'POST',
+                    body: new FormData(importForm),
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+                const payload = await response.json();
 
-        Array.from(document.body.children).forEach((element) => {
-            element.inert = true;
+                if (response.status !== 202) {
+                    const validationMessage = Object.values(payload.errors || {}).flat()[0];
+                    throw new Error(validationMessage || payload.message || 'Không thể đưa file vào hàng đợi.');
+                }
+
+                window.location.href = `${@json(route('households.import-history', [], false))}?import_id=${encodeURIComponent(payload.import_id)}`;
+            } catch (error) {
+                submitButton.disabled = false;
+                submitButton.removeAttribute('aria-busy');
+                submitButton.innerHTML = '<i class="fa-solid fa-file-import me-1" aria-hidden="true"></i> Nhập dữ liệu';
+                window.showAppNotification('error', error.message || 'Không thể tải file lên.');
+            }
         });
-        document.body.setAttribute('aria-busy', 'true');
-        importForm.setAttribute('aria-busy', 'true');
-        document.body.appendChild(overlay);
-        overlay.focus();
-
-        window.requestAnimationFrame(() => importForm.submit());
-    });
+    })();
 </script>
 @endpush
 @endsection

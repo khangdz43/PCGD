@@ -2,8 +2,16 @@
 
 use App\Http\Controllers\Admin\AccessControl\RoleController;
 use App\Http\Controllers\Admin\AccessControl\UserRoleController;
-use App\Http\Controllers\Admin\OrganizationAccountController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+
+Route::get('admin', function (Request $request) {
+    return $request->user()->can('manage-access-control')
+        ? to_route('admin.roles.index')
+        : to_route('admin.users.index');
+})
+    ->middleware(['auth', 'active'])
+    ->name('admin.index');
 
 Route::prefix('admin')
     ->name('admin.')
@@ -20,12 +28,4 @@ Route::prefix('admin')
     ->group(function (): void {
         Route::patch('users/{user}/status', [UserRoleController::class, 'updateStatus'])->name('users.status');
         Route::resource('users', UserRoleController::class)->except('show', 'destroy');
-    });
-
-Route::prefix('admin')
-    ->name('admin.')
-    ->middleware(['auth', 'active', 'can:view-organization-accounts'])
-    ->group(function (): void {
-        Route::get('organization-accounts', [OrganizationAccountController::class, 'index'])
-            ->name('organization-accounts.index');
     });

@@ -114,7 +114,7 @@
 @if ($method === 'POST')
 @push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    (() => {
         const codeInput = document.querySelector('#code');
         const nameInput = document.querySelector('#name');
         const locationPicker = document.querySelector(
@@ -185,7 +185,7 @@
             if (codeInput.value !== lastGeneratedCode) {
                 codeWasEdited = true;
             }
-        });
+        })();
 
         nameInput.addEventListener('input', updateCode);
 

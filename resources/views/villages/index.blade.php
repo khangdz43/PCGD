@@ -123,6 +123,7 @@
     }
 </style>
 <script>
+    (() => {
     const villageFilterForm = document.getElementById('village-filter-form');
     const villageResults = document.getElementById('village-results');
     const villageFilterStatus = document.getElementById('village-filter-status');
@@ -216,12 +217,28 @@
         }
     });
 
+    villageResults.addEventListener('change', (event) => {
+        const pageSelect = event.target.closest('nav[aria-label="Phân trang"] select[data-pagination-select]');
+        if (!pageSelect) return;
+        event.preventDefault();
+
+        const pageForm = pageSelect.form;
+        const url = new URL(pageForm.action, window.location.href);
+        new URLSearchParams(new FormData(pageForm)).forEach((value, key) => {
+            if (value) url.searchParams.set(key, value);
+        });
+        refreshVillages(url);
+    });
+
     villageResults.addEventListener('submit', async (event) => {
         const form = event.target.closest('.village-delete-form');
         if (!form) return;
 
         event.preventDefault();
-        if (!window.confirm(`Bạn có chắc muốn xóa thôn/xóm "${form.dataset.villageName}"?`)) return;
+        if (!await window.appConfirm(`Bạn có chắc muốn xóa thôn/xóm "${form.dataset.villageName}"?`, {
+            title: 'Xác nhận xóa thôn/xóm',
+            confirmText: 'Xóa thôn/xóm',
+        })) return;
 
         const submitButton = form.querySelector('button[type="submit"]');
         submitButton.disabled = true;
@@ -265,6 +282,7 @@
     });
 
     updateVillageClearButton();
+    })();
 </script>
 @endpush
 @endsection

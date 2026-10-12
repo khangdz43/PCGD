@@ -8,39 +8,47 @@
             </div>
         </div>
         @auth
-        <div class="app-account d-flex align-items-center gap-3">
-            <div class="text-end">
-                <a class="app-account-name badge bg-success text-decoration-none" href="{{ route('account.show') }}" title="Xem thông tin tài khoản">
-                    <i class="fa-solid fa-user me-1"></i>
-                    {{ auth()->user()->name }}
-                    <i class="fa-solid fa-gear ms-1" aria-hidden="true"></i>
-                </a>
-
-                @php
-                $user = auth()->user();
-                @endphp
-
-                <div class="app-account-location small text-muted mt-1">
-                    @if($user->village)
-                    <i class="fa-solid fa-location-dot me-1"></i>
-                    Phạm vi: Thôn {{ $user->village->name }}
-                    @elseif($user->commune)
-                    <i class="fa-solid fa-location-dot me-1"></i>
-                    Phạm vi: Xã {{ $user->commune->name }}
-                    @elseif($user->province)
-                    <i class="fa-solid fa-location-dot me-1"></i>
-                    Phạm vi: Tỉnh {{ $user->province->name }}
-                    @else
-                    <i class="fa-solid fa-globe me-1"></i>
-                    Phạm vi: Toàn hệ thống
-                    @endif
+        @php
+            $user = auth()->user();
+            $schoolYearStart = now()->month >= 8 ? now()->year : now()->year - 1;
+            $currentSchoolYear = $schoolYearStart.'-'.($schoolYearStart + 1);
+        @endphp
+        <div class="app-account">
+            <div class="app-account-card">
+                <span class="app-account-avatar" aria-hidden="true">
+                    <i class="fa-solid fa-user"></i>
+                </span>
+                <div class="app-account-details">
+                    <a class="app-account-name" href="{{ route('account.show') }}" title="Xem thông tin tài khoản">
+                        <span>{{ $user->name }}</span>
+                        <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                    </a>
+                    <div class="app-account-location">
+                        <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+                        <span>
+                            @if($user->village)
+                                Phạm vi: Thôn {{ $user->village->name }}
+                            @elseif($user->commune)
+                                Phạm vi: Xã {{ $user->commune->name }}
+                            @elseif($user->province)
+                                Phạm vi: Tỉnh {{ $user->province->name }}
+                            @else
+                                Phạm vi: Toàn hệ thống
+                            @endif
+                        </span>
+                    </div>
+                    <div class="app-account-location">
+                        <i class="fa-solid fa-calendar-days" aria-hidden="true"></i>
+                        <span>Năm học: {{ $currentSchoolYear }}</span>
+                    </div>
                 </div>
             </div>
 
-            <form method="POST" action="{{ route('logout') }}">
+            <form class="app-logout-form" method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button class="btn btn-outline-secondary btn-sm" type="submit">
-                    Đăng xuất
+                <button class="app-logout-button" type="submit">
+                    <i class="fa-solid fa-arrow-right-from-bracket" aria-hidden="true"></i>
+                    <span>Đăng xuất</span>
                 </button>
             </form>
         </div>

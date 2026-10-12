@@ -29,6 +29,25 @@ class UserRoleController extends Controller
             $provincesQuery->where('code', $actor->province_code);
         }
         $provinces = $provincesQuery->get(['code', 'name']);
+        $showOrganizationTree = $actor->hasRole(Role::SYSTEM_ADMIN)
+            && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS);
+        $unitProvinces = collect();
+        $unitProvinceCounts = collect();
+
+        if ($showOrganizationTree) {
+            $unitProvinces = Province::query()->orderBy('name')->get(['code', 'name']);
+
+            $locatedAccounts = User::query()
+                ->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('roles.name', Role::SYSTEM_ADMIN));
+
+            $unitProvinceCounts = (clone $locatedAccounts)
+                ->select('province_code')
+                ->selectRaw('COUNT(*) AS account_count')
+                ->whereNotNull('province_code')
+                ->groupBy('province_code')
+                ->pluck('account_count', 'province_code');
+
+        }
 
         $filter = $request->validate([
             'province_code' => ['nullable', 'string', Rule::in($provinces->pluck('code')->all())],
@@ -49,7 +68,7 @@ class UserRoleController extends Controller
         $communeCode = $filter['commune_code'] ?? null;
         $villageCode = $filter['village_code'] ?? null;
         $query = $this->manageableUsers($actor)
-            ->with(['roles', 'villages', 'commune', 'province', 'directPermissions']);
+            ->with(['roles.permissions', 'villages', 'commune', 'province']);
 
         if (filled($provinceCode)) {
             $query->where('province_code', $provinceCode);
@@ -63,13 +82,54 @@ class UserRoleController extends Controller
 
         $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode);
 
-        $allUsers = $query->orderBy('name')->get();
+        $query->orderByRaw(
+            'CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM model_has_roles AS account_model_roles
+                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
+                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
+                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
+                    WHERE account_model_roles.model_id = users.id
+                        AND account_model_roles.model_type = ?
+                        AND account_roles.scope_level = ?
+                        AND account_permissions.name IN (?, ?)
+                ) THEN 0
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM model_has_roles AS account_model_roles
+                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
+                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
+                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
+                    WHERE account_model_roles.model_id = users.id
+                        AND account_model_roles.model_type = ?
+                        AND account_roles.scope_level = ?
+                        AND account_permissions.name IN (?, ?)
+                ) THEN 1
+                ELSE 2
+            END',
+            [
+                User::class,
+                'province',
+                AccessPermission::MANAGE_USER_ACCOUNTS,
+                AccessPermission::MANAGE_ACCESS_CONTROL,
+                User::class,
+                'commune',
+                AccessPermission::MANAGE_USER_ACCOUNTS,
+                AccessPermission::MANAGE_ACCESS_CONTROL,
+            ],
+        )->orderBy('name');
+
+        $allUsers = $showOrganizationTree
+            ? $query->paginate(30)->withQueryString()
+            : $query->get();
+        $totalUserCount = $showOrganizationTree ? $allUsers->total() : $allUsers->count();
 
         // Xây dựng cấu trúc phân cấp: Tỉnh → Xã → Thôn → Users
         $hierarchy = [];
         $noLocationUsers = collect();
 
-        foreach ($allUsers as $user) {
+        foreach ($showOrganizationTree ? collect() : $allUsers as $user) {
             $provinceName = $user->province?->name;
             $provinceCode = $user->province_code;
             $communeName = $user->commune?->name;
@@ -130,12 +190,16 @@ class UserRoleController extends Controller
             'hierarchy',
             'noLocationUsers',
             'allUsers',
+            'totalUserCount',
             'actor',
             'provinces',
             'provinceCode',
             'communeCode',
             'villageCode',
             'isFiltering',
+            'showOrganizationTree',
+            'unitProvinces',
+            'unitProvinceCounts',
         ));
     }
 

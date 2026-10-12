@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Households;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessHouseholdImport;
+use App\Models\Commune;
 use App\Models\Ethnicity;
 use App\Models\Household;
 use App\Models\ImportLog;
@@ -11,8 +13,12 @@ use App\Models\Province;
 use App\Models\Role;
 use App\Models\School;
 use App\Support\DataAccessScope;
+use App\Support\HouseholdImportChunkReadFilter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -42,14 +48,33 @@ class HouseholdImportExportController extends Controller
         $villageCode = count($managedVillageCodes) === 1
             ? $managedVillageCodes[0]
             : null;
-        $villageRequired = $user->roleScopeLevel() === 'village';
+        $villageRequired = true;
+        $initialCommune = null;
+        $initialVillages = collect();
+
+        if ($communeCode !== null) {
+            $initialCommune = Commune::query()
+                ->where('code', $communeCode)
+                ->where('province_code', $provinceCode)
+                ->first(['code', 'name']);
+
+            if ($initialCommune !== null) {
+                $villagesQuery = $initialCommune->villages()->orderBy('name');
+                if ($user->roleScopeLevel() === 'village') {
+                    $villagesQuery->whereIn('code', $managedVillageCodes);
+                }
+                $initialVillages = $villagesQuery->get(['code', 'name']);
+            }
+        }
 
         return view('households.import', compact(
             'provinces',
             'provinceCode',
             'communeCode',
             'villageCode',
-            'villageRequired'
+            'villageRequired',
+            'initialCommune',
+            'initialVillages'
         ));
     }
 
@@ -74,21 +99,86 @@ class HouseholdImportExportController extends Controller
                 Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
             ],
             'village_code' => [
-                $request->user()->roleScopeLevel() === 'village' ? 'required' : 'nullable',
+                'required',
                 Rule::exists('villages', 'code')->where('commune_code', $request->input('commune_code')),
             ],
         ]);
         DataAccessScope::assertHouseholdLocation($request->user(), $data);
 
+        $importId = (string) Str::uuid();
+        $path = $data['file']->store('household-imports/'.$importId, 'local');
+        $importLog = ImportLog::create([
+            'file_name' => $data['file']->getClientOriginalName(),
+            'user_id' => $request->user()->id,
+            'file_path' => $path,
+            'context' => [
+                'school_year' => $data['school_year'],
+                'province_code' => $data['province_code'],
+                'commune_code' => $data['commune_code'],
+                'village_code' => $data['village_code'],
+            ],
+            'status' => 'PENDING',
+        ]);
+
+        ProcessHouseholdImport::dispatch($importLog->id)->onQueue('imports');
+
+        return response()->json([
+            'import_id' => $importLog->id,
+            'status_url' => route('households.import.status', $importLog, false),
+        ], 202);
+    }
+
+    public function processQueuedImport(Request $request, ImportLog $importLog)
+    {
+        $data = [
+            'file' => $request->file('file'),
+            'school_year' => $request->input('school_year'),
+            'province_code' => $request->input('province_code'),
+            'commune_code' => $request->input('commune_code'),
+            'village_code' => $request->input('village_code'),
+        ];
+        DataAccessScope::assertHouseholdLocation($request->user(), $data);
+
         try {
-            // $data['file']->getRealPath() lấy path thật của file , song tạo object đọc excel
             $reader = IOFactory::createReaderForFile($data['file']->getRealPath());
-            // đọc toàn bộ file excel vào bộ nhớ
-            $spreadsheet = $reader->load($data['file']->getRealPath());
-            //  lấy worksheet chứa dữ liệu
-            $sheet = $this->dataSheet($spreadsheet);
+            $worksheetInfo = $reader->listWorksheetInfo($data['file']->getRealPath());
+            $worksheetName = null;
+            $visibleDataWorksheet = null;
+            foreach ($worksheetInfo as $info) {
+                if (
+                    $visibleDataWorksheet === null
+                    && $info['sheetState'] === 'visible'
+                    && $info['totalColumns'] >= 15
+                    && $info['totalRows'] >= 5
+                ) {
+                    $visibleDataWorksheet = $info['worksheetName'];
+                }
+
+                $reader->setLoadSheetsOnly([$info['worksheetName']]);
+                $reader->setReadFilter(new HouseholdImportChunkReadFilter(2, 2));
+                $headerWorkbook = $reader->load($data['file']->getRealPath());
+                $headerSheet = $headerWorkbook->getSheet(0);
+                $matchesTemplate = $this->normalize($this->cell($headerSheet, 'O2')) === 'sophieu'
+                    && $this->normalize($this->cell($headerSheet, 'AY2')) === 'ghichu';
+                $headerWorkbook->disconnectWorksheets();
+                if ($matchesTemplate) {
+                    $worksheetName = $info['worksheetName'];
+                    break;
+                }
+            }
+            $worksheetName ??= $visibleDataWorksheet;
+            if ($worksheetName === null) {
+                throw new \RuntimeException('File Excel không có trang tính dữ liệu.');
+            }
+            $worksheet = collect($worksheetInfo)->firstWhere('worksheetName', $worksheetName);
+            $highestDataRow = (int) ($worksheet['totalRows'] ?? 0);
         } catch (Throwable) {
-            return back()->withErrors(['file' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.'])->withInput();
+            $importLog->update([
+                'status' => 'FAILED',
+                'error_details' => [['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.']],
+            ]);
+
+            return response()->json(['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.'], 422);
         }
 
         $ethnicityCodes = [];
@@ -102,131 +192,155 @@ class HouseholdImportExportController extends Controller
         $groups = [];
         $errors = [];
         $totalRows = 0;
+        $importLog->update([
+            'status' => 'PROCESSING',
+            'total_rows' => max(0, $highestDataRow - 4),
+            'processed_rows' => 0,
+        ]);
 
-        for ($row = 5; $row <= $sheet->getHighestDataRow(); $row++) {
-            // map các trường vào cell
-            $householdCode = $this->cell($sheet, 'O'.$row);
-            $lastName = $this->cell($sheet, 'C'.$row);
-            $firstName = $this->cell($sheet, 'D'.$row);
-            // bỏ qua các dòng trống k có dữ liệu
-            if ($householdCode === '' && $lastName === '' && $firstName === '') {
-                continue;
-            }
+        for ($chunkStart = 5; $chunkStart <= $highestDataRow; $chunkStart += 500) {
+            $chunkEnd = min($chunkStart + 499, $highestDataRow);
+            $reader->setLoadSheetsOnly([$worksheetName]);
+            $reader->setReadFilter(new HouseholdImportChunkReadFilter($chunkStart, $chunkEnd));
+            $chunkWorkbook = $reader->load($data['file']->getRealPath());
+            $sheet = $chunkWorkbook->getSheetByName($worksheetName);
 
-            if ($householdCode === '' || $lastName === '' || $firstName === '') {
-                $errors[] = "Dòng {$row}: cần có Số phiếu, Họ đệm và Tên.";
+            for ($row = $chunkStart; $row <= $chunkEnd; $row++) {
+                if (($row - 4) % 500 === 0) {
+                    $importLog->update(['processed_rows' => $row - 4]);
+                }
 
-                continue;
-            }
+                // map các trường vào cell
+                $householdCode = $this->cell($sheet, 'O'.$row);
+                $lastName = $this->cell($sheet, 'C'.$row);
+                $firstName = $this->cell($sheet, 'D'.$row);
+                // bỏ qua các dòng trống k có dữ liệu
+                if ($householdCode === '' && $lastName === '' && $firstName === '') {
+                    continue;
+                }
 
-            $ethnicityName = $this->cell($sheet, 'I'.$row);
-            // nếu trống để code là null còn cps trog mảng kia thì trả ra cái code để lưu code dân tộc
-            $ethnicityCode = $ethnicityName === '' ? null : ($ethnicityCodes[$this->normalize($ethnicityName)] ?? null);
-            if ($ethnicityName === '') {
-                $errors[] = "Dòng {$row}: cần có dân tộc.";
-            } elseif ($ethnicityCode === null) {
-                $errors[] = "Dòng {$row}: dân tộc '{$ethnicityName}' chưa có trong danh mục.";
-            }
+                if ($householdCode === '' || $lastName === '' || $firstName === '') {
+                    $errors[] = ['row' => $row, 'message' => 'Cần có Số phiếu, Họ đệm và Tên.'];
 
-            $birthDate = $this->birthDate($sheet, $row);
+                    continue;
+                }
 
-            if ($birthDate['date'] === null) {
-                $errors[] = "Dòng {$row}: cần có ngày, tháng và năm sinh hợp lệ.";
-            } elseif ($birthDate['date'] > now()->toDateString()) {
-                $errors[] = "Dòng {$row}: ngày sinh không được ở tương lai.";
-            }
-            //
-            $schoolCode = $this->cell($sheet, 'V'.$row);
-            if ($schoolCode !== '') {
-                if ($schoolCommuneCodes->has($schoolCode)) {
-                    if ($schoolCommuneCodes->get($schoolCode) !== $data['commune_code']) {
-                        $errors[] = "Dòng {$row}: mã trường '{$schoolCode}' không thuộc xã được chọn.";
+                $ethnicityName = $this->cell($sheet, 'I'.$row);
+                // nếu trống để code là null còn cps trog mảng kia thì trả ra cái code để lưu code dân tộc
+                $ethnicityCode = $ethnicityName === '' ? null : ($ethnicityCodes[$this->normalize($ethnicityName)] ?? null);
+                if ($ethnicityName === '') {
+                    $errors[] = ['row' => $row, 'message' => 'Cần có dân tộc.'];
+                } elseif ($ethnicityCode === null) {
+                    $errors[] = ['row' => $row, 'message' => "Dân tộc '{$ethnicityName}' chưa có trong danh mục."];
+                }
+
+                $birthDate = $this->birthDate($sheet, $row);
+
+                if ($birthDate['date'] === null) {
+                    $errors[] = ['row' => $row, 'message' => 'Cần có ngày, tháng và năm sinh hợp lệ.'];
+                } elseif ($birthDate['date'] > now()->toDateString()) {
+                    $errors[] = ['row' => $row, 'message' => 'Ngày sinh không được ở tương lai.'];
+                }
+                //
+                $schoolCode = $this->cell($sheet, 'V'.$row);
+                if ($schoolCode !== '') {
+                    if ($schoolCommuneCodes->has($schoolCode)) {
+                        if ($schoolCommuneCodes->get($schoolCode) !== $data['commune_code']) {
+                            $errors[] = ['row' => $row, 'message' => "Mã trường '{$schoolCode}' không thuộc xã được chọn."];
+                        }
+                    } else {
+                        $errors[] = ['row' => $row, 'message' => "Mã trường '{$schoolCode}' không tồn tại trong danh mục trường học."];
                     }
-                } else {
-                    $errors[] = "Dòng {$row}: mã trường '{$schoolCode}' không tồn tại trong danh mục trường học.";
                 }
-            }
 
-            $record = [
-                'row' => $row,
-                'household_code' => $householdCode,
-                'last_name' => $lastName,
-                'first_name' => $firstName,
-                'dob' => $birthDate,
-                // tick là nữ ko nam
-                'gender' => $this->isMarked($this->cell($sheet, 'H'.$row)) ? 'NU' : 'NAM',
-                'ethnicity_code' => $ethnicityCode,
+                $record = [
+                    'row' => $row,
+                    'household_code' => $householdCode,
+                    'last_name' => $lastName,
+                    'first_name' => $firstName,
+                    'dob' => $birthDate,
+                    // tick là nữ ko nam
+                    'gender' => $this->isMarked($this->cell($sheet, 'H'.$row)) ? 'NU' : 'NAM',
+                    'ethnicity_code' => $ethnicityCode,
 
-                'religion' => $this->nullableCell($sheet, 'J'.$row),
-                'priority_type' => $this->nullableCell($sheet, 'K'.$row),
-                'head_last_name' => $this->cell($sheet, 'L'.$row),
-                'head_first_name' => $this->cell($sheet, 'M'.$row),
-                'address' => $this->nullableCell($sheet, 'N'.$row),
-                'residence_type' => $this->cell($sheet, 'P'.$row),
-                'residence_status' => $this->nullableCell($sheet, 'Q'.$row),
-                'academic_block' => $this->nullableCell($sheet, 'R'.$row),
-                'current_class' => $this->nullableCell($sheet, 'S'.$row),
-                'school_code' => $schoolCode ?: null,
-                'graduation_level' => $this->nullableCell($sheet, 'W'.$row),
-                'is_complementary' => $this->isMarked($this->cell($sheet, 'X'.$row)),
-                'graduation_year' => $this->nullableCell($sheet, 'Y'.$row),
-                'vocational_grad_level' => $this->nullableCell($sheet, 'Z'.$row),
-                'vocational_grad_year' => $this->nullableCell($sheet, 'AB'.$row),
-                'finished_class' => $this->nullableCell($sheet, 'AC'.$row),
-                'finished_year' => $this->nullableCell($sheet, 'AD'.$row),
-                'dropped_class' => $this->nullableCell($sheet, 'AE'.$row),
-                'dropped_year' => $this->nullableCell($sheet, 'AF'.$row),
-                'literacy_current_class' => $this->nullableCell($sheet, 'AG'.$row),
-                'literacy_completed_class' => $this->nullableCell($sheet, 'AH'.$row),
-                'literacy_relapse_level' => $this->nullableCell($sheet, 'AI'.$row),
-                'disability' => [
-                    'mobility_disability' => $this->isMarked($this->cell($sheet, 'AJ'.$row)),
-                    'hearing_speech_disability' => $this->isMarked($this->cell($sheet, 'AK'.$row)),
-                    'visual_disability' => $this->isMarked($this->cell($sheet, 'AL'.$row)),
-                    'mental_disability' => $this->isMarked($this->cell($sheet, 'AM'.$row)),
-                    'intellectual_disability' => $this->isMarked($this->cell($sheet, 'AN'.$row)),
-                    'learning_disability' => $this->isMarked($this->cell($sheet, 'AO'.$row)),
-                    'autism' => $this->isMarked($this->cell($sheet, 'AP'.$row)),
-                    'other_disability' => $this->isMarked($this->cell($sheet, 'AQ'.$row)),
-                    'has_disability_cert' => $this->isMarked($this->cell($sheet, 'AR'.$row)),
-                    'can_study' => $this->isMarked($this->cell($sheet, 'AS'.$row)),
-                    'special_circumstance' => $this->nullableCell($sheet, 'AT'.$row),
-                    'special_circumstance_detail' => $this->nullableCell($sheet, 'AU'.$row),
-                ],
-                'relationship_with_head' => $this->nullableCell($sheet, 'AV'.$row),
-                'parent_name' => $this->nullableCell($sheet, 'AW'.$row),
-                'phone' => $this->nullableCell($sheet, 'AX'.$row),
-                'note' => $this->nullableCell($sheet, 'AY'.$row),
-            ];
+                    'religion' => $this->nullableCell($sheet, 'J'.$row),
+                    'priority_type' => $this->nullableCell($sheet, 'K'.$row),
+                    'head_last_name' => $this->cell($sheet, 'L'.$row),
+                    'head_first_name' => $this->cell($sheet, 'M'.$row),
+                    'address' => $this->nullableCell($sheet, 'N'.$row),
+                    'residence_type' => $this->cell($sheet, 'P'.$row),
+                    'residence_status' => $this->nullableCell($sheet, 'Q'.$row),
+                    'academic_block' => $this->nullableCell($sheet, 'R'.$row),
+                    'current_class' => $this->nullableCell($sheet, 'S'.$row),
+                    'school_code' => $schoolCode ?: null,
+                    'graduation_level' => $this->nullableCell($sheet, 'W'.$row),
+                    'is_complementary' => $this->isMarked($this->cell($sheet, 'X'.$row)),
+                    'graduation_year' => $this->nullableCell($sheet, 'Y'.$row),
+                    'vocational_grad_level' => $this->nullableCell($sheet, 'Z'.$row),
+                    'vocational_grad_year' => $this->nullableCell($sheet, 'AB'.$row),
+                    'finished_class' => $this->nullableCell($sheet, 'AC'.$row),
+                    'finished_year' => $this->nullableCell($sheet, 'AD'.$row),
+                    'dropped_class' => $this->nullableCell($sheet, 'AE'.$row),
+                    'dropped_year' => $this->nullableCell($sheet, 'AF'.$row),
+                    'literacy_current_class' => $this->nullableCell($sheet, 'AG'.$row),
+                    'literacy_completed_class' => $this->nullableCell($sheet, 'AH'.$row),
+                    'literacy_relapse_level' => $this->nullableCell($sheet, 'AI'.$row),
+                    'disability' => [
+                        'mobility_disability' => $this->isMarked($this->cell($sheet, 'AJ'.$row)),
+                        'hearing_speech_disability' => $this->isMarked($this->cell($sheet, 'AK'.$row)),
+                        'visual_disability' => $this->isMarked($this->cell($sheet, 'AL'.$row)),
+                        'mental_disability' => $this->isMarked($this->cell($sheet, 'AM'.$row)),
+                        'intellectual_disability' => $this->isMarked($this->cell($sheet, 'AN'.$row)),
+                        'learning_disability' => $this->isMarked($this->cell($sheet, 'AO'.$row)),
+                        'autism' => $this->isMarked($this->cell($sheet, 'AP'.$row)),
+                        'other_disability' => $this->isMarked($this->cell($sheet, 'AQ'.$row)),
+                        'has_disability_cert' => $this->isMarked($this->cell($sheet, 'AR'.$row)),
+                        'can_study' => $this->isMarked($this->cell($sheet, 'AS'.$row)),
+                        'special_circumstance' => $this->nullableCell($sheet, 'AT'.$row),
+                        'special_circumstance_detail' => $this->nullableCell($sheet, 'AU'.$row),
+                    ],
+                    'relationship_with_head' => $this->nullableCell($sheet, 'AV'.$row),
+                    'parent_name' => $this->nullableCell($sheet, 'AW'.$row),
+                    'phone' => $this->nullableCell($sheet, 'AX'.$row),
+                    'note' => $this->nullableCell($sheet, 'AY'.$row),
+                ];
 
-            foreach (
-                [
-                    'graduation_year' => 'Năm tốt nghiệp',
-                    'vocational_grad_year' => 'Năm tốt nghiệp nghề',
-                    'finished_year' => 'Năm học xong',
-                    'dropped_year' => 'Năm bỏ học',
-                ] as $field => $label
-            ) {
-                if ($this->hasFutureYear($record[$field])) {
-                    $errors[] = "Dòng {$row}: {$label} không được lớn hơn ".now()->year.'.';
+                foreach (
+                    [
+                        'graduation_year' => 'Năm tốt nghiệp',
+                        'vocational_grad_year' => 'Năm tốt nghiệp nghề',
+                        'finished_year' => 'Năm học xong',
+                        'dropped_year' => 'Năm bỏ học',
+                    ] as $field => $label
+                ) {
+                    if ($this->hasFutureYear($record[$field])) {
+                        $errors[] = ['row' => $row, 'message' => "{$label} không được lớn hơn ".now()->year.'.'];
+                    }
                 }
-            }
 
-            // lấy value của key householdCode trong mảng groups
-            $recordsByCode = $groups[$householdCode] ?? [];
-            // push thêm nhân khẩu vào
-            $recordsByCode[] = $record;
-            // value của mảng mà key đó sẽ bằng mảng mới
-            $groups[$householdCode] = $recordsByCode;
-            $totalRows++;
+                // lấy value của key householdCode trong mảng groups
+                $recordsByCode = $groups[$householdCode] ?? [];
+                // push thêm nhân khẩu vào
+                $recordsByCode[] = $record;
+                // value của mảng mà key đó sẽ bằng mảng mới
+                $groups[$householdCode] = $recordsByCode;
+                $totalRows++;
+            }
+            $chunkWorkbook->disconnectWorksheets();
         }
+        $importLog->update(['processed_rows' => max(0, $highestDataRow - 4)]);
 
         if ($totalRows === 0) {
-            $errors[] = 'Không tìm thấy dòng dữ liệu. Dữ liệu cần bắt đầu từ dòng 5.';
+            $errors[] = ['row' => null, 'message' => 'Không tìm thấy dòng dữ liệu. Dữ liệu cần bắt đầu từ dòng 5.'];
         }
 
         if ($errors !== []) {
-            return back()->withErrors(['file' => implode(' ', array_slice($errors, 0, 10))])->withInput();
+            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
+
+            return response()->json(['message' => implode(' ', array_map(
+                static fn (array $error): string => $error['message'],
+                array_slice($errors, 0, 10)
+            ))], 422);
         }
 
         // $groups = [
@@ -259,7 +373,12 @@ class HouseholdImportExportController extends Controller
 
             if (count($headRecords) > 1) {
                 $headRows = array_column($headRecords, 'row');
-                $errors[] = "Phiếu '{$householdCode}' có nhiều chủ hộ ở dòng ".implode(', ', $headRows).'.';
+                foreach ($headRows as $headRow) {
+                    $errors[] = [
+                        'row' => $headRow,
+                        'message' => "Phiếu '{$householdCode}' có nhiều chủ hộ ở dòng ".implode(', ', $headRows).'.',
+                    ];
+                }
             } elseif (count($headRecords) === 1) {
                 $headRecord = $headRecords[0];
                 foreach ($records as $record) {
@@ -273,15 +392,19 @@ class HouseholdImportExportController extends Controller
                         $headRecord['dob']['date'],
                     );
                     if ($ageError !== null) {
-                        $errors[] = "Dòng {$record['row']}: {$ageError}";
+                        $errors[] = ['row' => $record['row'], 'message' => $ageError];
                     }
                 }
             }
         }
 
         if ($errors !== []) {
+            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
 
-            return back()->withErrors(['file' => implode(' ', array_slice($errors, 0, 10))])->withInput();
+            return response()->json(['message' => implode(' ', array_map(
+                static fn (array $error): string => $error['message'],
+                array_slice($errors, 0, 10)
+            ))], 422);
         }
 
         // check query có tồn tại cái mã hộ này k
@@ -290,11 +413,27 @@ class HouseholdImportExportController extends Controller
             ->whereIn('household_code', array_keys($groups))
             ->value('household_code');
         if ($existingCode !== null) {
-            return back()->withErrors(['file' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu."])->withInput();
+            $duplicateErrors = array_map(
+                static fn (array $record): array => [
+                    'row' => $record['row'],
+                    'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.",
+                ],
+                $groups[$existingCode] ?? []
+            );
+            $this->recordFailedImport(
+                $importLog,
+                $data['file']->getRealPath(),
+                $worksheetName,
+                $totalRows,
+                $duplicateErrors ?: [['row' => null, 'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu."]]
+            );
+
+            return response()->json([
+                'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.",
+            ], 422);
         }
 
-        $importLog = ImportLog::create([
-            'file_name' => $data['file']->getClientOriginalName(),
+        $importLog->update([
             'total_rows' => $totalRows,
             'status' => 'PROCESSING',
         ]);
@@ -388,13 +527,15 @@ class HouseholdImportExportController extends Controller
                 }
             });
         } catch (Throwable $exception) {
-            $importLog->update([
-                'status' => 'FAILED',
-                'error_rows' => $totalRows,
-                'error_details' => [['message' => $exception->getMessage()]],
-            ]);
+            $this->recordFailedImport(
+                $importLog,
+                $data['file']->getRealPath(),
+                $worksheetName,
+                $totalRows,
+                [['row' => null, 'message' => $exception->getMessage()]]
+            );
 
-            return back()->withErrors(['file' => 'Nhập dữ liệu thất bại: '.$exception->getMessage()])->withInput();
+            return response()->json(['message' => 'Nhập dữ liệu thất bại: '.$exception->getMessage()], 422);
         }
 
         // update status ở bảng import_logs
@@ -407,7 +548,11 @@ class HouseholdImportExportController extends Controller
             ? route('households.index', [], false)
             : route('index', [], false);
 
-        return redirect()->to($destination)->with('success', "Đã nhập {$totalRows} dòng nhân khẩu từ file Excel.");
+        return response()->json([
+            'success' => true,
+            'destination' => $destination,
+            'message' => "Đã nhập {$totalRows} dòng nhân khẩu từ file Excel.",
+        ]);
     }
 
     public function export(Request $request)
@@ -575,6 +720,67 @@ class HouseholdImportExportController extends Controller
         return trim((string) $sheet->getCell($coordinate)->getFormattedValue());
     }
 
+    private function recordFailedImport(
+        ImportLog $importLog,
+        string $filePath,
+        string $worksheetName,
+        int $totalRows,
+        array $errors,
+    ): void {
+        $errorsByRow = [];
+        foreach ($errors as $error) {
+            $row = $error['row'] ?? null;
+            $cell = $row === null ? 'A1' : 'A'.$row;
+            $errorsByRow[$cell][] = $error['message'];
+        }
+
+        $errorFilePath = null;
+        try {
+            $spreadsheet = IOFactory::load($filePath);
+            $sheet = $spreadsheet->getSheetByName($worksheetName);
+            if ($sheet === null) {
+                throw new \RuntimeException('Không tìm thấy trang tính dữ liệu để ghi chú lỗi.');
+            }
+
+            foreach ($errorsByRow as $cell => $messages) {
+                $sheet->setCellValue($cell, implode(' | ', array_unique($messages)));
+                $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
+                $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
+            }
+            $sheet->getColumnDimension('A')->setWidth(45);
+
+            $writerType = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'xls' ? 'Xls' : 'Xlsx';
+            $errorFilePath = dirname($importLog->file_path).'/error-'.basename($importLog->file_path);
+            IOFactory::createWriter($spreadsheet, $writerType)
+                ->save(Storage::disk('local')->path($errorFilePath));
+            $spreadsheet->disconnectWorksheets();
+        } catch (Throwable $exception) {
+            $errorFilePath = null;
+            Log::error('Không thể tạo file Excel có ghi chú lỗi khi nhập dữ liệu.', [
+                'import_log_id' => $importLog->id,
+                'exception' => $exception,
+            ]);
+        }
+
+        $errorDetails = array_map(
+            static fn (string $cell, array $messages): array => [
+                'cell' => $cell,
+                'row' => (int) substr($cell, 1),
+                'message' => implode(' | ', array_unique($messages)),
+            ],
+            array_keys($errorsByRow),
+            array_values($errorsByRow)
+        );
+
+        $importLog->update([
+            'status' => 'FAILED',
+            'total_rows' => $totalRows,
+            'error_rows' => count($errorsByRow),
+            'error_details' => array_slice($errorDetails, 0, 200),
+            'error_file_path' => $errorFilePath,
+        ]);
+    }
+
     private function dataSheet(Spreadsheet $spreadsheet): Worksheet
     {
         // lọc hết qua datasheet của file
@@ -663,13 +869,9 @@ class HouseholdImportExportController extends Controller
 
     private function schoolYears(): array
     {
-        // thường khai giảng năm mới vào t8 nên > 8 năm sau ,
-        $lastSchoolYear = now()->month >= 8 ? now()->year : now()->year - 1;
+        $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return array_map(
-            fn (int $year): string => "{$year}-".($year + 1),
-            range(2020, $lastSchoolYear)
-        );
+        return ["{$year}-".($year + 1)];
     }
 
     private function residenceType(string $value): string

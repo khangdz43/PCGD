@@ -30,7 +30,7 @@
 @endphp
 
 @if (count($notifications))
-    <section class="app-notifications" aria-label="Thông báo">
+    <section class="app-notifications @if (collect($notifications)->every(fn ($notification) => in_array($notification['class'], ['success', 'info'], true))) app-notifications-toast @endif" aria-label="Thông báo">
         @foreach ($notifications as $notification)
             <div class="app-notification app-notification-{{ $notification['class'] }}" role="{{ $notification['class'] === 'danger' || $notification['class'] === 'warning' ? 'alert' : 'status' }}" aria-live="{{ $notification['class'] === 'danger' ? 'assertive' : 'polite' }}" @if (in_array($notification['class'], ['success', 'info'], true)) data-notification-autohide @endif>
                 <span class="app-notification-icon" aria-hidden="true">

@@ -42,7 +42,7 @@ final class AccessPermission
             self::MANAGE_SCHOOLS => 'Quản lý danh mục trường học (chỉ cấp tỉnh)',
             self::MANAGE_ACCESS_CONTROL => 'Tạo và chỉnh sửa nhóm quyền trong phạm vi quản lý',
             self::MANAGE_USER_ACCOUNTS => 'Tạo tài khoản và gán nhóm quyền trong phạm vi quản lý',
-            self::VIEW_ORGANIZATION_ACCOUNTS => 'Xem cây đơn vị và thống kê tài khoản toàn hệ thống',
+            self::VIEW_ORGANIZATION_ACCOUNTS => 'Xem cây đơn vị và thống kê tài khoản trong quản lý người dùng',
         ];
     }
 

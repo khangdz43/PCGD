@@ -10,21 +10,28 @@ class ImportLog extends Model
     // chỉ có cột created_at ko có updated_at nên ko cần tìm cọt này
     // nhưng nó gây ảnh hường cột create_at sẽ không còn được coi là đối tượng DateTime khi lấy lên
     public const UPDATED_AT = null;
+
     protected $fillable = [
         'file_name',
+        'user_id',
+        'file_path',
+        'error_file_path',
+        'context',
         'uploaded_by',
         'total_rows',
+        'processed_rows',
         'success_rows',
         'error_rows',
         'status',
         'error_details',
     ];
 
-    // error nó là dạng mảng 
+    // error nó là dạng mảng
     // create_at bị mất kiểu datetime khi lấy lên
     protected $casts = [
         'error_details' => 'array',
-        'created_at' => 'datetime'
+        'context' => 'array',
+        'created_at' => 'datetime',
 
     ];
 

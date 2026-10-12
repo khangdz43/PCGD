@@ -1,4 +1,3 @@
-```blade
 <form method="POST" action="{{ $action }}" class="bg-white border rounded shadow-sm p-4">
     @csrf
 

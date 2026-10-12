@@ -1,0 +1,35 @@
+<?php
+
+namespace App\Http\Controllers\Households;
+
+use App\Http\Controllers\Controller;
+use App\Models\ImportLog;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+
+class HouseholdImportStatusController extends Controller
+{
+    public function __invoke(Request $request, ImportLog $importLog): JsonResponse
+    {
+        abort_unless($importLog->user_id === $request->user()->id, 404);
+
+        $progress = $importLog->status === 'SUCCESS'
+            ? 100
+            : ($importLog->total_rows > 0
+                ? min(90, (int) floor($importLog->processed_rows * 90 / $importLog->total_rows))
+                : 0);
+
+        return response()->json([
+            'status' => $importLog->status,
+            'progress' => min(100, $progress),
+            'processed_rows' => $importLog->processed_rows,
+            'total_rows' => $importLog->total_rows,
+            'success_rows' => $importLog->success_rows,
+            'error_rows' => $importLog->error_rows,
+            'has_error_file' => $importLog->status === 'FAILED'
+                && $importLog->file_path !== null
+                && Storage::disk('local')->exists($importLog->file_path),
+        ]);
+    }
+}

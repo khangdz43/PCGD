@@ -2,7 +2,10 @@
 
 namespace Tests\Feature;
 
+use App\Http\Controllers\Households\HouseholdImportExportController;
+use App\Jobs\ProcessHouseholdImport;
 use App\Models\Household;
+use App\Models\ImportLog;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
@@ -14,8 +17,12 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xls;
 use Tests\TestCase;
 
@@ -137,6 +144,125 @@ class AccessControlTest extends TestCase
         $this->get('/households')->assertRedirectToRoute('login');
     }
 
+    public function test_role_checks_reuse_the_loaded_roles_for_the_current_user(): void
+    {
+        $role = Role::create([
+            'name' => 'Nhóm kiểm tra cache quyền',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $user = User::factory()->create(['is_active' => true]);
+        $user->roles()->attach($role);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->assertTrue($user->hasRole($role->name));
+        $queryCountAfterFirstCheck = count(DB::getQueryLog());
+        $this->assertSame(1, $queryCountAfterFirstCheck);
+        $this->assertFalse($user->hasRole(Role::SYSTEM_ADMIN));
+        $this->assertSame($queryCountAfterFirstCheck, count(DB::getQueryLog()));
+
+        DB::disableQueryLog();
+    }
+
+    public function test_admin_menu_destination_opens_the_first_available_management_page(): void
+    {
+        $systemAdminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $systemAdmin = User::factory()->create(['is_active' => true]);
+        $systemAdmin->roles()->attach($systemAdminRole);
+
+        $this->actingAs($systemAdmin)
+            ->get(route('admin.index'))
+            ->assertRedirectToRoute('admin.roles.index');
+
+        $accountPermission = Permission::create([
+            'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
+            'guard_name' => 'web',
+        ]);
+        $accountManagerRole = Role::create([
+            'name' => 'Quản lý tài khoản cấp tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $accountManagerRole->permissions()->attach($accountPermission);
+        $accountManager = User::factory()->create([
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'is_active' => true,
+        ]);
+        $accountManager->roles()->attach($accountManagerRole);
+
+        $this->actingAs($accountManager)
+            ->get(route('admin.index'))
+            ->assertRedirectToRoute('admin.users.index');
+    }
+
+    public function test_household_member_deletion_returns_json_without_redirecting(): void
+    {
+        Schema::table('persons', function (Blueprint $table): void {
+            $table->string('relationship_with_head')->nullable();
+        });
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+        $household = Household::create([
+            'household_code' => 'HK-DELETE',
+            'school_year' => '2026-2027',
+        ]);
+        $headId = DB::table('persons')->insertGetId([
+            'household_id' => $household->id,
+            'relationship_with_head' => 'Chủ hộ',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $memberId = DB::table('persons')->insertGetId([
+            'household_id' => $household->id,
+            'relationship_with_head' => 'Con',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($admin)
+            ->deleteJson(route('households.members.destroy', [$household, $headId]))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.');
+        $this->assertDatabaseHas('persons', ['id' => $headId]);
+
+        $this->deleteJson(route('households.members.destroy', [$household, $memberId]))
+            ->assertOk()
+            ->assertJsonPath('remaining_count', 1)
+            ->assertJsonPath('is_household_head', false);
+        $this->assertDatabaseMissing('persons', ['id' => $memberId]);
+
+        $this->deleteJson(route('households.members.destroy', [$household, $headId]))
+            ->assertOk()
+            ->assertJsonPath('remaining_count', 0)
+            ->assertJsonPath('is_household_head', true);
+        $this->assertDatabaseMissing('persons', ['id' => $headId]);
+
+        $bulkIds = collect(['Anh', 'Chị'])->map(fn (string $relationship): int => DB::table('persons')->insertGetId([
+            'household_id' => $household->id,
+            'relationship_with_head' => $relationship,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]))->all();
+        $this->deleteJson(route('households.members.bulk-destroy'), ['person_ids' => $bulkIds])
+            ->assertOk()
+            ->assertJsonPath('deleted_ids', $bulkIds);
+        foreach ($bulkIds as $personId) {
+            $this->assertDatabaseMissing('persons', ['id' => $personId]);
+        }
+    }
+
     public function test_village_delete_returns_json_for_ajax_and_deletes_the_village(): void
     {
         DB::table('provinces')->insert([
@@ -232,7 +358,11 @@ class AccessControlTest extends TestCase
             ->assertSee('Điều tra viên xã')
             ->assertSee('Tỉnh một / Xã một')
             ->assertSee('Xem phiếu điều tra và nhân khẩu')
-            ->assertSee(route('account.show'));
+            ->assertSee(route('account.show'))
+            ->assertSee('app-account-card', false)
+            ->assertSee('app-account-location', false)
+            ->assertSee('Năm học: '.$this->currentSchoolYear())
+            ->assertSee('Đăng xuất');
     }
 
     public function test_account_password_can_be_changed_only_after_current_password_is_verified(): void
@@ -752,9 +882,14 @@ class AccessControlTest extends TestCase
             ->assertSee('Trung ương')
             ->assertSee('Tỉnh')
             ->assertSee('system-admin')
-            ->assertSee('Phòng nhập liệu');
+            ->assertSee('Phòng nhập liệu')
+            ->assertSee('aria-expanded="false"', false)
+            ->assertDontSee('class="scope-body open"', false);
         $content = $rolesPage->getContent();
-        $this->assertLessThan(strpos($content, '>Tỉnh</th>'), strpos($content, '>Trung ương</th>'));
+        $this->assertLessThan(
+            strpos($content, 'scope-title">Cấp Tỉnh'),
+            strpos($content, 'scope-title">Trung ương')
+        );
         $this->get('/admin/permissions')->assertNotFound();
         $this->get('/admin/roles/create')
             ->assertOk()
@@ -890,6 +1025,8 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertSee('2 thành viên')
             ->assertSee(route('admin.roles.members', $group))
+            ->assertSee('aria-expanded="false"', false)
+            ->assertDontSee('class="scope-body open"', false)
             ->assertDontSee('>Quyền</th>', false)
             ->assertDontSee('permissions_count');
 
@@ -1215,9 +1352,19 @@ class AccessControlTest extends TestCase
         $this->actingAs($communeUser)
             ->get('/households/import')
             ->assertOk()
+            ->assertSee('id="import-school-year"', false)
+            ->assertSee('name="school_year" value="'.(now()->month >= 8 ? now()->year : now()->year - 1).'-'.((now()->month >= 8 ? now()->year : now()->year - 1) + 1).'"', false)
+            ->assertDontSee('<select id="import-school-year"', false)
             ->assertSee('value="P1" selected', false)
             ->assertDontSee('value="P2"', false)
-            ->assertSee('data-selected-code="C1"', false);
+            ->assertSee('data-selected-code="C1"', false)
+            ->assertSee('<option value="C1" selected>', false)
+            ->assertSee('data-village', false)
+            ->assertSee('data-selected-code=""', false)
+            ->assertSee('<option value="V1"', false)
+            ->assertSee('<option value="V2"', false)
+            ->assertSee('required', false)
+            ->assertSee('Thôn/Bản <span class="text-danger">*</span>', false);
 
         $villageRole = Role::create(['name' => 'village-importer', 'scope_level' => 'village', 'guard_name' => 'web']);
         $villageRole->permissions()->attach(Permission::create([
@@ -1239,10 +1386,24 @@ class AccessControlTest extends TestCase
             ->assertSee('value="P1" selected', false)
             ->assertSee('data-selected-code="C1"', false)
             ->assertSee('data-selected-code="V1"', false)
-            ->assertSee('data-selected-code="V1" disabled  required', false);
+            ->assertSee('<option value="C1" selected>', false)
+            ->assertSee('<option value="V1" selected>', false);
         $this->get('/api/communes/C1/villages')
             ->assertOk()
             ->assertExactJson([['code' => 'V1', 'name' => 'Thôn được giao']]);
+
+        $villageUser->villages()->sync(['V1', 'V2']);
+        $this->get('/households/import')
+            ->assertOk()
+            ->assertSee('data-selected-code=""', false)
+            ->assertSee('<option value="V1"', false)
+            ->assertSee('<option value="V2"', false);
+        $this->get('/api/communes/C1/villages')
+            ->assertOk()
+            ->assertExactJson([
+                ['code' => 'V1', 'name' => 'Thôn được giao'],
+                ['code' => 'V2', 'name' => 'Thôn ngoài phạm vi'],
+            ]);
     }
 
     public function test_user_list_shows_province_name_instead_of_province_code(): void
@@ -1345,10 +1506,133 @@ class AccessControlTest extends TestCase
             ->assertSee('Xã một')
             ->assertSee('Thôn một')
             ->assertSee('Người dùng thôn một')
+            ->assertSee('aria-expanded="false"', false)
+            ->assertDontSee('class="tree-body open"', false)
+            ->assertSee('id="organization-unit-tree"', false)
+            ->assertSee('Cây đơn vị')
+            ->assertDontSee('Cây đơn vị và thống kê')
+            ->assertSee('data-tree-toggle', false)
+            ->assertSee('id="account-tree-results"', false)
+            ->assertDontSee('fa-pen-to-square')
+            ->assertDontSee('fa-lock')
+            ->assertDontSee('>Lọc địa bàn</button>', false)
             ->assertDontSee('Thôn hai')
             ->assertDontSee('Người dùng thôn hai')
-            ->assertDontSee('Tỉnh hai')
+            ->assertSee('Tỉnh hai')
             ->assertDontSee('Người dùng tỉnh hai');
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertSee('id="organization-unit-tree"', false)
+            ->assertSee('Số bên cạnh là tài khoản trong đơn vị và các cấp dưới.');
+    }
+
+    public function test_system_admin_account_tree_paginates_account_cards(): void
+    {
+        DB::table('provinces')->insert([
+            'code' => 'P1',
+            'name' => 'Tỉnh một',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+        $accountRole = Role::create([
+            'name' => 'Quản trị tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+
+        foreach (range(0, 30) as $index) {
+            $user = User::factory()->create([
+                'name' => sprintf('Tài khoản %02d', $index),
+                'username' => sprintf('account-%02d', $index),
+                'province_code' => 'P1',
+                'scope_level' => 'province',
+                'is_active' => true,
+            ]);
+            $user->roles()->attach($accountRole);
+        }
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertSee('31')
+            ->assertSee('Tài khoản 00')
+            ->assertDontSee('Tài khoản 30')
+            ->assertSee('data-pagination-select', false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index', ['page' => 2]))
+            ->assertOk()
+            ->assertSee('Tài khoản 30')
+            ->assertDontSee('Tài khoản 00');
+    }
+
+    public function test_management_accounts_show_a_crown_and_appear_before_regular_accounts(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $manageUsers = Permission::create([
+            'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
+            'guard_name' => 'web',
+        ]);
+        $provinceRole = Role::create([
+            'name' => 'Quản trị tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $provinceRole->permissions()->attach($manageUsers);
+        $communeRole = Role::create([
+            'name' => 'Quản trị xã',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $communeRole->permissions()->attach($manageUsers);
+        $regularRole = Role::create([
+            'name' => 'Chỉ xem dữ liệu',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $regularRole->permissions()->attach(Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'guard_name' => 'web',
+        ]));
+
+        foreach ([
+            ['name' => 'Tài khoản thường', 'role' => $regularRole, 'scope' => 'province'],
+            ['name' => 'Tài khoản quản trị xã', 'role' => $communeRole, 'scope' => 'commune'],
+            ['name' => 'Tài khoản quản trị tỉnh', 'role' => $provinceRole, 'scope' => 'province'],
+        ] as $account) {
+            $user = User::factory()->create([
+                'name' => $account['name'],
+                'scope_level' => $account['scope'],
+                'is_active' => true,
+            ]);
+            $user->roles()->attach($account['role']);
+        }
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertSee('fa-crown')
+            ->assertSeeTextInOrder([
+                'Tài khoản quản trị tỉnh',
+                'Tài khoản quản trị xã',
+                'Tài khoản thường',
+            ]);
     }
 
     public function test_add_village_form_prefills_assigned_province_and_commune(): void
@@ -1465,8 +1749,47 @@ class AccessControlTest extends TestCase
         $this->assertSame(0, DB::table('persons')->count());
     }
 
+    private function currentSchoolYear(): string
+    {
+        $year = now()->month >= 8 ? now()->year : now()->year - 1;
+
+        return "{$year}-".($year + 1);
+    }
+
     public function test_import_rejects_school_code_outside_the_selected_commune(): void
     {
+        Schema::create('import_logs', function (Blueprint $table): void {
+            $table->id();
+            $table->string('file_name');
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('file_path')->nullable();
+            $table->string('error_file_path')->nullable();
+            $table->json('context')->nullable();
+            $table->integer('total_rows')->default(0);
+            $table->unsignedInteger('processed_rows')->default(0);
+            $table->integer('success_rows')->default(0);
+            $table->integer('error_rows')->default(0);
+            $table->string('status')->nullable();
+            $table->json('error_details')->nullable();
+            $table->timestamp('created_at')->useCurrent();
+        });
+        Schema::table('households', function (Blueprint $table): void {
+            $table->unsignedBigInteger('import_log_id')->nullable();
+        });
+        Schema::table('persons', function (Blueprint $table): void {
+            $table->unsignedBigInteger('import_log_id')->nullable();
+        });
+        Schema::table('person_educations', function (Blueprint $table): void {
+            $table->unsignedBigInteger('import_log_id')->nullable();
+        });
+        Schema::create('person_disabilities', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('person_id');
+            $table->timestamps();
+        });
+        Queue::fake();
+        Storage::fake('local');
+
         Schema::create('ethnicities', function (Blueprint $table): void {
             $table->string('code')->primary();
             $table->string('name');
@@ -1476,6 +1799,13 @@ class AccessControlTest extends TestCase
         DB::table('communes')->insert([
             ['code' => 'C1', 'name' => 'Xã được giao', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'C2', 'name' => 'Xã khác', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('villages')->insert([
+            'code' => 'V1',
+            'name' => 'Thôn được chọn',
+            'commune_code' => 'C1',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         DB::table('schools')->insert([
             'code' => 'S2',
@@ -1502,19 +1832,23 @@ class AccessControlTest extends TestCase
 
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setCellValue('O2', 'Số phiếu');
+        $sheet->setCellValue('O2', 'Mã hộ');
         $sheet->setCellValue('AY2', 'Ghi chú');
         $sheet->setCellValue('C5', 'Nguyễn');
         $sheet->setCellValue('D5', 'An');
         $sheet->setCellValue('E5', '1');
         $sheet->setCellValue('F5', '1');
-        $sheet->setCellValue('G5', '2010');
+        $sheet->setCellValue('G5', now()->year + 1);
         $sheet->setCellValue('I5', 'Kinh');
         $sheet->setCellValue('L5', 'Nguyễn');
         $sheet->setCellValue('M5', 'An');
         $sheet->setCellValue('O5', 'HK-IMPORT');
         $sheet->setCellValue('V5', 'S2');
         $sheet->setCellValue('AV5', 'Chủ hộ');
+        $spreadsheet->createSheet(0)
+            ->setTitle('XXXX')
+            ->setSheetState(Worksheet::SHEETSTATE_HIDDEN);
+        $spreadsheet->setActiveSheetIndex(1);
         $makeImportFile = function () use ($spreadsheet): UploadedFile {
             ob_start();
             (new Xls($spreadsheet))->save('php://output');
@@ -1522,29 +1856,169 @@ class AccessControlTest extends TestCase
 
             return UploadedFile::fake()->createWithContent('import.xls', $fileContents);
         };
+        $currentSchoolYearStart = now()->month >= 8 ? now()->year : now()->year - 1;
+        $previousSchoolYear = ($currentSchoolYearStart - 1).'-'.$currentSchoolYearStart;
 
         $this->actingAs($user)
             ->post('/households/import', [
                 'file' => $makeImportFile(),
-                'school_year' => '2025-2026',
+                'school_year' => $this->currentSchoolYear(),
                 'province_code' => 'P1',
                 'commune_code' => 'C1',
             ])
-            ->assertSessionHasErrors('file');
+            ->assertSessionHasErrors('village_code');
 
-        $this->assertStringContainsString('không thuộc xã được chọn', session('errors')->first('file'));
-        $this->assertSame(0, DB::table('households')->count());
-
-        $sheet->setCellValue('V5', 'S-UNKNOWN');
-        $this->post('/households/import', [
+        $this->postJson('/households/import', [
             'file' => $makeImportFile(),
-            'school_year' => '2025-2026',
+            'school_year' => $previousSchoolYear,
             'province_code' => 'P1',
             'commune_code' => 'C1',
-        ])->assertSessionHasErrors('file');
+            'village_code' => 'V1',
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('school_year');
 
-        $this->assertStringContainsString('không tồn tại trong danh mục trường học', session('errors')->first('file'));
+        $response = $this->postJson('/households/import', [
+            'file' => $makeImportFile(),
+            'school_year' => $this->currentSchoolYear(),
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'village_code' => 'V1',
+        ])->assertAccepted();
+
+        $importLog = ImportLog::findOrFail($response->json('import_id'));
+        Queue::assertPushed(ProcessHouseholdImport::class);
+        $this->getJson($response->json('status_url'))
+            ->assertOk()
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('progress', 0);
+        (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportExportController::class));
+        $this->assertSame('FAILED', $importLog->fresh()->status);
+        $this->assertStringContainsString('không thuộc xã được chọn', $importLog->fresh()->error_details[0]['message']);
+        $this->assertSame('A5', $importLog->fresh()->error_details[0]['cell']);
+        $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $importLog->fresh()->error_details[0]['message']);
+        $this->assertNotNull($importLog->fresh()->error_file_path);
+        $annotatedWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
+        $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $annotatedWorkbook->getSheet(1)->getCell('A5')->getValue());
+        $annotatedWorkbook->disconnectWorksheets();
+        $originalWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->file_path));
+        $this->assertEmpty($originalWorkbook->getSheet(1)->getCell('A5')->getValue());
+        $originalWorkbook->disconnectWorksheets();
+        $this->getJson($response->json('status_url'))
+            ->assertOk()
+            ->assertJsonPath('status', 'FAILED')
+            ->assertJsonPath('progress', 90)
+            ->assertJsonPath('has_error_file', true);
         $this->assertSame(0, DB::table('households')->count());
+
+        $otherUser = User::factory()->create();
+        ImportLog::create([
+            'file_name' => 'file-khac.xls',
+            'user_id' => $otherUser->id,
+            'status' => 'SUCCESS',
+        ]);
+        $this->get('/households/imports')
+            ->assertOk()
+            ->assertSee('import.xls')
+            ->assertSee('Xử lý thất bại')
+            ->assertSee('Tải file lỗi')
+            ->assertDontSee('Xem chi tiết lỗi')
+            ->assertDontSee('Ngày sinh không được ở tương lai.')
+            ->assertDontSee('file-khac.xls');
+        $this->get(route('households.import.download', $importLog))
+            ->assertOk()
+            ->assertHeader('content-disposition');
+        $this->get(route('households.import.download-errors', $importLog))
+            ->assertOk()
+            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
+        $importLog->update(['error_file_path' => null]);
+        $this->get(route('households.import.download-errors', $importLog))
+            ->assertOk()
+            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
+        $this->assertNotNull($importLog->fresh()->error_file_path);
+        $this->deleteJson(route('households.import.destroy', $importLog))
+            ->assertStatus(409);
+        $this->assertDatabaseHas('import_logs', ['id' => $importLog->id]);
+
+        $successfulImport = ImportLog::create([
+            'file_name' => 'successful.xls',
+            'user_id' => $user->id,
+            'status' => 'SUCCESS',
+            'success_rows' => 2,
+            'context' => ['school_year' => '2025-2026'],
+        ]);
+        $householdId = DB::table('households')->insertGetId([
+            'household_code' => 'IMPORTED-1',
+            'school_year' => '2025-2026',
+            'import_log_id' => $successfulImport->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $personId = DB::table('persons')->insertGetId([
+            'household_id' => $householdId,
+            'import_log_id' => $successfulImport->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('person_educations')->insert([
+            'person_id' => $personId,
+            'import_log_id' => $successfulImport->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('person_disabilities')->insert([
+            'person_id' => $personId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $otherImport = ImportLog::create([
+            'file_name' => 'other-successful.xls',
+            'user_id' => $user->id,
+            'status' => 'SUCCESS',
+            'success_rows' => 1,
+        ]);
+        $otherHouseholdId = DB::table('households')->insertGetId([
+            'household_code' => 'IMPORTED-OTHER',
+            'school_year' => '2025-2026',
+            'import_log_id' => $otherImport->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->deleteJson(route('households.import.destroy', $successfulImport))
+            ->assertOk()
+            ->assertJsonPath('status', 'ROLLED_BACK')
+            ->assertJsonPath('deleted_households', 1)
+            ->assertJsonPath('deleted_persons', 1);
+        $this->assertDatabaseMissing('households', ['id' => $householdId]);
+        $this->assertDatabaseMissing('persons', ['id' => $personId]);
+        $this->assertDatabaseMissing('person_educations', ['person_id' => $personId]);
+        $this->assertDatabaseMissing('person_disabilities', ['person_id' => $personId]);
+        $this->assertDatabaseHas('households', ['id' => $otherHouseholdId]);
+        $this->assertDatabaseHas('import_logs', ['id' => $successfulImport->id, 'status' => 'ROLLED_BACK']);
+        $this->deleteJson(route('households.import.destroy', $successfulImport))
+            ->assertStatus(409);
+        $this->get('/households/imports')
+            ->assertOk()
+            ->assertSee('successful.xls')
+            ->assertSee('Đã xóa phiếu nhập')
+            ->assertSee('1 phiếu và 1 nhân khẩu đã xóa')
+            ->assertSee('other-successful.xls');
+
+        $sheet->setCellValue('O2', 'Số phiếu');
+        $sheet->setCellValue('V5', 'S-UNKNOWN');
+        $response = $this->postJson('/households/import', [
+            'file' => $makeImportFile(),
+            'school_year' => $this->currentSchoolYear(),
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'village_code' => 'V1',
+        ])->assertAccepted();
+
+        $importLog = ImportLog::findOrFail($response->json('import_id'));
+        (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportExportController::class));
+        $this->assertSame('FAILED', $importLog->fresh()->status);
+        $this->assertStringContainsString('không tồn tại trong danh mục trường học', $importLog->fresh()->error_details[0]['message']);
+        $this->assertDatabaseMissing('households', ['household_code' => 'HK-IMPORT']);
         $this->assertDatabaseMissing('schools', ['code' => 'S-UNKNOWN']);
         $spreadsheet->disconnectWorksheets();
     }
@@ -2253,6 +2727,18 @@ class AccessControlTest extends TestCase
             ['household_code' => '01', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '02', 'school_year' => $previousSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '03', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
+            ...array_map(
+                static fn (int $code): array => [
+                    'household_code' => sprintf('%02d', $code),
+                    'school_year' => $currentSchoolYear,
+                    'province_code' => 'P1',
+                    'commune_code' => 'C1',
+                    'village_code' => 'V1',
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ],
+                range(4, 18)
+            ),
         ]);
 
         $role = Role::create(['name' => 'village-current-year-viewer', 'scope_level' => 'village', 'guard_name' => 'web']);
@@ -2272,9 +2758,12 @@ class AccessControlTest extends TestCase
         $this->actingAs($user)
             ->get('/households')
             ->assertOk()
-            ->assertSee('<td class="text-nowrap">01', false)
-            ->assertDontSee('<td class="text-nowrap">02', false)
-            ->assertDontSee('<td class="text-nowrap">03', false)
+            ->assertSee('<td class="household-code-cell" title="01">', false)
+            ->assertDontSee('<td class="household-code-cell" title="02">', false)
+            ->assertDontSee('<td class="household-code-cell" title="03">', false)
+            ->assertSee('id="household-page-select"', false)
+            ->assertDontSee('member-sticky-household', false)
+            ->assertSee('value="2"', false)
             ->assertSee('value="P1" selected', false)
             ->assertSee('data-selected-code="C1"', false)
             ->assertSee('data-selected-code="V1"', false)
@@ -2284,11 +2773,17 @@ class AccessControlTest extends TestCase
             ->assertDontSee('class="household-row"', false)
             ->assertDontSee('data-url=', false);
 
+        $this->get('/households?page=2')
+            ->assertOk()
+            ->assertSee('<option value="2" selected>2</option>', false)
+            ->assertSee('<td class="household-code-cell" title="18">', false)
+            ->assertDontSee('<td class="household-code-cell" title="01">', false);
+
         $this->get('/households?school_year=all')
             ->assertOk()
-            ->assertSee('<td class="text-nowrap">01', false)
-            ->assertSee('<td class="text-nowrap">02', false)
-            ->assertDontSee('<td class="text-nowrap">03', false)
+            ->assertSee('<td class="household-code-cell" title="01">', false)
+            ->assertSee('<td class="household-code-cell" title="02">', false)
+            ->assertDontSee('<td class="household-code-cell" title="03">', false)
             ->assertSee('value="all" selected', false);
     }
 
@@ -2391,7 +2886,7 @@ class AccessControlTest extends TestCase
             ->assertSee('<td class="text-nowrap">22', false);
     }
 
-    public function test_pagination_shows_nearby_and_last_two_pages_with_an_ellipsis(): void
+    public function test_household_pagination_uses_previous_next_controls_and_a_page_selector(): void
     {
         $role = Role::create([
             'name' => Role::SYSTEM_ADMIN,
@@ -2414,20 +2909,21 @@ class AccessControlTest extends TestCase
         $this->actingAs($user)
             ->get('/households?page=1')
             ->assertOk()
-            ->assertSee('>1</span>', false)
-            ->assertSee('>2</a>', false)
-            ->assertSee('>16</a>', false)
-            ->assertSee('>17</a>', false);
+            ->assertSee('data-household-page-select', false)
+            ->assertSee('<option value="1" selected>', false)
+            ->assertSee('value="17"', false)
+            ->assertSee('>17</option>', false)
+            ->assertSee('aria-label="Trang sau"', false)
+            ->assertSee('aria-label="Trang trước"', false);
 
         $this->actingAs($user)
             ->get('/households?page=3')
             ->assertOk()
-            ->assertDontSee('>1</a>', false)
-            ->assertSee('>2</a>', false)
-            ->assertSee('>3</span>', false)
-            ->assertSee('>16</a>', false)
-            ->assertSee('>17</a>', false)
-            ->assertSee('<span class="page-link">...</span>', false);
+            ->assertSee('data-household-page-select', false)
+            ->assertSee('<option value="3" selected>', false)
+            ->assertSee('rel="prev"', false)
+            ->assertSee('rel="next"', false)
+            ->assertDontSee('<span class="page-link">...</span>', false);
     }
 
     public function test_legacy_school_scope_now_uses_commune_scope_instead_of_school_code(): void
@@ -2640,7 +3136,7 @@ class AccessControlTest extends TestCase
         $this->assertFalse($directUser->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
     }
 
-    public function test_system_administrator_can_view_territorial_account_tree_and_selected_unit_accounts(): void
+    public function test_system_administrator_keeps_account_counts_for_user_tree_without_standalone_page(): void
     {
         DB::table('provinces')->insert([
             'code' => 'P1',
@@ -2699,42 +3195,16 @@ class AccessControlTest extends TestCase
         $villageAccount->villages()->sync(['V1']);
 
         $this->actingAs($admin)
-            ->get(route('admin.organization-accounts.index'))
+            ->get('/admin/organization-accounts')
+            ->assertNotFound();
+
+        $this->get('/api/provinces/P1/communes?include_account_counts=1')
             ->assertOk()
-            ->assertSee('Tỉnh một')
-            ->assertSee('Xã một')
-            ->assertSee('Thôn một')
-            ->assertSee('2')
-            ->assertSee('tài khoản trong đơn vị và các cấp dưới')
-            ->assertSee('tinhmot')
-            ->assertSee('thonmot');
+            ->assertJsonFragment(['code' => 'C1', 'name' => 'Xã một', 'account_count' => 1]);
 
-        $this->get(route('admin.organization-accounts.index', ['unit_type' => 'village', 'unit_code' => 'V1']))
+        $this->get('/api/communes/C1/villages?include_account_counts=1')
             ->assertOk()
-            ->assertSee('Tài khoản thôn một')
-            ->assertDontSee('Tài khoản tỉnh một')
-            ->assertSee('Giáo viên nhập liệu');
-    }
-
-    public function test_non_system_administrator_cannot_view_organization_account_tree(): void
-    {
-        $role = Role::create([
-            'name' => 'commune-account-manager',
-            'scope_level' => 'commune',
-            'guard_name' => 'web',
-        ]);
-        $role->permissions()->attach(Permission::create([
-            'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
-            'guard_name' => 'web',
-        ]));
-        $user = User::factory()->create([
-            'scope_level' => 'commune',
-            'is_active' => true,
-        ]);
-        $user->roles()->attach($role);
-
-        $this->actingAs($user)
-            ->get(route('admin.organization-accounts.index'))
-            ->assertForbidden();
+            ->assertJsonFragment(['code' => 'V1', 'name' => 'Thôn một', 'account_count' => 1])
+            ->assertJsonFragment(['code' => 'V2', 'name' => 'Thôn hai', 'account_count' => 0]);
     }
 }

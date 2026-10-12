@@ -60,7 +60,7 @@
 
                 @canany(['manage-access-control', 'manage-user-accounts'])
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {{ request()->routeIs('admin.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle {{ request()->routeIs('admin.*') ? 'active' : '' }}" href="{{ route('admin.index', [], false) }}" role="button" data-bs-toggle="dropdown">
                             <i class="fa-solid fa-shield-halved me-1"></i> Quản trị
                         </a>
                         <ul class="dropdown-menu">
@@ -69,9 +69,6 @@
                             @endcan
                             @can('manage-user-accounts')
                                 <li><a class="dropdown-item" href="{{ route('admin.users.index') }}">Quản lý tài khoản</a></li>
-                            @endcan
-                            @can('view-organization-accounts')
-                                <li><a class="dropdown-item" href="{{ route('admin.organization-accounts.index') }}">Cây đơn vị &amp; thống kê tài khoản</a></li>
                             @endcan
                         </ul>
                     </li>

@@ -26,6 +26,11 @@
                 $breadcrumbs[] = $householdList;
             }
             $breadcrumbs[] = ['label' => 'Nhập dữ liệu'];
+        } elseif (request()->routeIs('households.import-history')) {
+            if ($canViewHouseholds) {
+                $breadcrumbs[] = $householdList;
+            }
+            $breadcrumbs[] = ['label' => 'Lịch sử tải lên'];
         } elseif (request()->routeIs('households.show')) {
             if ($canViewHouseholds) {
                 $breadcrumbs[] = $householdList;

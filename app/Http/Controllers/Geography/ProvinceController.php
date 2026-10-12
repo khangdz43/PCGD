@@ -5,7 +5,11 @@ namespace App\Http\Controllers\Geography;
 use App\Http\Controllers\Controller;
 use App\Models\Province;
 use App\Models\Role;
+use App\Models\User;
+use App\Support\AccessPermission;
 use App\Support\DelegatedAccess;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ProvinceController extends Controller
 {
@@ -24,7 +28,7 @@ class ProvinceController extends Controller
     }
 
     // lấy xã của 1 tỉnh
-    public function getCommunes(string $provinceCode)
+    public function getCommunes(string $provinceCode, Request $request)
     {
         $province = Province::where('code', $provinceCode)->firstOrFail();
         $communes = $province->communes();
@@ -50,6 +54,29 @@ class ProvinceController extends Controller
             }
         }
 
-        return response()->json($communes->select('code', 'name')->get());
+        $communeList = $communes->select('code', 'name')->get();
+        $user = $request->user();
+        if ($request->boolean('include_account_counts')
+            && $user->hasRole(Role::SYSTEM_ADMIN)
+            && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS)) {
+            $counts = DB::table('users')
+                ->whereIn('commune_code', $communeList->pluck('code'))
+                ->whereNotExists(function ($query): void {
+                    $query->selectRaw('1')
+                        ->from('model_has_roles')
+                        ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
+                        ->whereColumn('model_has_roles.model_id', 'users.id')
+                        ->where('model_has_roles.model_type', User::class)
+                        ->where('roles.name', Role::SYSTEM_ADMIN);
+                })
+                ->select('commune_code')
+                ->selectRaw('COUNT(*) AS account_count')
+                ->groupBy('commune_code')
+                ->pluck('account_count', 'commune_code');
+
+            $communeList->each(fn ($commune) => $commune->account_count = $counts[$commune->code] ?? 0);
+        }
+
+        return response()->json($communeList);
     }
 }

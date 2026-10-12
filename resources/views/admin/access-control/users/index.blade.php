@@ -6,102 +6,87 @@
 <style>
     /* ===== Hierarchy Tree Styles ===== */
     .hierarchy-tree {
-        --tree-line-color: #d1d9e6;
-        --province-color: #2563eb;
-        --commune-color: #0891b2;
-        --village-color: #059669;
-        --user-accent: #6366f1;
+        --tree-line-color: #d8dee8;
     }
 
     /* ===== Tree Node ===== */
     .tree-node {
-        border: 1px solid #e2e8f0;
-        border-radius: .75rem;
-        margin-bottom: .75rem;
-        overflow: hidden;
+        margin-bottom: 0;
         background: #fff;
-        box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
-        transition: box-shadow .2s;
     }
 
-    .tree-node:hover {
-        box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+    .tree-node.level-province {
+        margin-bottom: .65rem;
+        overflow: hidden;
+        border: 1px solid #dfe4eb;
+        border-radius: .5rem;
     }
 
     .tree-node.level-commune {
-        margin-left: 1.5rem;
-        border-left: 3px solid var(--commune-color);
+        margin-left: 1.25rem;
+        border-left: 1px solid var(--tree-line-color);
     }
 
     .tree-node.level-village {
-        margin-left: 1.5rem;
-        border-left: 3px solid var(--village-color);
+        margin-left: 1.25rem;
+        border-left: 1px solid var(--tree-line-color);
     }
 
     /* ===== Tree Header ===== */
     .tree-header {
         display: flex;
         align-items: center;
-        gap: .75rem;
-        padding: .85rem 1.15rem;
+        gap: .6rem;
+        padding: .65rem .8rem;
         cursor: pointer;
         user-select: none;
-        transition: background .15s;
+        transition: background-color .15s;
         position: relative;
     }
 
     .tree-header:hover {
-        background: #f8fafc;
+        background: #f6f8fa;
     }
 
     .tree-header .toggle-icon {
-        width: 24px;
-        height: 24px;
+        width: 1rem;
+        height: 1rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 50%;
-        background: #f1f5f9;
-        color: #475569;
-        font-size: .7rem;
-        transition: transform .25s ease, background .15s;
+        color: #64748b;
+        font-size: .65rem;
+        transition: transform .18s ease;
         flex-shrink: 0;
     }
 
     .tree-header[aria-expanded="true"] .toggle-icon {
         transform: rotate(90deg);
-        background: #e0e7ff;
-        color: var(--province-color);
     }
 
     .tree-header .level-icon {
-        width: 36px;
-        height: 36px;
-        border-radius: .5rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        border-radius: .35rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: .95rem;
-        color: #fff;
+        font-size: .82rem;
+        color: #475569;
+        background: #f1f4f7;
         flex-shrink: 0;
     }
 
-    .level-icon.province {
-        background: linear-gradient(135deg, #2563eb, #3b82f6);
-    }
-
-    .level-icon.commune {
-        background: linear-gradient(135deg, #0891b2, #06b6d4);
-    }
-
+    .level-icon.commune,
     .level-icon.village {
-        background: linear-gradient(135deg, #059669, #10b981);
+        background: #f8f9fa;
+        color: #64748b;
     }
 
     .tree-header .node-name {
         font-weight: 600;
-        color: #1e293b;
-        font-size: .95rem;
+        color: #273449;
+        font-size: .9rem;
     }
 
     /* ===== Collapse Body ===== */
@@ -116,56 +101,40 @@
     }
 
     .tree-body-inner {
-        padding: 0 1.15rem 1rem 1.15rem;
+        padding: 0 .8rem .7rem;
     }
 
     /* ===== User Card ===== */
     .user-card {
         display: flex;
         align-items: center;
-        gap: .85rem;
-        padding: .75rem 1rem;
-        border: 1px solid #e9ecef;
-        border-radius: .6rem;
-        margin-bottom: .5rem;
-        background: #fafbfd;
-        transition: all .2s;
+        gap: .7rem;
+        padding: .6rem .75rem;
+        border: 1px solid #e5e9ef;
+        border-radius: .4rem;
+        margin-bottom: .4rem;
+        background: #fff;
+        transition: background-color .15s ease, border-color .15s ease;
     }
 
     .user-card:hover {
-        background: #f0f4ff;
-        border-color: #c7d2fe;
-        transform: translateX(3px);
+        background: #f8fafc;
+        border-color: #cbd5e1;
     }
 
     .user-avatar {
-        width: 42px;
-        height: 42px;
-        border-radius: 50%;
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: .4rem;
         display: flex;
         align-items: center;
         justify-content: center;
         font-weight: 700;
         font-size: .95rem;
-        color: #fff;
+        color: #475569;
+        background: #eef2f6;
         flex-shrink: 0;
         text-transform: uppercase;
-    }
-
-    .user-card:nth-child(4n+1) .user-avatar {
-        background: linear-gradient(135deg, #6366f1, #818cf8);
-    }
-
-    .user-card:nth-child(4n+2) .user-avatar {
-        background: linear-gradient(135deg, #ec4899, #f472b6);
-    }
-
-    .user-card:nth-child(4n+3) .user-avatar {
-        background: linear-gradient(135deg, #f59e0b, #fbbf24);
-    }
-
-    .user-card:nth-child(4n) .user-avatar {
-        background: linear-gradient(135deg, #14b8a6, #2dd4bf);
     }
 
     .user-info {
@@ -175,7 +144,7 @@
 
     .user-name {
         font-weight: 600;
-        color: #1e293b;
+        color: #273449;
         font-size: .9rem;
         white-space: nowrap;
         overflow: hidden;
@@ -203,9 +172,31 @@
         padding: .2rem .6rem;
         border-radius: 999px;
         font-weight: 600;
-        background: #f1f5f9;
+        background: #f5f6f8;
         color: #475569;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #e1e5eb;
+    }
+
+    .user-role-empty {
+        background: #f8f9fa;
+        color: #64748b;
+    }
+
+    .user-status {
+        border: 1px solid transparent;
+        font-size: .72rem;
+    }
+
+    .user-status-active {
+        background: #eef6f0;
+        color: #356345;
+        border-color: #d6e8db;
+    }
+
+    .user-status-inactive {
+        background: #f1f3f5;
+        color: #59636e;
+        border-color: #e0e4e8;
     }
 
     .user-actions {
@@ -222,11 +213,11 @@
 
     /* ===== No Location Section ===== */
     .no-location-section {
-        border: 1px dashed #cbd5e1;
-        border-radius: .75rem;
-        background: #fefce8;
-        padding: 1rem 1.25rem;
-        margin-bottom: .75rem;
+        border: 1px solid #dfe4eb;
+        border-radius: .5rem;
+        background: #fff;
+        padding: .8rem;
+        margin-bottom: .65rem;
     }
 
     .no-location-section .section-title {
@@ -234,8 +225,8 @@
         align-items: center;
         gap: .5rem;
         font-weight: 600;
-        color: #92400e;
-        margin-bottom: .75rem;
+        color: #475569;
+        margin-bottom: .6rem;
     }
 
     /* ===== Connector Lines ===== */
@@ -250,18 +241,17 @@
         left: 0;
         top: 0;
         bottom: 1rem;
-        width: 2px;
+        width: 1px;
         background: var(--tree-line-color);
-        border-radius: 1px;
     }
 
     /* ===== Search highlight ===== */
     .search-result-count {
-        background: #fef3c7;
-        color: #92400e;
-        padding: .35rem .85rem;
-        border-radius: .5rem;
-        font-size: .85rem;
+        background: #f1f5f9;
+        color: #475569;
+        padding: .3rem .65rem;
+        border-radius: .35rem;
+        font-size: .82rem;
         font-weight: 600;
         display: inline-flex;
         align-items: center;
@@ -282,7 +272,7 @@
 
     .user-location-filter {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr)) auto auto;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
         gap: .5rem;
         align-items: center;
     }
@@ -307,6 +297,170 @@
         grid-column: 1 / -1;
     }
 
+    .user-management-layout {
+        display: grid;
+        grid-template-columns: minmax(270px, 320px) minmax(0, 1fr);
+        align-items: start;
+        margin: 0;
+    }
+
+    .user-management-layout > * {
+        width: auto;
+        max-width: none;
+        padding: 0;
+    }
+
+    .unit-browser {
+        position: sticky;
+        top: 1rem;
+        overflow: hidden;
+    }
+
+    .unit-browser-tree {
+        max-height: min(65vh, 46rem);
+        overflow: auto;
+        padding: .5rem;
+    }
+
+    .account-list-panel {
+        overflow: hidden;
+        border: 1px solid #dfe4eb;
+        border-radius: .6rem;
+        background: #fff;
+    }
+
+    .account-list-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        padding: .85rem 1rem;
+        border-bottom: 1px solid #e8edf3;
+    }
+
+    .account-list-body {
+        padding: .75rem;
+    }
+
+    .account-list-body .user-card:last-child {
+        margin-bottom: 0;
+    }
+
+    .account-location {
+        margin-top: .15rem;
+        color: #64748b;
+        font-size: .76rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+
+    .unit-tree-node {
+        min-width: 0;
+    }
+
+    .unit-tree-row {
+        display: flex;
+        align-items: center;
+        gap: .25rem;
+        min-width: 0;
+    }
+
+    .unit-tree-toggle,
+    .unit-tree-leaf {
+        display: flex;
+        align-items: center;
+        gap: .55rem;
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: .5rem .55rem;
+        border: 0;
+        border-radius: .4rem;
+        background: transparent;
+        color: #334155;
+        text-align: left;
+    }
+
+    .unit-tree-toggle:hover,
+    .unit-tree-leaf:hover,
+    .unit-tree-select:hover {
+        background: #f1f5f9;
+    }
+
+    .unit-tree-toggle > i {
+        width: .8rem;
+        flex: 0 0 .8rem;
+        color: #64748b;
+        font-size: .7rem;
+        transition: transform .15s ease;
+    }
+
+    .unit-tree-toggle[aria-expanded="true"] > i {
+        transform: rotate(90deg);
+    }
+
+    .unit-tree-name {
+        min-width: 0;
+        flex: 1 1 auto;
+        overflow-wrap: anywhere;
+    }
+
+    .unit-tree-select {
+        display: grid;
+        min-width: 2.5rem;
+        min-height: 2.5rem;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 0;
+        border-radius: .4rem;
+        background: transparent;
+    }
+
+    .unit-tree-count {
+        min-width: 1.65rem;
+        background: #f1f3f5;
+        color: #475569;
+        font-size: .72rem;
+        font-weight: 600;
+    }
+
+    .unit-tree-node.is-active > .unit-tree-row {
+        border-radius: .45rem;
+        background: #eff6ff;
+    }
+
+    .unit-tree-node.is-active > .unit-tree-row .unit-tree-name {
+        color: #1d4ed8;
+        font-weight: 700;
+    }
+
+    .unit-tree-children {
+        margin-left: 1rem;
+        padding-left: .4rem;
+        border-left: 1px solid #dbe3ed;
+    }
+
+    .unit-tree-node[data-unit-type="commune"] .unit-tree-toggle,
+    .unit-tree-node[data-unit-type="commune"] .unit-tree-leaf {
+        font-size: .9rem;
+    }
+
+    .unit-tree-node[data-unit-type="village"] .unit-tree-leaf {
+        font-size: .86rem;
+        color: #475569;
+    }
+
+    .unit-tree-loading {
+        padding: .45rem .6rem;
+        color: #64748b;
+        font-size: .82rem;
+    }
+
+    @media (max-width: 991.98px) {
+        .user-management-layout {
+            grid-template-columns: minmax(0, 1fr);
+        }
+    }
+
     @media (max-width: 767.98px) {
         .user-location-filter {
             grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -316,8 +470,17 @@
             grid-column: 1 / -1;
         }
 
-        .user-location-filter > .btn {
-            width: 100%;
+        .user-location-filter .btn {
+            grid-column: 1 / -1;
+            justify-self: start;
+        }
+
+        .unit-browser {
+            position: static;
+        }
+
+        .unit-browser-tree {
+            max-height: 40vh;
         }
     }
 
@@ -382,19 +545,13 @@
             padding-left: 1rem;
         }
 
-        .tree-node {
-            border-radius: .65rem;
-            margin-bottom: .55rem;
+        .tree-node.level-province {
+            margin-bottom: .5rem;
         }
 
         .tree-node.level-commune {
             margin-left: .35rem;
-            border-top: 0;
-            border-right: 0;
-            border-bottom: 0;
-            border-radius: 0;
-            box-shadow: none;
-            background: #f8fafc;
+            background: transparent;
         }
 
         .tree-node.level-commune > .tree-header {
@@ -411,9 +568,9 @@
         }
 
         .tree-header .level-icon {
-            width: 2.25rem;
-            height: 2.25rem;
-            border-radius: .55rem;
+            width: 1.8rem;
+            height: 1.8rem;
+            border-radius: .35rem;
         }
 
         .tree-header .node-name {
@@ -515,12 +672,12 @@
     <div class="user-management-header d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div>
             <h1 class="h3 mb-1">
-                <i class="fa-solid fa-sitemap text-primary me-2"></i>
+                <i class="fa-solid fa-sitemap text-secondary me-2"></i>
                 Quản lý tài khoản
             </h1>
 
             <p class="text-muted mb-0" style="font-size:.88rem">
-                Hiển thị phân cấp theo địa bàn quản lý
+                {{ $showOrganizationTree ? 'Chọn đơn vị bên trái để xem tài khoản theo địa bàn' : 'Hiển thị phân cấp theo địa bàn quản lý' }}
             </p>
         </div>
 
@@ -531,7 +688,7 @@
     </div>
 
     {{-- Lọc theo địa bàn --}}
-    <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-3">
+    <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-3 {{ $showOrganizationTree ? 'd-none' : '' }}" id="user-location-filter">
         @include('partials.location-picker', [
             'pickerId' => 'user-list-location',
             'provinces' => $provinces,
@@ -541,49 +698,84 @@
             'showVillage' => true,
             'inline' => true,
         ])
-        <button class="btn btn-sm btn-outline-primary" type="submit">
-            <i class="fa-solid fa-filter me-1" aria-hidden="true"></i>Lọc địa bàn
-        </button>
-        @if($isFiltering && $actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
-            <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.users.index') }}">Bỏ lọc</a>
+        @if($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
+            <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.users.index') }}" data-clear-user-filter @if(!$isFiltering) hidden @endif>
+                <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Bỏ lọc
+            </a>
         @endif
     </form>
 
-    {{-- Kết quả lọc --}}
-    @if($isFiltering)
-        <div class="mb-3">
-            <span class="search-result-count">
-                <i class="fa-solid fa-filter"></i>
-                {{ $allUsers->count() }} tài khoản trong địa bàn đã chọn
-            </span>
+    <div class="row g-3 user-management-layout">
+        @if ($showOrganizationTree)
+            <aside class="col-lg-4 col-xl-3" aria-label="Cây đơn vị hành chính">
+                @include('admin.access-control.users._organization_tree')
+            </aside>
+        @endif
+        <section class="{{ $showOrganizationTree ? 'col-lg-8 col-xl-9' : 'col-12' }}" aria-label="Danh sách tài khoản">
+    <div id="account-tree-results" aria-live="polite">
+        @if ($showOrganizationTree)
+            <div class="account-list-panel">
+                <div class="account-list-header">
+                    <div>
+                        <h2 class="h6 mb-1">Tài khoản</h2>
+                        <div class="small text-muted">
+                            {{ $isFiltering ? 'Trong địa bàn đang chọn' : 'Tất cả địa bàn' }}
+                        </div>
+                    </div>
+                    <span class="badge text-bg-light border">{{ number_format($totalUserCount) }}</span>
+                </div>
+                <div class="account-list-body">
+                    @forelse($allUsers as $user)
+                        @include('admin.access-control.users._user_card', ['user' => $user])
+                    @empty
+                        <div class="text-center text-muted py-5">
+                            <i class="fa-regular fa-folder-open fs-3 d-block mb-2" aria-hidden="true"></i>
+                            Chưa có tài khoản trong địa bàn đang chọn.
+                        </div>
+                    @endforelse
+                </div>
+                @if($allUsers->hasPages())
+                    <div class="card-footer bg-white">
+                        {{ $allUsers->links('vendor.pagination.bootstrap-5') }}
+                    </div>
+                @endif
+            </div>
+        @else
+        {{-- Kết quả lọc --}}
+        @if($isFiltering)
+            <div class="mb-3">
+                <span class="search-result-count">
+                    <i class="fa-solid fa-filter"></i>
+                    {{ $allUsers->count() }} tài khoản trong địa bàn đã chọn
+                </span>
+            </div>
+        @endif
+
+        {{-- Controls --}}
+        <div class="d-flex justify-content-end mb-2 tree-controls">
+
+            <button
+                type="button"
+                class="btn btn-outline-secondary"
+                onclick="toggleAllNodes(true)"
+            >
+                <i class="fa-solid fa-angles-down me-1"></i>
+                Mở tất cả
+            </button>
+
+            <button
+                type="button"
+                class="btn btn-outline-secondary"
+                onclick="toggleAllNodes(false)"
+            >
+                <i class="fa-solid fa-angles-up me-1"></i>
+                Thu gọn
+            </button>
+
         </div>
-    @endif
 
-    {{-- Controls --}}
-    <div class="d-flex justify-content-end mb-2 tree-controls">
-
-        <button
-            type="button"
-            class="btn btn-outline-secondary"
-            onclick="toggleAllNodes(true)"
-        >
-            <i class="fa-solid fa-angles-down me-1"></i>
-            Mở tất cả
-        </button>
-
-        <button
-            type="button"
-            class="btn btn-outline-secondary"
-            onclick="toggleAllNodes(false)"
-        >
-            <i class="fa-solid fa-angles-up me-1"></i>
-            Thu gọn
-        </button>
-
-    </div>
-
-    {{-- Hierarchy Tree --}}
-    <div class="hierarchy-tree">
+        {{-- Hierarchy Tree --}}
+        <div class="hierarchy-tree">
 
         {{-- Không có địa bàn --}}
         @if($noLocationUsers->isNotEmpty())
@@ -595,6 +787,7 @@
 
                     Chưa gán địa bàn
                     ({{ $noLocationUsers->count() }})
+                    </div>
                 </div>
 
                 @foreach($noLocationUsers as $user)
@@ -619,7 +812,7 @@
                 {{-- Province Header --}}
                 <div
                     class="tree-header"
-                    aria-expanded="true"
+                    aria-expanded="false"
                     onclick="toggleNode(this)"
                 >
 
@@ -639,7 +832,7 @@
 
 
                 {{-- Province Body --}}
-                <div class="tree-body open">
+                <div class="tree-body">
 
                     <div class="tree-body-inner">
 
@@ -664,7 +857,7 @@
                                     {{-- Commune Header --}}
                                     <div
                                         class="tree-header"
-                                        aria-expanded="true"
+                                        aria-expanded="false"
                                         onclick="toggleNode(this)"
                                     >
 
@@ -684,7 +877,7 @@
 
 
                                     {{-- Commune Body --}}
-                                    <div class="tree-body open">
+                                    <div class="tree-body">
 
                                         <div class="tree-body-inner">
 
@@ -709,7 +902,7 @@
                                                         {{-- Village Header --}}
                                                         <div
                                                             class="tree-header"
-                                                            aria-expanded="true"
+                                                            aria-expanded="false"
                                                             onclick="toggleNode(this)"
                                                         >
 
@@ -729,7 +922,7 @@
 
 
                                                         {{-- Village Body --}}
-                                                        <div class="tree-body open">
+                                                        <div class="tree-body">
 
                                                             <div class="tree-body-inner">
 
@@ -787,67 +980,369 @@
 
             @endif
 
-        @endforelse
-
+    @endforelse
     </div>
+        @endif
 
+</div>
+    </section>
 </div>
 @endsection
 
 
 @push('scripts')
 <script>
+    (() => {
+        const filterForm = document.getElementById('user-location-filter');
+        const results = document.getElementById('account-tree-results');
+        if (filterForm && results && filterForm.dataset.ajaxReady !== 'true') {
+            filterForm.dataset.ajaxReady = 'true';
+            let activeRequest;
+            let requestVersion = 0;
+            const unitTree = document.getElementById('organization-unit-tree');
+            const locationPicker = filterForm.querySelector('[data-location-picker]');
+            const parseCounts = (attribute) => {
+                try {
+                    return JSON.parse(unitTree?.dataset[attribute] || '{}');
+                } catch (error) {
+                    console.error('Không đọc được số tài khoản trong cây đơn vị:', error);
+                    return {};
+                }
+            };
+            const unitCounts = {
+                province: parseCounts('provinceCounts'),
+            };
 
-    function toggleNode(header) {
+            const selectedFiltersUrl = () => {
+                const url = new URL(filterForm.action, window.location.href);
+                new FormData(filterForm).forEach((value, key) => {
+                    if (typeof value === 'string' && value !== '') {
+                        url.searchParams.set(key, value);
+                    }
+                });
+                return url;
+            };
 
-        const body = header.nextElementSibling;
+            const updateActiveUnit = (url = new URL(window.location.href)) => {
+                if (!unitTree) return;
+                const provinceCode = url.searchParams.get('province_code') || '';
+                const communeCode = url.searchParams.get('commune_code') || '';
+                const villageCode = url.searchParams.get('village_code') || '';
+                unitTree.querySelectorAll('.unit-tree-node').forEach((node) => {
+                    const type = node.dataset.unitType;
+                    const code = node.dataset.unitCode;
+                    const selected = (type === 'province' && code === provinceCode && !communeCode)
+                        || (type === 'commune' && code === communeCode && !villageCode)
+                        || (type === 'village' && code === villageCode);
+                    node.classList.toggle('is-active', selected);
+                });
+            };
 
-        const isOpen =
-            header.getAttribute('aria-expanded') === 'true';
+            const refreshResults = async (url) => {
+                const version = ++requestVersion;
+                activeRequest?.abort();
+                activeRequest = new AbortController();
+                results.setAttribute('aria-busy', 'true');
 
-        header.setAttribute(
-            'aria-expanded',
-            !isOpen
-        );
+                try {
+                    const response = await fetch(url, {
+                        headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+                        credentials: 'same-origin',
+                        signal: activeRequest.signal,
+                    });
+                    if (!response.ok) {
+                        throw new Error(`Không thể lọc danh sách tài khoản (HTTP ${response.status}).`);
+                    }
 
-        if (isOpen) {
+                    const document = new DOMParser().parseFromString(await response.text(), 'text/html');
+                    const updatedResults = document.getElementById('account-tree-results');
+                    if (!updatedResults) {
+                        throw new Error('Dữ liệu danh sách tài khoản trả về không hợp lệ.');
+                    }
+                    if (version !== requestVersion) return;
 
-            body.classList.remove('open');
+                    results.innerHTML = updatedResults.innerHTML;
+                    const hasFilters = ['province_code', 'commune_code', 'village_code']
+                        .some((key) => url.searchParams.has(key));
+                    const clearLink = filterForm.querySelector('[data-clear-user-filter]');
+                    if (clearLink) clearLink.hidden = !hasFilters;
+                    const clearTreeFilter = unitTree?.querySelector('[data-clear-user-filter]');
+                    if (clearTreeFilter) clearTreeFilter.hidden = !hasFilters;
+                    window.history.replaceState({}, '', url);
+                    updateActiveUnit(url);
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        window.showAppNotification('error', error.message || 'Không thể lọc danh sách tài khoản.');
+                    }
+                } finally {
+                    if (version === requestVersion) {
+                        results.removeAttribute('aria-busy');
+                    }
+                }
+            };
 
-        } else {
+            results.addEventListener('click', (event) => {
+                const link = event.target.closest('nav[aria-label="Phân trang"] a[href]');
+                if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
-            body.classList.add('open');
+                event.preventDefault();
+                refreshResults(new URL(link.href, window.location.href));
+            });
 
-        }
-    }
+            results.addEventListener('change', (event) => {
+                if (!event.target.matches('[data-pagination-select]')) return;
 
+                const form = event.target.form;
+                if (!form) return;
+                const url = new URL(form.action, window.location.href);
+                new FormData(form).forEach((value, key) => {
+                    if (typeof value === 'string' && value !== '') {
+                        url.searchParams.set(key, value);
+                    }
+                });
+                refreshResults(url);
+            });
 
-    function toggleAllNodes(expand) {
+            const createUnitNode = (type, unit, provinceCode, communeCode = '') => {
+                const node = document.createElement('section');
+                node.className = 'unit-tree-node';
+                node.dataset.unitType = type;
+                node.dataset.unitCode = String(unit.code);
+                node.dataset.unitName = unit.name;
+                node.dataset.provinceCode = provinceCode;
+                if (communeCode) node.dataset.communeCode = communeCode;
 
-        document
-            .querySelectorAll('.tree-header')
-            .forEach(header => {
-
-                const body =
-                    header.nextElementSibling;
-
-                header.setAttribute(
-                    'aria-expanded',
-                    expand
-                );
-
-                if (expand) {
-
-                    body.classList.add('open');
-
+                const row = document.createElement('div');
+                row.className = 'unit-tree-row';
+                if (type === 'village') {
+                    const selectButton = document.createElement('button');
+                    selectButton.type = 'button';
+                    selectButton.className = 'unit-tree-leaf';
+                    selectButton.dataset.unitSelect = '';
+                    selectButton.setAttribute('aria-label', `Lọc tài khoản theo ${unit.name}`);
+                    const name = document.createElement('span');
+                    name.className = 'unit-tree-name';
+                    name.textContent = unit.name;
+                    selectButton.append(name);
+                    row.append(selectButton);
                 } else {
+                    const toggle = document.createElement('button');
+                    toggle.type = 'button';
+                    toggle.className = 'unit-tree-toggle';
+                    toggle.dataset.treeToggle = '';
+                    toggle.setAttribute('aria-expanded', 'false');
+                    toggle.setAttribute('aria-label', `Mở ${type === 'province' ? 'xã/phường thuộc ' : 'thôn/bản thuộc '}${unit.name}`);
+                    const chevron = document.createElement('i');
+                    chevron.className = 'fa-solid fa-chevron-right';
+                    chevron.setAttribute('aria-hidden', 'true');
+                    const name = document.createElement('span');
+                    name.className = 'unit-tree-name';
+                    name.textContent = unit.name;
+                    toggle.append(chevron, name);
 
-                    body.classList.remove('open');
-
+                    const selectButton = document.createElement('button');
+                    selectButton.type = 'button';
+                    selectButton.className = 'unit-tree-select';
+                    selectButton.dataset.unitSelect = '';
+                    selectButton.setAttribute('aria-label', `Lọc tài khoản theo ${unit.name}`);
+                    const count = document.createElement('span');
+                    count.className = 'badge unit-tree-count';
+                    count.textContent = Number(
+                        unit.account_count ?? unitCounts[type]?.[unit.code] ?? 0
+                    ).toLocaleString('vi-VN');
+                    selectButton.append(count);
+                    row.append(toggle, selectButton);
                 }
 
-            });
-    }
+                node.append(row);
+                if (type !== 'village') {
+                    const children = document.createElement('div');
+                    children.className = 'unit-tree-children';
+                    children.dataset.unitChildren = '';
+                    children.hidden = true;
+                    node.append(children);
+                }
+                return node;
+            };
 
+            const loadUnitChildren = async (node) => {
+                const type = node.dataset.unitType;
+                const code = node.dataset.unitCode;
+                const endpoint = type === 'province'
+                    ? `${unitTree.dataset.provincesUrl}/${encodeURIComponent(code)}/communes`
+                    : `${unitTree.dataset.communesUrl}/${encodeURIComponent(code)}/villages`;
+                const url = new URL(endpoint, window.location.href);
+                url.searchParams.set('include_account_counts', '1');
+                const response = await fetch(url, {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    throw new Error(`Không thể tải đơn vị cấp dưới (HTTP ${response.status}).`);
+                }
+                const units = await response.json();
+                if (!Array.isArray(units)) throw new Error('Danh sách đơn vị trả về không hợp lệ.');
+                const children = node.querySelector(':scope > [data-unit-children]');
+                const nextType = type === 'province' ? 'commune' : 'village';
+                units.forEach((unit) => {
+                    children.append(createUnitNode(
+                        nextType,
+                        unit,
+                        type === 'province' ? code : node.dataset.provinceCode,
+                        type === 'commune' ? code : unit.code,
+                    ));
+                });
+                if (units.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'unit-tree-loading';
+                    empty.textContent = 'Không có đơn vị cấp dưới.';
+                    children.append(empty);
+                }
+                node.dataset.treeLoaded = 'true';
+            };
+
+            if (unitTree && !unitTree.dataset.ajaxReady) {
+                unitTree.dataset.ajaxReady = 'true';
+                const revealSelectedUnit = async () => {
+                    const url = new URL(window.location.href);
+                    const provinceCode = url.searchParams.get('province_code');
+                    const communeCode = url.searchParams.get('commune_code');
+                    const villageCode = url.searchParams.get('village_code');
+                    if (!provinceCode) return;
+
+                    let node = [...unitTree.querySelectorAll('.unit-tree-node[data-unit-type="province"]')]
+                        .find((item) => item.dataset.unitCode === provinceCode);
+                    if (!node) return;
+                    if (!communeCode && !villageCode) {
+                        node.scrollIntoView({ block: 'nearest' });
+                        updateActiveUnit(url);
+                        return;
+                    }
+
+                    const expand = async (parent) => {
+                        if (parent.dataset.treeLoaded !== 'true') await loadUnitChildren(parent);
+                        const toggle = parent.querySelector(':scope > .unit-tree-row [data-tree-toggle]');
+                        const children = parent.querySelector(':scope > [data-unit-children]');
+                        toggle.setAttribute('aria-expanded', 'true');
+                        children.hidden = false;
+                        return children;
+                    };
+
+                    let children = await expand(node);
+                    if (communeCode) {
+                        node = [...children.querySelectorAll(':scope > .unit-tree-node[data-unit-type="commune"]')]
+                            .find((item) => item.dataset.unitCode === communeCode);
+                        if (!node) return;
+                        if (villageCode) {
+                            children = await expand(node);
+                            node = [...children.querySelectorAll(':scope > .unit-tree-node[data-unit-type="village"]')]
+                                .find((item) => item.dataset.unitCode === villageCode);
+                        }
+                    }
+                    if (node) {
+                        node.scrollIntoView({ block: 'nearest' });
+                        updateActiveUnit(url);
+                    }
+                };
+
+                unitTree.addEventListener('click', async (event) => {
+                    const clearButton = event.target.closest('[data-clear-user-filter]');
+                    if (clearButton) {
+                        filterForm.querySelector('[data-province]').value = '';
+                        const commune = filterForm.querySelector('[data-commune]');
+                        commune.replaceChildren(new Option('-- Chọn Xã/Phường --', ''));
+                        commune.disabled = true;
+                        const village = filterForm.querySelector('[data-village]');
+                        village.replaceChildren(new Option(village.dataset.placeholder, ''));
+                        village.disabled = true;
+                        updateActiveUnit(new URL(filterForm.action, window.location.href));
+                        await refreshResults(new URL(filterForm.action, window.location.href));
+                        return;
+                    }
+
+                    const toggle = event.target.closest('[data-tree-toggle]');
+                    if (toggle) {
+                        const node = toggle.closest('.unit-tree-node');
+                        const children = node.querySelector(':scope > [data-unit-children]');
+                        const isExpanded = toggle.getAttribute('aria-expanded') === 'true';
+                        if (isExpanded) {
+                            toggle.setAttribute('aria-expanded', 'false');
+                            children.hidden = true;
+                            return;
+                        }
+
+                        try {
+                            if (node.dataset.treeLoaded !== 'true') {
+                                await loadUnitChildren(node);
+                            }
+                            toggle.setAttribute('aria-expanded', 'true');
+                            children.hidden = false;
+                        } catch (error) {
+                            children.replaceChildren();
+                            window.showAppNotification('error', error.message || 'Không thể tải cây đơn vị.');
+                        }
+                        return;
+                    }
+
+                    const selectButton = event.target.closest('[data-unit-select]');
+                    if (!selectButton || !locationPicker?.selectLocation) return;
+                    const node = selectButton.closest('.unit-tree-node');
+                    const type = node.dataset.unitType;
+                    const provinceCode = type === 'province' ? node.dataset.unitCode : node.dataset.provinceCode;
+                    const communeCode = type === 'commune' ? node.dataset.unitCode : (type === 'village' ? node.dataset.communeCode : '');
+                    const villageCode = type === 'village' ? node.dataset.unitCode : '';
+                    try {
+                        await locationPicker.selectLocation(provinceCode, communeCode, villageCode);
+                        await refreshResults(selectedFiltersUrl());
+                        node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    } catch (error) {
+                        window.showAppNotification('error', error.message || 'Không thể lọc tài khoản theo đơn vị.');
+                    }
+                });
+                updateActiveUnit();
+                revealSelectedUnit().catch((error) => {
+                    window.showAppNotification('error', error.message || 'Không thể mở đơn vị đang lọc.');
+                });
+            }
+
+            filterForm.addEventListener('change', (event) => {
+                if (event.target.matches('[data-province], [data-commune], [data-village]')) {
+                    refreshResults(selectedFiltersUrl());
+                    updateActiveUnit(selectedFiltersUrl());
+                }
+            });
+
+            filterForm.addEventListener('click', (event) => {
+                const clearLink = event.target.closest('[data-clear-user-filter]');
+                if (!clearLink || event.defaultPrevented || event.button !== 0
+                    || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+                event.preventDefault();
+                filterForm.querySelector('[data-province]').value = '';
+                const commune = filterForm.querySelector('[data-commune]');
+                commune.replaceChildren(new Option('-- Chọn Xã/Phường --', ''));
+                commune.disabled = true;
+
+                const village = filterForm.querySelector('[data-village]');
+                village.replaceChildren(new Option(village.dataset.placeholder, ''));
+                village.disabled = true;
+                refreshResults(new URL(filterForm.action, window.location.href));
+            });
+        }
+
+        window.toggleNode = (header) => {
+            const body = header.nextElementSibling;
+            const isOpen = header.getAttribute('aria-expanded') === 'true';
+            header.setAttribute('aria-expanded', !isOpen);
+            body.classList.toggle('open', !isOpen);
+        };
+
+        window.toggleAllNodes = (expand) => {
+            document.querySelectorAll('.tree-header').forEach((header) => {
+                header.setAttribute('aria-expanded', expand);
+                header.nextElementSibling.classList.toggle('open', expand);
+            });
+        };
+    })();
 </script>
 @endpush

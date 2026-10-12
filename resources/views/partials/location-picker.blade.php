@@ -9,6 +9,8 @@ $communeRequired = $communeRequired ?? false;
 $villageRequired = $villageRequired ?? false;
 $inline = $inline ?? false;
 $villagePlaceholder = $villagePlaceholder ?? '-- Chọn Thôn/Bản --';
+$initialCommune = $initialCommune ?? null;
+$initialVillages = $initialVillages ?? collect();
 // nếu mà submit lỗi thì lấy value cũ
 ////////
 $selectedProvinceCode = old($provinceName, $provinceCode ?? request($provinceName, ''));
@@ -36,8 +38,11 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
 
     <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
         <label for="{{ $pickerId }}-commune" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Xã/Phường @if ($communeRequired)<span class="text-danger">*</span>@endif</label>
-        <select id="{{ $pickerId }}-commune" name="{{ $communeName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($communeName) is-invalid @enderror" data-commune data-selected-code="{{ $selectedCommuneCode }}" disabled @if ($communeRequired) required @endif>
+        <select id="{{ $pickerId }}-commune" name="{{ $communeName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($communeName) is-invalid @enderror" data-commune data-selected-code="{{ $selectedCommuneCode }}" @disabled($initialCommune === null) @if ($communeRequired) required @endif>
             <option value="">-- Chọn Xã/Phường --</option>
+            @if ($initialCommune)
+            <option value="{{ $initialCommune->code }}" @selected((string) $selectedCommuneCode === (string) $initialCommune->code)>{{ $initialCommune->name }}</option>
+            @endif
         </select>
         @error($communeName)
         <div class="invalid-feedback">{{ $message }}</div>
@@ -46,9 +51,12 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
 
     @if ($showVillage)
     <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
-        <label for="{{ $pickerId }}-village" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Thôn/Bản</label>
-        <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($villageName) is-invalid @enderror" data-village data-placeholder="{{ $villagePlaceholder }}" data-selected-code="{{ $selectedVillageCode }}" disabled @if ($villageRequired) required @endif>
+        <label for="{{ $pickerId }}-village" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Thôn/Bản @if ($villageRequired)<span class="text-danger">*</span>@endif</label>
+        <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($villageName) is-invalid @enderror" data-village data-placeholder="{{ $villagePlaceholder }}" data-selected-code="{{ $selectedVillageCode }}" @disabled($initialCommune === null) @if ($villageRequired) required @endif>
             <option value="">{{ $villagePlaceholder }}</option>
+            @foreach ($initialVillages as $village)
+            <option value="{{ $village->code }}" @selected((string) $selectedVillageCode === (string) $village->code)>{{ $village->name }}</option>
+            @endforeach
         </select>
         @error($villageName)
         <div class="invalid-feedback">{{ $message }}</div>
@@ -63,7 +71,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
 
 @push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    (() => {
         document.querySelectorAll('[data-location-picker]').forEach(function(picker) {
             const provinceSelect = picker.querySelector('[data-province]');
             const communeSelect = picker.querySelector('[data-commune]');
@@ -101,13 +109,19 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                     villages.forEach(village => villageSelect.add(new Option(village.name, village.code)));
                     villageSelect.disabled = false;
                     villageSelect.value = selectedCode;
+                    picker.dispatchEvent(new CustomEvent('location:villages-loaded', {
+                        detail: {
+                            communeCode,
+                            villageCode: villageSelect.value
+                        }
+                    }));
                 } catch (error) {
                     console.error('Lỗi tải danh sách thôn/bản:', error);
                     setStatus('Không tải được danh sách thôn/bản.');
                 }
             }
 
-            async function loadCommunes(provinceCode, selectedCode = '') {
+            async function loadCommunes(provinceCode, selectedCode = '', selectedVillageCode = '') {
                 resetSelect(communeSelect, '-- Chọn Xã/Phường --');
                 resetSelect(villageSelect, '-- Chọn Thôn/Bản --');
                 setStatus('');
@@ -129,7 +143,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                     }));
 
                     if (communeSelect.value && villageSelect) {
-                        await loadVillages(communeSelect.value, villageSelect.dataset.selectedCode);
+                        await loadVillages(communeSelect.value, selectedVillageCode);
                     }
                 } catch (error) {
                     console.error('Lỗi tải danh sách xã/phường:', error);
@@ -137,7 +151,20 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                 }
             }
 
+            picker.selectLocation = async (provinceCode = '', selectedCommuneCode = '', selectedVillageCode = '') => {
+                provinceSelect.value = provinceCode;
+                await loadCommunes(provinceCode, selectedCommuneCode, selectedVillageCode);
+
+                if (selectedCommuneCode && communeSelect.value !== selectedCommuneCode) {
+                    throw new Error('Không tải được danh sách xã/phường của tỉnh đã chọn.');
+                }
+                if (selectedVillageCode && villageSelect?.value !== selectedVillageCode) {
+                    throw new Error('Không tải được danh sách thôn/bản của xã đã chọn.');
+                }
+            };
+
             provinceSelect.addEventListener('change', function() {
+                communeSelect.dataset.selectedCode = '';
                 if (villageSelect) villageSelect.dataset.selectedCode = '';
                 loadCommunes(this.value);
             });
@@ -148,9 +175,18 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
             });
 
             if (provinceSelect.value) {
-                loadCommunes(provinceSelect.value, communeSelect.dataset.selectedCode);
+                if (communeSelect.options.length > 1 && communeSelect.value) {
+                    picker.dispatchEvent(new CustomEvent('location:communes-loaded', {
+                        detail: {
+                            provinceCode: provinceSelect.value,
+                            communeCode: communeSelect.value
+                        }
+                    }));
+                } else {
+                    loadCommunes(provinceSelect.value, communeSelect.dataset.selectedCode, villageSelect?.dataset.selectedCode || '');
+                }
             }
         });
-    });
+    })();
 </script>
 @endpush

@@ -320,7 +320,7 @@
 
 @push('scripts')
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    (() => {
         const classInput = document.getElementById('current-class');
         const academicBlockInput = document.getElementById('academic-block');
 
@@ -369,7 +369,7 @@
                 const matchesCommune = !communeCode || option.dataset.communeCode === communeCode;
                 option.hidden = !matchesProvince || !matchesCommune;
                 option.disabled = option.hidden;
-            });
+            })();
 
             if (schoolSelect.selectedOptions[0]?.hidden) schoolSelect.value = '';
         }

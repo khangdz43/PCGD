@@ -66,7 +66,7 @@
                             <a class="btn btn-sm btn-outline-primary" href="{{ route('schools.edit', $school, false) }}" title="Sửa" aria-label="Sửa {{ $school->display_name }}">
                                 <i class="fa-solid fa-pen" aria-hidden="true"></i>
                             </a>
-                            <form class="d-inline" method="POST" action="{{ route('schools.destroy', $school, false) }}" onsubmit="return confirm('Bạn có chắc muốn xóa trường học này?')">
+                            <form class="d-inline" method="POST" action="{{ route('schools.destroy', $school, false) }}" data-confirm="Bạn có chắc muốn xóa trường học này?" data-confirm-title="Xác nhận xóa trường học">
                                 @csrf
                                 @method('DELETE')
                                 <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa" aria-label="Xóa {{ $school->display_name }}">
@@ -134,6 +134,7 @@
     }
 </style>
 <script>
+    (() => {
     const schoolFilterForm = document.getElementById('school-filter-form');
     const schoolResults = document.getElementById('school-results');
     const schoolFilterStatus = document.getElementById('school-filter-status');
@@ -226,6 +227,7 @@
     });
 
     updateSchoolClearButton();
+    })();
 </script>
 @endpush
 @endsection

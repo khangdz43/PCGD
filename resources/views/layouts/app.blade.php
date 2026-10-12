@@ -4,6 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
+    <meta name="turbo-prefetch" content="false">
+    @vite('resources/js/app.js')
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             document.querySelector('meta[name="viewport"]')?.setAttribute(
@@ -65,7 +67,33 @@
         .app-notifications {
             display: grid;
             gap: .65rem;
-            margin: 0 auto 1rem;
+            width: min(100%, 30rem);
+            margin: 0;
+        }
+
+        .app-notifications-wrap {
+            position: fixed;
+            inset: 0;
+            z-index: 2000;
+            display: grid;
+            place-items: center;
+            padding: 1rem;
+            pointer-events: none;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity .18s ease, visibility .18s ease;
+        }
+
+        .app-notifications-wrap:has(.app-notification),
+        .app-notifications-wrap.is-visible {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        .app-notifications-wrap.is-toast,
+        .app-notifications-wrap:has(.app-notifications-toast) {
+            place-items: start end;
+            padding: 1rem;
         }
 
         .app-notification {
@@ -81,8 +109,15 @@
             border-radius: .75rem;
             background: var(--notice-bg);
             color: #1e293b;
-            box-shadow: 0 .25rem .75rem rgb(15 23 42 / 6%);
+            box-shadow: 0 1rem 3rem rgb(15 23 42 / 20%);
+            pointer-events: auto;
+            animation: app-notification-enter .2s ease-out both;
             transition: opacity .2s ease, transform .2s ease;
+        }
+
+        @keyframes app-notification-enter {
+            from { opacity: 0; transform: translateY(.5rem) scale(.98); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
         }
 
         .app-notification-success {
@@ -162,7 +197,107 @@
 
         .app-notification.is-hiding {
             opacity: 0;
-            transform: translateY(-.35rem);
+            transform: translateY(.35rem) scale(.98);
+        }
+
+        .app-confirm-dialog {
+            width: min(28rem, calc(100vw - 2rem));
+            max-width: none;
+            padding: 1.25rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 1rem;
+            color: #1e293b;
+            box-shadow: 0 1.25rem 3.5rem rgb(15 23 42 / 28%);
+        }
+
+        .app-confirm-dialog::backdrop {
+            background: rgb(15 23 42 / 42%);
+            backdrop-filter: blur(2px);
+        }
+
+        .app-confirm-heading {
+            display: flex;
+            align-items: center;
+            gap: .7rem;
+            margin-bottom: .65rem;
+        }
+
+        .app-confirm-icon {
+            display: grid;
+            width: 2.5rem;
+            height: 2.5rem;
+            flex: 0 0 2.5rem;
+            place-items: center;
+            border-radius: 50%;
+            background: #fff7ed;
+            color: #c2410c;
+        }
+
+        .app-confirm-title {
+            margin: 0;
+            color: #0f172a;
+            font-size: 1.05rem;
+            font-weight: 700;
+        }
+
+        .app-confirm-message {
+            margin: 0 0 1.25rem;
+            overflow-wrap: anywhere;
+            line-height: 1.55;
+        }
+
+        .app-confirm-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: .55rem;
+        }
+
+        @media (max-width: 575.98px) {
+            .app-notifications {
+                width: min(100%, 24rem);
+            }
+
+            .app-notification {
+                gap: .6rem;
+                padding: .8rem;
+            }
+
+            .app-confirm-actions .btn {
+                flex: 1 1 0;
+            }
+        }
+
+        .app-loading-alert {
+            position: fixed;
+            z-index: 1090;
+            top: 1rem;
+            left: 50%;
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            max-width: calc(100vw - 2rem);
+            padding: .65rem 1rem;
+            border: 1px solid #bfdbfe;
+            border-radius: 999px;
+            background: #fff;
+            color: #1e40af;
+            box-shadow: 0 .5rem 1.25rem rgb(15 23 42 / 16%);
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, -.5rem);
+            transition: opacity .18s ease, transform .18s ease;
+        }
+
+        .app-loading-alert.is-visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+
+        .app-loading-alert .spinner-border {
+            width: 1rem;
+            height: 1rem;
+            flex: 0 0 1rem;
+            border-width: .15em;
         }
 
         .app-inline-note {
@@ -206,15 +341,110 @@
             line-height: 1.25;
         }
 
+        .app-account {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: .75rem;
+        }
+
+        .app-account-card {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            min-width: 0;
+            max-width: 36rem;
+            padding: .4rem .75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: .75rem;
+            background: #f8fafc;
+        }
+
+        .app-account-avatar {
+            display: grid;
+            width: 2.35rem;
+            height: 2.35rem;
+            flex: 0 0 2.35rem;
+            place-items: center;
+            border-radius: .65rem;
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .app-account-details {
+            min-width: 0;
+        }
+
         .app-account-name {
-            display: inline-block;
-            max-width: min(32vw, 20rem);
+            display: flex;
+            align-items: center;
+            gap: .45rem;
+            min-width: 0;
+            color: #0f172a;
+            font-size: .92rem;
+            font-weight: 700;
+            line-height: 1.3;
+            text-decoration: none;
+        }
+
+        .app-account-name span {
             overflow-wrap: anywhere;
         }
 
+        .app-account-name i {
+            flex: 0 0 auto;
+            color: #64748b;
+            font-size: .75rem;
+        }
+
+        .app-account-name:hover {
+            color: #1d4ed8;
+        }
+
         .app-account-location {
-            max-width: min(42vw, 28rem);
+            display: flex;
+            align-items: flex-start;
+            gap: .35rem;
+            margin-top: .15rem;
+            color: #64748b;
+            font-size: .78rem;
+            line-height: 1.35;
+        }
+
+        .app-account-location i {
+            flex: 0 0 auto;
+            margin-top: .1rem;
+            color: #0d6efd;
+        }
+
+        .app-account-location span {
             overflow-wrap: anywhere;
+        }
+
+        .app-logout-form {
+            flex: 0 0 auto;
+        }
+
+        .app-logout-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: .45rem;
+            min-height: 2.6rem;
+            padding: .45rem .75rem;
+            border: 1px solid #cbd5e1;
+            border-radius: .65rem;
+            background: #fff;
+            color: #475569;
+            font-size: .875rem;
+            font-weight: 600;
+            transition: background-color .15s ease, border-color .15s ease, color .15s ease;
+        }
+
+        .app-logout-button:hover {
+            border-color: #fecaca;
+            background: #fef2f2;
+            color: #b91c1c;
         }
 
         .navbar-toggler {
@@ -299,9 +529,8 @@
                 gap: .75rem !important;
             }
 
-            .app-account-name,
-            .app-account-location {
-                max-width: min(68vw, 34rem);
+            .app-account-card {
+                flex: 1 1 auto;
             }
 
             .navbar-collapse {
@@ -570,27 +799,21 @@
             }
 
             .app-account {
-                align-items: flex-start !important;
+                align-items: stretch;
             }
 
-            .app-account .text-end {
-                min-width: 0;
-                flex: 1 1 auto;
-                text-align: left !important;
-            }
-
-            .app-account-name,
-            .app-account-location {
-                max-width: 100%;
+            .app-account-card {
+                padding: .4rem .55rem;
             }
 
             .app-account-location {
-                line-height: 1.35;
+                font-size: .75rem;
             }
 
-            .app-account .btn {
-                min-height: 2.75rem;
-                white-space: nowrap;
+            .app-logout-button {
+                min-height: 100%;
+                padding-right: .6rem;
+                padding-left: .6rem;
             }
 
             .app-navbar .navbar-collapse {
@@ -722,6 +945,21 @@
 </head>
 
 <body class="bg-light">
+    <div class="app-loading-alert" id="app-loading-alert" role="status" aria-live="polite" aria-hidden="true">
+        <span class="spinner-border text-primary" aria-hidden="true"></span>
+        <span>Đang tải, vui lòng đợi...</span>
+    </div>
+    <dialog class="app-confirm-dialog" id="app-confirm-dialog" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message">
+        <div class="app-confirm-heading">
+            <span class="app-confirm-icon" aria-hidden="true"><i class="fa-solid fa-triangle-exclamation"></i></span>
+            <h2 class="app-confirm-title" id="app-confirm-title">Xác nhận thao tác</h2>
+        </div>
+        <p class="app-confirm-message" id="app-confirm-message"></p>
+        <div class="app-confirm-actions">
+            <button class="btn btn-outline-secondary" type="button" data-confirm-cancel>Để sau</button>
+            <button class="btn btn-danger" type="button" data-confirm-accept>Xác nhận</button>
+        </div>
+    </dialog>
 
     {{-- Header --}}
     @include('partials.header')
@@ -732,113 +970,271 @@
     {{-- Content --}}
     <main class="py-4">
         @include('partials.breadcrumbs')
-        <div class="container app-notifications-wrap">
+        <div class="app-notifications-wrap">
             @include('partials.notifications')
         </div>
         @yield('content')
     </main>
 
     <!-- Bootstrap 5 JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" data-turbo-eval="false"></script>
     @stack('scripts')
     <script>
-        document.addEventListener('invalid', (event) => {
-            const field = event.target;
-            if (!(field instanceof HTMLElement) || !field.matches('input[required], select[required], textarea[required]')) return;
+        (() => {
+            let loadingTimer;
+            let activeFetches = 0;
+            let isNavigating = false;
 
-            field.classList.add('is-invalid');
-            let feedback = field.nextElementSibling;
-            if (!feedback?.matches('.invalid-feedback')) {
-                feedback = document.createElement('div');
-                feedback.className = 'invalid-feedback d-block';
-                feedback.dataset.requiredFeedback = 'true';
-                field.insertAdjacentElement('afterend', feedback);
-            }
-
-            if (!feedback.textContent.trim()) {
-                const label = field.id ? document.querySelector(`label[for="${CSS.escape(field.id)}"]`) : null;
-                const labelText = label?.textContent.replace('*', '').trim().toLowerCase();
-                feedback.textContent = field.validity.valueMissing ?
-                    `${field.tagName === 'SELECT' ? 'Vui lòng chọn' : 'Vui lòng nhập'} ${labelText || 'thông tin này'}.` :
-                    field.validationMessage;
-            }
-        }, true);
-
-        function clearRequiredFieldError(event) {
-            const field = event.target;
-            if (!(field instanceof HTMLElement) || !field.matches('input[required], select[required], textarea[required]') || !field.checkValidity()) return;
-
-            field.classList.remove('is-invalid');
-            if (field.nextElementSibling?.dataset.requiredFeedback) {
-                field.nextElementSibling.remove();
-            }
-        }
-
-        document.addEventListener('input', clearRequiredFieldError, true);
-        document.addEventListener('change', clearRequiredFieldError, true);
-
-        document.querySelectorAll('.app-notification').forEach((notification) => {
-            const closeButton = notification.querySelector('.app-notification-close');
-            const dismiss = () => {
-                notification.classList.add('is-hiding');
-                window.setTimeout(() => notification.remove(), 220);
+            const showLoadingAlert = () => {
+                const loadingAlert = document.getElementById('app-loading-alert');
+                window.clearTimeout(loadingTimer);
+                loadingAlert?.classList.add('is-visible');
+                loadingAlert?.setAttribute('aria-hidden', 'false');
             };
 
-            closeButton.addEventListener('click', dismiss);
-            if (notification.hasAttribute('data-notification-autohide')) {
-                window.setTimeout(dismiss, 6500);
-            }
-        });
+            const updateLoadingAlert = () => {
+                const loadingAlert = document.getElementById('app-loading-alert');
+                if (isNavigating || activeFetches > 0) {
+                    loadingTimer = window.setTimeout(showLoadingAlert, 180);
+                    return;
+                }
 
-        window.showAppNotification = (type, message, title) => {
-            const notificationTypes = {
-                success: { title: 'Thao tác thành công', icon: 'fa-circle-check', className: 'success' },
-                info: { title: 'Thông tin', icon: 'fa-circle-info', className: 'info' },
-                warning: { title: 'Cần lưu ý', icon: 'fa-triangle-exclamation', className: 'warning' },
-                error: { title: 'Thao tác chưa thành công', icon: 'fa-circle-exclamation', className: 'danger' },
+                window.clearTimeout(loadingTimer);
+                loadingAlert?.classList.remove('is-visible');
+                loadingAlert?.setAttribute('aria-hidden', 'true');
             };
-            const typeInfo = notificationTypes[type] || notificationTypes.info;
-            const container = document.querySelector('.app-notifications-wrap');
-            const notification = document.createElement('div');
-            const icon = document.createElement('span');
-            const iconElement = document.createElement('i');
-            const content = document.createElement('div');
-            const heading = document.createElement('h2');
-            const body = document.createElement('p');
-            const closeButton = document.createElement('button');
-            const closeIcon = document.createElement('i');
 
-            notification.className = `app-notification app-notification-${typeInfo.className}`;
-            notification.setAttribute('role', type === 'error' || type === 'warning' ? 'alert' : 'status');
-            notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-            icon.className = 'app-notification-icon';
-            icon.setAttribute('aria-hidden', 'true');
-            iconElement.className = `fa-solid ${typeInfo.icon}`;
-            icon.appendChild(iconElement);
-            content.className = 'app-notification-content';
-            heading.className = 'app-notification-title';
-            heading.textContent = title || typeInfo.title;
-            body.className = 'app-notification-message';
-            body.textContent = message;
-            content.append(heading, body);
-            closeButton.className = 'app-notification-close';
-            closeButton.type = 'button';
-            closeButton.setAttribute('aria-label', 'Đóng thông báo');
-            closeIcon.className = 'fa-solid fa-xmark';
-            closeIcon.setAttribute('aria-hidden', 'true');
-            closeButton.appendChild(closeIcon);
-            notification.append(icon, content, closeButton);
-            container.appendChild(notification);
+            if (!window.appLoadingAlertInitialized) {
+                window.showAppLoadingAlert = () => {
+                    activeFetches++;
+                    updateLoadingAlert();
+                };
+                window.hideAppLoadingAlert = () => {
+                    activeFetches = Math.max(0, activeFetches - 1);
+                    updateLoadingAlert();
+                };
 
-            const dismiss = () => {
-                notification.classList.add('is-hiding');
-                window.setTimeout(() => notification.remove(), 220);
-            };
-            closeButton.addEventListener('click', dismiss);
-            if (type === 'success' || type === 'info') {
-                window.setTimeout(dismiss, 6500);
+                const nativeFetch = window.fetch.bind(window);
+                window.fetch = async (...args) => {
+                    const input = args[0];
+                    const requestOptions = args[1];
+                    const headers = new Headers(
+                        requestOptions?.headers
+                        ?? (input instanceof Request ? input.headers : undefined),
+                    );
+                    const requestUrl = input instanceof Request ? input.url : String(input);
+                    if (
+                        headers.get('X-Sec-Purpose') === 'prefetch'
+                        || headers.get('Sec-Purpose') === 'prefetch'
+                        || /\/households\/imports\/\d+\/status(?:\?|$)/.test(requestUrl)
+                    ) {
+                        return nativeFetch(...args);
+                    }
+
+                    window.showAppLoadingAlert();
+                    try {
+                        return await nativeFetch(...args);
+                    } finally {
+                        window.hideAppLoadingAlert();
+                    }
+                };
+
+                document.addEventListener('turbo:before-visit', () => {
+                    isNavigating = true;
+                    updateLoadingAlert();
+                });
+                document.addEventListener('turbo:load', () => {
+                    isNavigating = false;
+                    updateLoadingAlert();
+                });
+                window.appLoadingAlertInitialized = true;
             }
-        };
+
+            if (!window.appLayoutEventsBound) {
+                document.addEventListener('invalid', (event) => {
+                    const field = event.target;
+                    if (!(field instanceof HTMLElement) || !field.matches('input[required], select[required], textarea[required]')) return;
+
+                    field.classList.add('is-invalid');
+                    let feedback = field.nextElementSibling;
+                    if (!feedback?.matches('.invalid-feedback')) {
+                        feedback = document.createElement('div');
+                        feedback.className = 'invalid-feedback d-block';
+                        feedback.dataset.requiredFeedback = 'true';
+                        field.insertAdjacentElement('afterend', feedback);
+                    }
+
+                    if (!feedback.textContent.trim()) {
+                        const label = field.id ? document.querySelector(`label[for="${CSS.escape(field.id)}"]`) : null;
+                        const labelText = label?.textContent.replace('*', '').trim().toLowerCase();
+                        feedback.textContent = field.validity.valueMissing ?
+                            `${field.tagName === 'SELECT' ? 'Vui lòng chọn' : 'Vui lòng nhập'} ${labelText || 'thông tin này'}.` :
+                            field.validationMessage;
+                    }
+                }, true);
+
+                function clearRequiredFieldError(event) {
+                    const field = event.target;
+                    if (!(field instanceof HTMLElement) || !field.matches('input[required], select[required], textarea[required]') || !field.checkValidity()) return;
+
+                    field.classList.remove('is-invalid');
+                    if (field.nextElementSibling?.dataset.requiredFeedback) {
+                        field.nextElementSibling.remove();
+                    }
+                }
+
+                document.addEventListener('input', clearRequiredFieldError, true);
+                document.addEventListener('change', clearRequiredFieldError, true);
+                window.appLayoutEventsBound = true;
+            }
+            if (!window.appNotificationsInitialized) {
+                document.addEventListener('turbo:load', () => {
+                    document.querySelectorAll('.app-notification').forEach((notification) => {
+                        const closeButton = notification.querySelector('.app-notification-close');
+                        if (!closeButton || closeButton.dataset.initialized) return;
+
+                        const dismiss = () => {
+                            notification.classList.add('is-hiding');
+                            window.setTimeout(() => notification.remove(), 220);
+                        };
+
+                        closeButton.addEventListener('click', dismiss);
+                        closeButton.dataset.initialized = 'true';
+                        if (notification.hasAttribute('data-notification-autohide')) {
+                            window.setTimeout(dismiss, 6500);
+                        }
+                    });
+                });
+                window.appNotificationsInitialized = true;
+            }
+
+            window.showAppNotification = (type, message, title) => {
+                const notificationTypes = {
+                    success: { title: 'Thao tác thành công', icon: 'fa-circle-check', className: 'success' },
+                    info: { title: 'Thông tin', icon: 'fa-circle-info', className: 'info' },
+                    warning: { title: 'Cần lưu ý', icon: 'fa-triangle-exclamation', className: 'warning' },
+                    error: { title: 'Thao tác chưa thành công', icon: 'fa-circle-exclamation', className: 'danger' },
+                };
+                const typeInfo = notificationTypes[type] || notificationTypes.info;
+                const container = document.querySelector('.app-notifications-wrap');
+                if (!container) return;
+                container.classList.add('is-visible');
+                if (type === 'success') {
+                    container.classList.add('is-toast');
+                }
+                const notification = document.createElement('div');
+                const icon = document.createElement('span');
+                const iconElement = document.createElement('i');
+                const content = document.createElement('div');
+                const heading = document.createElement('h2');
+                const body = document.createElement('p');
+                const closeButton = document.createElement('button');
+                const closeIcon = document.createElement('i');
+
+                notification.className = `app-notification app-notification-${typeInfo.className}`;
+                notification.setAttribute('role', type === 'error' || type === 'warning' ? 'alert' : 'status');
+                notification.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
+                icon.className = 'app-notification-icon';
+                icon.setAttribute('aria-hidden', 'true');
+                iconElement.className = `fa-solid ${typeInfo.icon}`;
+                icon.appendChild(iconElement);
+                content.className = 'app-notification-content';
+                heading.className = 'app-notification-title';
+                heading.textContent = title || typeInfo.title;
+                body.className = 'app-notification-message';
+                body.textContent = message;
+                content.append(heading, body);
+                closeButton.className = 'app-notification-close';
+                closeButton.type = 'button';
+                closeButton.setAttribute('aria-label', 'Đóng thông báo');
+                closeIcon.className = 'fa-solid fa-xmark';
+                closeIcon.setAttribute('aria-hidden', 'true');
+                closeButton.appendChild(closeIcon);
+                notification.append(icon, content, closeButton);
+                container.appendChild(notification);
+
+                const dismiss = () => {
+                    notification.classList.add('is-hiding');
+                    window.setTimeout(() => {
+                        notification.remove();
+                        if (!container.querySelector('.app-notification')) {
+                            container.classList.remove('is-visible');
+                            container.classList.remove('is-toast');
+                        }
+                    }, 220);
+                };
+                closeButton.addEventListener('click', dismiss);
+                if (type === 'success' || type === 'info') {
+                    window.setTimeout(dismiss, 6500);
+                }
+            };
+
+            window.alert = (message) => window.showAppNotification('info', String(message));
+
+            const confirmDialog = document.getElementById('app-confirm-dialog');
+            const confirmMessage = document.getElementById('app-confirm-message');
+            const confirmButton = confirmDialog?.querySelector('[data-confirm-accept]');
+            const cancelButton = confirmDialog?.querySelector('[data-confirm-cancel]');
+            let confirmQueue = Promise.resolve();
+            let resolveConfirmation;
+
+            confirmDialog?.addEventListener('close', () => {
+                resolveConfirmation?.(confirmDialog.returnValue === 'confirm');
+                resolveConfirmation = undefined;
+            });
+            confirmButton?.addEventListener('click', () => confirmDialog.close('confirm'));
+            cancelButton?.addEventListener('click', () => confirmDialog.close('cancel'));
+
+            const showConfirmation = (message, options = {}) => new Promise((resolve) => {
+                if (!confirmDialog || !confirmMessage || !confirmButton || !cancelButton) {
+                    resolve(false);
+                    return;
+                }
+
+                const title = confirmDialog.querySelector('#app-confirm-title');
+                confirmMessage.textContent = String(message);
+                title.textContent = options.title || 'Xác nhận thao tác';
+                confirmButton.textContent = options.confirmText || 'Xác nhận';
+                confirmButton.classList.toggle('btn-danger', options.variant !== 'primary');
+                confirmButton.classList.toggle('btn-primary', options.variant === 'primary');
+
+                resolveConfirmation = resolve;
+                confirmDialog.showModal();
+                cancelButton.focus();
+            });
+
+            window.appConfirm = (message, options = {}) => {
+                const pending = confirmQueue.then(() => showConfirmation(message, options));
+                confirmQueue = pending.then(() => undefined, () => undefined);
+                return pending;
+            };
+
+            if (!window.appConfirmFormsInitialized) {
+                document.addEventListener('submit', (event) => {
+                    const form = event.target;
+                    if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-confirm')) return;
+
+                    event.preventDefault();
+                    window.appConfirm(form.dataset.confirm, {
+                        title: form.dataset.confirmTitle,
+                        confirmText: form.dataset.confirmButton || 'Xác nhận',
+                        variant: form.dataset.confirmVariant,
+                    }).then((confirmed) => {
+                        if (!confirmed || !form.isConnected) return;
+                        HTMLFormElement.prototype.submit.call(form);
+                    }).catch((error) => {
+                        console.error('Không thể xác nhận thao tác:', error);
+                        window.showAppNotification('error', 'Không thể xác nhận thao tác. Vui lòng tải lại trang và thử lại.');
+                    });
+                }, true);
+                document.addEventListener('change', (event) => {
+                    const select = event.target.closest('[data-pagination-select]');
+                    if (!select || event.defaultPrevented) return;
+                    select.form?.requestSubmit();
+                });
+                window.appConfirmFormsInitialized = true;
+            }
+        })();
     </script>
 </body>
 

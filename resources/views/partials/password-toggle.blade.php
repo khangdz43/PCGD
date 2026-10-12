@@ -56,7 +56,7 @@
     }
 </style>
 <script>
-    document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('turbo:load', () => {
         document.querySelectorAll('input[type="password"]').forEach((input) => {
             if (input.dataset.passwordToggleInitialized) return;
 

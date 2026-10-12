@@ -6,10 +6,11 @@ use App\Http\Controllers\Geography\ProvinceController;
 use App\Http\Controllers\Geography\VillageController;
 use App\Http\Controllers\Households\HouseholdController;
 use App\Http\Controllers\Households\HouseholdImportExportController;
+use App\Http\Controllers\Households\HouseholdImportHistoryController;
+use App\Http\Controllers\Households\HouseholdImportStatusController;
 use App\Http\Controllers\Households\HouseholdPersonController;
 use App\Http\Controllers\Profile\AccountController;
 use Illuminate\Support\Facades\Route;
-
 
 // middle ware trước khi vào controller là chạy cái middleware
 Route::middleware(['auth', 'active'])->group(function (): void {
@@ -38,6 +39,11 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::middleware('can:import-households')->group(function (): void {
         Route::get('/households/import', [HouseholdImportExportController::class, 'create'])->name('households.import.create');
         Route::post('/households/import', [HouseholdImportExportController::class, 'import'])->name('households.import.store');
+        Route::get('/households/imports', HouseholdImportHistoryController::class)->name('households.import-history');
+        Route::get('/households/imports/{importLog}/status', HouseholdImportStatusController::class)->name('households.import.status');
+        Route::get('/households/imports/{importLog}/download', [HouseholdImportHistoryController::class, 'download'])->name('households.import.download');
+        Route::get('/households/imports/{importLog}/download-errors', [HouseholdImportHistoryController::class, 'downloadErrors'])->name('households.import.download-errors');
+        Route::delete('/households/imports/{importLog}', [HouseholdImportHistoryController::class, 'destroyImportedRecords'])->name('households.import.destroy');
     });
 
     Route::middleware('can:create-households')->group(function (): void {

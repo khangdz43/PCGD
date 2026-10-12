@@ -6,110 +6,102 @@
 <style>
     /* ===== Scope Level Colors ===== */
     :root {
-        --scope-global: #dc2626;
-        --scope-province: #2563eb;
-        --scope-commune: #0891b2;
-        --scope-village: #059669;
+        --scope-global: #64748b;
+        --scope-province: #64748b;
+        --scope-commune: #64748b;
+        --scope-village: #64748b;
     }
 
     /* ===== Scope Group Node ===== */
     .scope-node {
-        border: 1px solid #e2e8f0;
-        border-radius: .75rem;
-        margin-bottom: .75rem;
+        border: 1px solid #dfe4eb;
+        border-radius: .5rem;
+        margin-bottom: .55rem;
         overflow: hidden;
         background: #fff;
-        box-shadow: 0 1px 3px rgb(0 0 0 / 4%);
-        transition: box-shadow .2s;
-    }
-
-    .scope-node:hover {
-        box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+        transition: border-color .15s ease;
     }
 
     .scope-node.global {
-        border-left: 4px solid var(--scope-global);
+        border-left: 2px solid #cbd5e1;
     }
 
     .scope-node.province {
-        border-left: 4px solid var(--scope-province);
+        border-left: 2px solid #cbd5e1;
     }
 
     .scope-node.commune {
-        border-left: 4px solid var(--scope-commune);
+        border-left: 2px solid #cbd5e1;
     }
 
     .scope-node.village {
-        border-left: 4px solid var(--scope-village);
+        border-left: 2px solid #cbd5e1;
     }
 
     /* ===== Scope Header ===== */
     .scope-header {
         display: flex;
         align-items: center;
-        gap: .75rem;
-        padding: .85rem 1.15rem;
+        gap: .6rem;
+        padding: .65rem .85rem;
         cursor: pointer;
         user-select: none;
-        transition: background .15s;
+        transition: background-color .15s ease;
     }
 
     .scope-header:hover {
-        background: #f8fafc;
+        background: #f6f8fa;
     }
 
     .scope-header .toggle-icon {
-        width: 26px;
-        height: 26px;
+        width: 1rem;
+        height: 1rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 50%;
-        background: #f1f5f9;
-        color: #475569;
-        font-size: .7rem;
-        transition: transform .25s ease, background .15s;
+        color: #64748b;
+        font-size: .65rem;
+        transition: transform .18s ease;
         flex-shrink: 0;
     }
 
     .scope-header[aria-expanded="true"] .toggle-icon {
         transform: rotate(90deg);
-        background: #e0e7ff;
-        color: var(--scope-province);
     }
 
     .scope-header .scope-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: .5rem;
+        width: 1.8rem;
+        height: 1.8rem;
+        border-radius: .35rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1rem;
-        color: #fff;
+        font-size: .85rem;
+        color: #475569;
+        background: #f1f4f7;
         flex-shrink: 0;
     }
 
     .scope-icon.global {
-        background: linear-gradient(135deg, #dc2626, #ef4444);
+        background: #f1f4f7;
     }
 
     .scope-icon.province {
-        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        background: #f1f4f7;
     }
 
     .scope-icon.commune {
-        background: linear-gradient(135deg, #0891b2, #06b6d4);
+        background: #f1f4f7;
     }
 
     .scope-icon.village {
-        background: linear-gradient(135deg, #059669, #10b981);
+        background: #f1f4f7;
     }
 
     .scope-header .scope-title {
         font-weight: 700;
-        color: #1e293b;
-        font-size: 1rem;
+        color: #273449;
+        font-size: .92rem;
     }
 
     .scope-header .scope-desc {
@@ -127,86 +119,84 @@
     }
 
     .scope-badge.global {
-        background: #fef2f2;
-        color: #dc2626;
+        background: #f1f3f5;
+        color: #475569;
     }
 
     .scope-badge.province {
-        background: #eff6ff;
-        color: #2563eb;
+        background: #f1f3f5;
+        color: #475569;
     }
 
     .scope-badge.commune {
-        background: #ecfeff;
-        color: #0891b2;
+        background: #f1f3f5;
+        color: #475569;
     }
 
     .scope-badge.village {
-        background: #ecfdf5;
-        color: #059669;
+        background: #f1f3f5;
+        color: #475569;
     }
 
     /* ===== Collapse Body ===== */
     .scope-body {
-        max-height: 0;
-        overflow: hidden;
-        transition: max-height .35s ease;
+        display: none;
     }
 
     .scope-body.open {
-        max-height: 10000px;
+        display: block;
     }
 
     .scope-body-inner {
-        padding: 0 1.15rem 1rem 1.15rem;
+        padding: 0 .85rem .7rem;
     }
 
     /* ===== Role Card ===== */
     .role-card {
         display: flex;
         align-items: center;
-        gap: .85rem;
-        padding: .85rem 1rem;
-        border: 1px solid #e9ecef;
-        border-radius: .65rem;
-        margin-bottom: .5rem;
-        background: #fafbfd;
-        transition: all .2s;
+        gap: .7rem;
+        padding: .65rem .75rem;
+        border: 1px solid #e5e9ef;
+        border-radius: .4rem;
+        margin-bottom: .4rem;
+        background: #fff;
+        transition: background-color .15s ease, border-color .15s ease;
     }
 
     .role-card:hover {
-        background: #f0f4ff;
-        border-color: #c7d2fe;
-        transform: translateX(4px);
+        background: #f8fafc;
+        border-color: #cbd5e1;
     }
 
     .role-icon-wrap {
-        width: 44px;
-        height: 44px;
-        border-radius: .6rem;
+        width: 2.25rem;
+        height: 2.25rem;
+        border-radius: .4rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.1rem;
-        color: #fff;
+        font-size: .9rem;
+        color: #475569;
+        background: #eef2f6;
         flex-shrink: 0;
     }
 
     /* Dynamic Scope Colors for Role Card Icon */
     .role-icon-wrap.global {
-        background: linear-gradient(135deg, #dc2626, #ef4444);
+        background: #eef2f6;
     }
 
     .role-icon-wrap.province {
-        background: linear-gradient(135deg, #2563eb, #3b82f6);
+        background: #eef2f6;
     }
 
     .role-icon-wrap.commune {
-        background: linear-gradient(135deg, #0891b2, #06b6d4);
+        background: #eef2f6;
     }
 
     .role-icon-wrap.village {
-        background: linear-gradient(135deg, #059669, #10b981);
+        background: #eef2f6;
     }
 
     .role-info {
@@ -216,8 +206,8 @@
 
     .role-name {
         font-weight: 700;
-        color: #1e293b;
-        font-size: .95rem;
+        color: #273449;
+        font-size: .9rem;
         display: flex;
         align-items: center;
         gap: .5rem;
@@ -254,16 +244,16 @@
         padding: .15rem .5rem;
         border-radius: 999px;
         font-weight: 500;
-        background: #f0fdf4;
-        color: #166534;
-        border: 1px solid #bbf7d0;
+        background: #f5f6f8;
+        color: #475569;
+        border: 1px solid #e1e5eb;
         white-space: nowrap;
     }
 
     .perm-tag.more {
-        background: #fefce8;
-        color: #854d0e;
-        border-color: #fde68a;
+        background: #f1f3f5;
+        color: #59636e;
+        border-color: #e0e4e8;
         cursor: help;
     }
 
@@ -284,13 +274,13 @@
         color: #475569;
         text-decoration: none;
         border: 1px solid #e2e8f0;
-        transition: all .15s;
+        transition: background-color .15s ease, border-color .15s ease;
     }
 
     .role-members a:hover {
-        background: #e0e7ff;
-        color: #3730a3;
-        border-color: #c7d2fe;
+        background: #e9edf2;
+        color: #334155;
+        border-color: #cbd5e1;
     }
 
     /* Actions */
@@ -388,7 +378,7 @@
         $permLimit = $cfg['limit'];
         @endphp
         <div class="scope-node {{ $scope }}">
-            <div class="scope-header" aria-expanded="true" onclick="toggleScope(this)">
+            <div class="scope-header" aria-expanded="false" onclick="toggleScope(this)">
                 <span class="toggle-icon"><i class="fa-solid fa-chevron-right"></i></span>
                 <span class="scope-icon {{ $scope }}"><i class="fa-solid {{ $cfg['icon'] }}"></i></span>
                 <div>
@@ -399,7 +389,7 @@
                     <i class="fa-solid fa-shield-halved me-1"></i>{{ $scopeRoles->count() }} nhóm &middot; {{ $scopeRoles->sum('users_count') }} thành viên
                 </span>
             </div>
-            <div class="scope-body open">
+            <div class="scope-body">
                 <div class="scope-body-inner">
                     @foreach($scopeRoles as $role)
                     <div class="role-card">
@@ -410,7 +400,7 @@
                             <div class="role-name">
                                 <code>{{ $role->name }}</code>
                                 @if($role->name === \App\Models\Role::SYSTEM_ADMIN)
-                                <span class="badge bg-danger" style="font-size:.68rem">Admin</span>
+                                <span class="badge text-bg-secondary" style="font-size:.68rem">Admin</span>
                                 @endif
                             </div>
                             <div class="role-desc">{{ $role->description ?: 'Chưa có mô tả' }}</div>
@@ -443,7 +433,7 @@
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>
                             @if ($role->name !== \App\Models\Role::SYSTEM_ADMIN)
-                            <form class="d-inline" method="POST" action="{{ route('admin.roles.destroy', $role) }}" onsubmit="return confirm('Xóa nhóm người dùng này?')">
+                            <form class="d-inline" method="POST" action="{{ route('admin.roles.destroy', $role) }}" data-confirm="Xóa nhóm người dùng này?" data-confirm-title="Xác nhận xóa nhóm người dùng">
                                 @csrf
                                 @method('DELETE')
                                 <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa">
@@ -473,27 +463,29 @@
 
 @push('scripts')
 <script>
-    function toggleScope(header) {
-        const body = header.nextElementSibling;
-        const isOpen = header.getAttribute('aria-expanded') === 'true';
-        header.setAttribute('aria-expanded', !isOpen);
-        if (isOpen) {
-            body.classList.remove('open');
-        } else {
-            body.classList.add('open');
-        }
-    }
-
-    function toggleAllScopes(expand) {
-        document.querySelectorAll('.scope-header').forEach(header => {
+    (() => {
+        window.toggleScope = (header) => {
             const body = header.nextElementSibling;
-            header.setAttribute('aria-expanded', expand);
-            if (expand) {
-                body.classList.add('open');
-            } else {
+            const isOpen = header.getAttribute('aria-expanded') === 'true';
+            header.setAttribute('aria-expanded', !isOpen);
+            if (isOpen) {
                 body.classList.remove('open');
+            } else {
+                body.classList.add('open');
             }
-        });
-    }
+        }
+
+        window.toggleAllScopes = (expand) => {
+            document.querySelectorAll('.scope-header').forEach(header => {
+                const body = header.nextElementSibling;
+                header.setAttribute('aria-expanded', expand);
+                if (expand) {
+                    body.classList.add('open');
+                } else {
+                    body.classList.remove('open');
+                }
+            });
+        }
+    })();
 </script>
 @endpush

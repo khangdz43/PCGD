@@ -78,10 +78,10 @@ class User extends Authenticatable
     // check role
     public function hasRole(string $name): bool
     {
-        return $this->roles()
-            ->where('roles.name', $name)
-            ->where('roles.guard_name', config('auth.defaults.guard', 'web'))
-            ->exists();
+        $this->loadMissing('roles');
+
+        return $this->roles->contains(fn (Role $role): bool => $role->name === $name
+            && $role->guard_name === config('auth.defaults.guard', 'web'));
     }
 
     // /
@@ -150,9 +150,10 @@ class User extends Authenticatable
             return $this->scope_level;
         }
         // lấy ra list scope_level của user này
-        $levels = $this->roles()
-            ->where('roles.guard_name', config('auth.defaults.guard', 'web'))
-            ->pluck('roles.scope_level') // chỉ lấy mình cột level
+        $this->loadMissing('roles');
+        $levels = $this->roles
+            ->where('guard_name', config('auth.defaults.guard', 'web'))
+            ->pluck('scope_level')
             ->unique()
             ->values();
         // nếu count != 1 trả về null , 1 user chỉ có 1 level thôi

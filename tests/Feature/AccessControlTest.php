@@ -9,6 +9,7 @@ use App\Models\ImportLog;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Households\HouseholdImportProcessingService;
 use App\Support\AccessPermission;
 use App\Support\DataAccessScope;
 use Database\Seeders\RolePermissionSeeder;
@@ -76,13 +77,6 @@ class AccessControlTest extends TestCase
             $table->unsignedBigInteger('model_id');
             $table->unsignedBigInteger('assigned_by')->nullable();
             $table->primary(['role_id', 'model_id', 'model_type']);
-        });
-        Schema::create('model_has_permissions', function (Blueprint $table): void {
-            $table->foreignId('permission_id');
-            $table->string('model_type');
-            $table->unsignedBigInteger('model_id');
-            $table->unsignedBigInteger('assigned_by')->nullable();
-            $table->primary(['permission_id', 'model_id', 'model_type']);
         });
         Schema::create('provinces', function (Blueprint $table): void {
             $table->string('code')->primary();
@@ -1196,18 +1190,22 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $permissionIds = collect([
+        $permissions = collect([
             AccessPermission::CREATE_HOUSEHOLDS,
             AccessPermission::IMPORT_HOUSEHOLDS,
-        ])->mapWithKeys(function (string $permission): array {
-            $record = Permission::create([
+        ])->map(function (string $permission): Permission {
+            return Permission::create([
                 'name' => $permission,
                 'guard_name' => 'web',
             ]);
-
-            return [$record->id => ['assigned_by' => null]];
         });
-        $user->directPermissions()->sync($permissionIds->all());
+        $role = Role::create([
+            'name' => 'household-action-role',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $role->permissions()->sync($permissions->pluck('id')->all());
+        $user->roles()->attach($role, ['assigned_by' => null]);
 
         $this->actingAs($user)
             ->get('/')
@@ -1276,14 +1274,20 @@ class AccessControlTest extends TestCase
             return [$permission => $record->id];
         });
 
-        $editor = User::factory()->create(['scope_level' => 'commune', 'is_active' => true]);
-        $editor->directPermissions()->sync(collect([
+        $editorRole = Role::create([
+            'name' => 'household-editor',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $editorRole->permissions()->sync(collect([
             $permissionIds[AccessPermission::CREATE_HOUSEHOLDS],
             $permissionIds[AccessPermission::UPDATE_HOUSEHOLDS],
             $permissionIds[AccessPermission::DELETE_HOUSEHOLDS],
             $permissionIds[AccessPermission::IMPORT_HOUSEHOLDS],
             $permissionIds[AccessPermission::EXPORT_HOUSEHOLDS],
-        ])->mapWithKeys(fn (int $id): array => [$id => ['assigned_by' => null]])->all());
+        ])->all());
+        $editor = User::factory()->create(['scope_level' => 'commune', 'is_active' => true]);
+        $editor->roles()->attach($editorRole, ['assigned_by' => null]);
 
         $this->assertTrue($editor->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertTrue($editor->hasPermissionTo(AccessPermission::CREATE_HOUSEHOLDS));
@@ -1293,8 +1297,14 @@ class AccessControlTest extends TestCase
         $this->assertTrue($editor->hasPermissionTo(AccessPermission::EXPORT_HOUSEHOLDS));
         $this->assertContains(AccessPermission::VIEW_HOUSEHOLDS, $editor->permissionNames());
 
+        $viewerRole = Role::create([
+            'name' => 'household-viewer',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $viewerRole->permissions()->attach($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
         $viewer = User::factory()->create(['scope_level' => 'commune', 'is_active' => true]);
-        $viewer->directPermissions()->attach($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
+        $viewer->roles()->attach($viewerRole, ['assigned_by' => null]);
 
         $this->assertTrue($viewer->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertFalse($viewer->hasPermissionTo(AccessPermission::CREATE_HOUSEHOLDS));
@@ -1304,7 +1314,6 @@ class AccessControlTest extends TestCase
         $this->assertFalse($viewer->hasPermissionTo(AccessPermission::EXPORT_HOUSEHOLDS));
 
         $unassigned = User::factory()->create(['is_active' => true]);
-        $unassigned->directPermissions()->attach($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
         $this->assertFalse($unassigned->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
     }
 
@@ -1891,7 +1900,7 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'PENDING')
             ->assertJsonPath('progress', 0);
-        (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportExportController::class));
+        (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportProcessingService::class));
         $this->assertSame('FAILED', $importLog->fresh()->status);
         $this->assertStringContainsString('không thuộc xã được chọn', $importLog->fresh()->error_details[0]['message']);
         $this->assertSame('A5', $importLog->fresh()->error_details[0]['cell']);
@@ -2015,7 +2024,7 @@ class AccessControlTest extends TestCase
         ])->assertAccepted();
 
         $importLog = ImportLog::findOrFail($response->json('import_id'));
-        (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportExportController::class));
+        (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportProcessingService::class));
         $this->assertSame('FAILED', $importLog->fresh()->status);
         $this->assertStringContainsString('không tồn tại trong danh mục trường học', $importLog->fresh()->error_details[0]['message']);
         $this->assertDatabaseMissing('households', ['household_code' => 'HK-IMPORT']);
@@ -2042,7 +2051,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $villageManager->directPermissions()->attach($villagePermission);
+        $villageRole = Role::create([
+            'name' => 'village-catalog-manager',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $villageRole->permissions()->attach($villagePermission);
+        $villageManager->roles()->attach($villageRole, ['assigned_by' => null]);
         $this->assertTrue(Gate::forUser($villageManager)->allows(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse(Gate::forUser($villageManager)->allows(AccessPermission::MANAGE_SCHOOLS));
         $this->actingAs($villageManager)
@@ -2057,7 +2072,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $legacyManager->directPermissions()->attach($legacyPermission);
+        $legacyRole = Role::create([
+            'name' => 'legacy-catalog-manager',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $legacyRole->permissions()->attach($legacyPermission);
+        $legacyManager->roles()->attach($legacyRole, ['assigned_by' => null]);
         $this->assertTrue(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_SCHOOLS));
         $this->actingAs($legacyManager)->get('/schools')->assertForbidden();
@@ -2067,7 +2088,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $provinceManager->directPermissions()->attach($schoolPermission);
+        $provinceRole = Role::create([
+            'name' => 'province-school-manager',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $provinceRole->permissions()->attach($schoolPermission);
+        $provinceManager->roles()->attach($provinceRole, ['assigned_by' => null]);
         $this->assertTrue(Gate::forUser($provinceManager)->allows(AccessPermission::MANAGE_SCHOOLS));
         $this->actingAs($provinceManager)->get('/schools')->assertOk();
     }
@@ -2413,9 +2440,10 @@ class AccessControlTest extends TestCase
         $this->assertFalse($villageUser->hasPermissionTo(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse($villageUser->hasPermissionTo(AccessPermission::MANAGE_USER_ACCOUNTS));
         $this->assertSame(['V1', 'V2'], $villageUser->managedVillageCodes());
-        $this->assertDatabaseMissing('model_has_permissions', [
+        $this->assertDatabaseHas('model_has_roles', [
             'model_id' => $villageUser->id,
             'model_type' => User::class,
+            'role_id' => $villageRole->id,
         ]);
 
         $this->actingAs($villageUser)
@@ -3122,18 +3150,18 @@ class AccessControlTest extends TestCase
         $delegatedRole->permissions()->attach($permission);
         $villageUser = User::factory()->create(['is_active' => true]);
         $villageUser->roles()->sync([$delegatedRole->id => ['assigned_by' => $manager->id]]);
-        $directUser = User::factory()->create(['scope_level' => 'village', 'is_active' => true]);
-        $directUser->directPermissions()->sync([$permission->id => ['assigned_by' => $manager->id]]);
+        $assignedRoleUser = User::factory()->create(['scope_level' => 'village', 'is_active' => true]);
+        $assignedRoleUser->roles()->sync([$delegatedRole->id => ['assigned_by' => $manager->id]]);
 
         $this->assertTrue($manager->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertTrue($villageUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
-        $this->assertTrue($directUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
+        $this->assertTrue($assignedRoleUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
 
         $managerRole->permissions()->detach($permission);
 
         $this->assertFalse($manager->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertFalse($villageUser->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
-        $this->assertFalse($directUser->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
+        $this->assertFalse($assignedRoleUser->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
     }
 
     public function test_system_administrator_keeps_account_counts_for_user_tree_without_standalone_page(): void

@@ -6,19 +6,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('admin', function (Request $request) {
+    // check có quyền quản lí quyền cao , và nhân sự
     return $request->user()->can('manage-access-control')
         ? to_route('admin.roles.index')
         : to_route('admin.users.index');
 })
     ->middleware(['auth', 'active'])
     ->name('admin.index');
-
+// thêm tiền tố admin. vào trước name route
 Route::prefix('admin')
     ->name('admin.')
     // chỉ cho đã đăng nhập và active
     ->middleware(['auth', 'active', 'can:manage-access-control'])
     ->group(function (): void {
-        Route::get('roles/{role}/members', [RoleController::class, 'members'])->name('roles.members');
+        // path 3 điều kiện thì 
+        Route::get('roles/{role}/members', [RoleController::class, 'members'])->name('roles.members');// =>admin.roles.members
         Route::resource('roles', RoleController::class)->except('show');
     });
 

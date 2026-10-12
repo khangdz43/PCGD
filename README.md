@@ -11,12 +11,15 @@
 - `app/Http/Controllers/Auth`: đăng nhập và đăng xuất.
 - `app/Models`: Eloquent models, giữ namespace ổn định `App\Models`.
 - `app/Support`: định nghĩa quyền và giới hạn truy cập dữ liệu theo địa bàn.
+- `app/Http/Requests`: xác thực và authorize dữ liệu đầu vào theo từng nghiệp vụ.
+- `app/Services`: xử lý nghiệp vụ, truy vấn và cập nhật dữ liệu; tổ chức service theo miền.
+- `app/Jobs`: tác vụ nền dài như xử lý nhập Excel; job gọi service, không gọi controller.
 - `routes/web.php`: các luồng nghiệp vụ web đã xác thực.
 - `routes/auth.php`: đăng nhập, đăng xuất.
 - `routes/admin.php`: các màn hình quản trị.
 - `resources/views`: giao diện Blade, tổ chức theo nghiệp vụ.
 
-Controller được nhóm theo miền nghiệp vụ; models giữ tại `App\Models` để các quan hệ và phần tích hợp hiện tại không bị phá vỡ.
+Controller được nhóm theo miền nghiệp vụ và chỉ điều phối request/response. Validation đặt trong Form Request; nghiệp vụ dùng chung, truy vấn và cập nhật dữ liệu đặt trong service tương ứng. Models giữ tại `App\Models` để các quan hệ và phần tích hợp hiện tại không bị phá vỡ.
 
 ## Cài đặt và tạo quản trị viên đầu tiên
 

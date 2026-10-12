@@ -16,7 +16,6 @@ final class AccessPermission
 
     public const EXPORT_HOUSEHOLDS = 'export-households';
 
-    public const MANAGE_CATALOGS = 'manage-catalogs';
 
     public const MANAGE_VILLAGES = 'manage-villages';
 
@@ -46,6 +45,7 @@ final class AccessPermission
         ];
     }
 
+    // các quyền theo phạm vi
     public static function permissionsForScope(string $scopeLevel): array
     {
         return match ($scopeLevel) {
@@ -76,7 +76,7 @@ final class AccessPermission
             default => [],
         };
     }
-
+    // nhóm quyền về quản trị chủ hộ
     public static function householdPermissions(): array
     {
         return [
@@ -88,7 +88,7 @@ final class AccessPermission
             self::EXPORT_HOUSEHOLDS,
         ];
     }
-
+    // quyền tiên quyết muốn xóa cần xem
     public static function prerequisites(): array
     {
         return [
@@ -99,7 +99,7 @@ final class AccessPermission
             self::EXPORT_HOUSEHOLDS => [self::VIEW_HOUSEHOLDS],
         ];
     }
-
+    // gọi cái hàm tiên quyết để check trong mảng được view ko
     public static function impliedPermissions(string $permission): array
     {
         $implied = [];
@@ -111,6 +111,7 @@ final class AccessPermission
 
         return $implied;
     }
+    // return 1 list quyền mảng đủ có quyền xem
 
     public static function withPrerequisites(array $permissions): array
     {

@@ -13,6 +13,7 @@ use App\Http\Controllers\Profile\AccountController;
 use Illuminate\Support\Facades\Route;
 
 // middle ware trước khi vào controller là chạy cái middleware
+// auth có sẵn 
 Route::middleware(['auth', 'active'])->group(function (): void {
 
     Route::get('/', [ProvinceController::class, 'home'])->name('index');
@@ -24,6 +25,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
 
     // laravel dùng can:permission-name để gọi Gate:before trong thằng provider
     Route::middleware('can:manage-villages')->group(function (): void {
+        //7 routes , bỏ xem show chi tiết
         Route::resource('villages', VillageController::class)->except('show');
     });
 

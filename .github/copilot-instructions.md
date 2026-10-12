@@ -25,6 +25,9 @@ php artisan app:create-admin   # tạo admin tương tác (không hardcode mật
 - `app/Http/Controllers/Auth`: đăng nhập/đăng xuất.
 - `app/Models`: **luôn giữ namespace `App\Models`** — không chia nhỏ namespace models.
 - `app/Support`: `AccessPermission` (định nghĩa quyền), `DataAccessScope` (giới hạn dữ liệu theo địa bàn), `DelegatedAccess` (ủy quyền).
+- `app/Http/Requests`: Form Request cho validation/authorization đầu vào.
+- `app/Services`: nghiệp vụ, truy vấn và cập nhật dữ liệu; tổ chức theo miền như `Households`, `Geography`, `Education`, `Admin/AccessControl`.
+- `app/Jobs`: tác vụ nền gọi service, không gọi controller.
 - `routes/web.php` (nghiệp vụ, đã auth), `routes/auth.php` (đăng nhập), `routes/admin.php` (quản trị), `routes/console.php`.
 - `resources/views`: Blade theo nghiệp vụ; layout chung `layouts/app.blade.php`, partials `header/navbar/location-picker`.
 - `docs/database-erd.md`: ERD Mermaid + ràng buộc DB (trigger, unique).
@@ -44,6 +47,7 @@ php artisan app:create-admin   # tạo admin tương tác (không hardcode mật
 
 - Comment, nhãn UI, tên route, validation message: tiếng Việt.
 - Controller nhóm theo miền nghiệp vụ (namespace `App\Http\Controllers\<Miền>`).
+- Controller chủ yếu điều phối HTTP; validation đặt trong Form Request, nghiệp vụ không thuộc vòng đời HTTP đặt trong service. Không chuyển logic sang service chỉ để làm controller ngắn nếu service không thể hiện một trách nhiệm nghiệp vụ rõ ràng.
 - Dùng resource controller + `Route::resource` cho CRUD danh mục; hộ gia thủ tay route theo permission vì check từng nhóm quyền riêng.
 - Models Eloquent; relations giữ ổn định, không đổi tên bảng/cột đã có migration.
 - UI Blade + Tailwind, phân trang dùng view tùy biến `vendor/pagination/bootstrap-5`.

@@ -2,13 +2,12 @@
 
 namespace App\Jobs;
 
-use App\Http\Controllers\Households\HouseholdImportExportController;
 use App\Models\ImportLog;
 use App\Models\User;
+use App\Services\Households\HouseholdImportProcessingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Http\Request;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
@@ -25,7 +24,7 @@ class ProcessHouseholdImport implements ShouldQueue
 
     public function __construct(public int $importLogId) {}
 
-    public function handle(HouseholdImportExportController $controller): void
+    public function handle(HouseholdImportProcessingService $processingService): void
     {
         $importLog = ImportLog::findOrFail($this->importLogId);
         $path = Storage::disk('local')->path($importLog->file_path);
@@ -39,12 +38,8 @@ class ProcessHouseholdImport implements ShouldQueue
                 null,
                 true,
             );
-            $request = Request::create('/households/import', 'POST', $importLog->context, [], [
-                'file' => $file,
-            ]);
-            $request->setUserResolver(static fn (): User => $user);
 
-            $controller->processQueuedImport($request, $importLog);
+            $processingService->process($importLog, $user, $file);
         } catch (Throwable $exception) {
             $importLog->update([
                 'status' => 'FAILED',

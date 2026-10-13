@@ -19,7 +19,7 @@
     <div class="mb-3">
         <label for="description" class="form-label">Mô tả</label>
         <textarea id="description" class="form-control @error('description') is-invalid @enderror" name="description" maxlength="255" rows="2">{{ old('description', $role->description) }}</textarea>
-        <div class="form-text">Ví dụ: Phòng nhập liệu — được xem, tạo và cập nhật phiếu điều tra.</div>
+        <div class="form-text">Ví dụ: Admin có thể thao tác mọi quyền theo scope</div>
         @error('description')<div class="invalid-feedback">{{ $message }}</div>@enderror
     </div>
 
@@ -37,6 +37,7 @@
     <fieldset
         class="mb-4"
         data-default-scope="{{ $role->name === \App\Models\Role::SYSTEM_ADMIN ? 'global' : ($scopeLevel ?: 'global') }}"
+        data-permission-prerequisites="{{ json_encode(\App\Support\AccessPermission::prerequisites()) }}"
     >
         @if ($role->name !== \App\Models\Role::SYSTEM_ADMIN)
             <div class="mb-3">
@@ -211,8 +212,37 @@
         const checkboxes = [...document.querySelectorAll('.permission-checkbox')];
         const scopeLevel = document.getElementById('scope_level');
         const defaultScope = document.querySelector('[data-default-scope]')?.dataset.defaultScope || 'global';
+        const permissionPrerequisites = JSON.parse(
+            document.querySelector('[data-default-scope]')?.dataset.permissionPrerequisites || '{}'
+        );
         const rows = [...document.querySelectorAll('[data-permission-row]')];
         const groups = [...document.querySelectorAll('[data-permission-group]')];
+
+        function enablePrerequisites(permissionName) {
+            (permissionPrerequisites[permissionName] || []).forEach((prerequisiteName) => {
+                const prerequisite = checkboxes.find(
+                    (checkbox) => checkbox.dataset.permissionName === prerequisiteName
+                );
+                if (prerequisite && !prerequisite.disabled && !prerequisite.checked) {
+                    prerequisite.checked = true;
+                    enablePrerequisites(prerequisiteName);
+                }
+            });
+        }
+
+        function disableDependents(permissionName) {
+            Object.entries(permissionPrerequisites).forEach(([dependentName, prerequisites]) => {
+                if (!prerequisites.includes(permissionName)) return;
+
+                const dependent = checkboxes.find(
+                    (checkbox) => checkbox.dataset.permissionName === dependentName
+                );
+                if (dependent?.checked) {
+                    dependent.checked = false;
+                    disableDependents(dependentName);
+                }
+            });
+        }
 
         function filterPermissions() {
             const level = scopeLevel?.value || defaultScope;
@@ -270,14 +300,15 @@
         });
 
         checkboxes.forEach((checkbox) => {
+            if (checkbox.checked) {
+                enablePrerequisites(checkbox.dataset.permissionName);
+            }
+
             checkbox.addEventListener('change', () => {
-                if (checkbox.dataset.permissionName === 'manage-user-accounts' && checkbox.checked) {
-                    const groupManagementPermission = checkboxes.find(
-                        (item) => item.dataset.permissionName === 'manage-access-control'
-                    );
-                    if (groupManagementPermission && !groupManagementPermission.disabled) {
-                        groupManagementPermission.checked = true;
-                    }
+                if (checkbox.checked) {
+                    enablePrerequisites(checkbox.dataset.permissionName);
+                } else {
+                    disableDependents(checkbox.dataset.permissionName);
                 }
                 if (checkbox.closest('[data-household-permission]')) {
                     updateHouseholdMaster();

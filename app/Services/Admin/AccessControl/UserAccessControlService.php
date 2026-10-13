@@ -11,6 +11,7 @@ use App\Support\AccessPermission;
 use App\Support\DelegatedAccess;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -138,13 +139,17 @@ class UserAccessControlService
             ],
         )->orderBy('name');
 
-        $allUsers = $showOrganizationTree
-            ? $query->paginate(10)->withQueryString()
-            : $query->get();
-        $usersForView = $showOrganizationTree ? $allUsers->getCollection() : $allUsers;
+        if ($showOrganizationTree) {
+            $allUsers = $query->paginate(10)->withQueryString();
+            $usersForView = $allUsers->getCollection();
+            $totalUserCount = $allUsers->total();
+        } else {
+            $allUsers = $query->get();
+            $usersForView = $allUsers;
+            $totalUserCount = $allUsers->count();
+        }
         $this->addStatusManagementFlags($actor, $usersForView);
         $this->addPasswordResetFlags($actor, $usersForView);
-        $totalUserCount = $showOrganizationTree ? $allUsers->total() : $allUsers->count();
         $hierarchy = [];
         $noLocationUsers = collect();
 
@@ -344,7 +349,7 @@ class UserAccessControlService
         return $this->statusTargetIsManageable($actor, $target, $targetLevel, $assignableRoleIds);
     }
 
-    private function addStatusManagementFlags(User $actor, Collection $users): void
+    private function addStatusManagementFlags(User $actor, SupportCollection $users): void
     {
         $targetLevels = $this->statusTargetLevels($actor);
         $canManageAccounts = $actor->hasRole(Role::SYSTEM_ADMIN) || $actor->canManageSubordinateUsers();
@@ -363,7 +368,7 @@ class UserAccessControlService
         }
     }
 
-    private function addPasswordResetFlags(User $actor, Collection $users): void
+    private function addPasswordResetFlags(User $actor, SupportCollection $users): void
     {
         foreach ($users as $user) {
             $user->setAttribute('can_reset_account_password', $this->canResetUserPassword($actor, $user));

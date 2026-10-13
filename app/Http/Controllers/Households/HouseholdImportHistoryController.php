@@ -9,7 +9,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HouseholdImportHistoryController extends Controller
 {
@@ -24,20 +24,23 @@ class HouseholdImportHistoryController extends Controller
         return view('households.import-history', compact('imports'));
     }
 
-    public function download(Request $request, ImportLog $importLog): StreamedResponse
+    public function download(Request $request, ImportLog $importLog): BinaryFileResponse
     {
         abort_unless($importLog->user_id === $request->user()->id, 404);
         abort_if(in_array($importLog->status, ['PENDING', 'PROCESSING'], true), 409, 'File đang được xử lý.');
         abort_unless($importLog->file_path !== null && Storage::disk('local')->exists($importLog->file_path), 404);
 
-        return Storage::disk('local')->download($importLog->file_path, $importLog->file_name);
+        return response()->download(
+            Storage::disk('local')->path($importLog->file_path),
+            $importLog->file_name,
+        );
     }
 
     public function downloadErrors(
         Request $request,
         ImportLog $importLog,
         HouseholdImportHistoryService $historyService,
-    ): StreamedResponse {
+    ): BinaryFileResponse {
         abort_unless($importLog->user_id === $request->user()->id, 404);
         abort_unless($importLog->status === 'FAILED' && $importLog->file_path !== null, 404);
 
@@ -46,7 +49,10 @@ class HouseholdImportHistoryController extends Controller
         $extension = pathinfo($importLog->file_name, PATHINFO_EXTENSION);
         $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME).'-loi'.($extension !== '' ? '.'.$extension : '');
 
-        return Storage::disk('local')->download($errorFilePath, $fileName);
+        return response()->download(
+            Storage::disk('local')->path($errorFilePath),
+            $fileName,
+        );
     }
 
     public function destroyImportedRecords(

@@ -1076,7 +1076,12 @@ class AccessControlTest extends TestCase
         $this->assertSame(1, substr_count($roleForm->getContent(), 'data-scopes="province"'));
         $roleForm->assertDontSee('data-scopes="commune"', false);
         $roleForm->assertSee('data-default-scope="global"', false)
-            ->assertSee('<option value="global" selected>', false);
+            ->assertSee('<option value="global" selected>', false)
+            ->assertSee('data-permission-prerequisites=', false)
+            ->assertSee('&quot;update-households&quot;:[&quot;view-households&quot;]', false)
+            ->assertSee('JSON.parse(', false)
+            ->assertSee('function enablePrerequisites', false)
+            ->assertSee('function disableDependents', false);
 
         $this->from('/admin/roles/create')->post('/admin/roles', [
             'name' => 'province-household-admin',

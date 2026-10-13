@@ -19,7 +19,8 @@ class UserAccessControlService
     public function provincesForFilter(User $actor): Collection
     {
         $query = Province::query()->orderBy('name');
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
+        if (! in_array($actor->roleScopeLevel(), ['global'], true)
+            && ! $actor->hasRole(Role::SYSTEM_ADMIN)) {
             $query->where('code', $actor->province_code);
         }
 
@@ -28,25 +29,53 @@ class UserAccessControlService
 
     public function indexData(User $actor, array $filter, Collection $provinces): array
     {
-        $showOrganizationTree = $actor->hasRole(Role::SYSTEM_ADMIN)
-            && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS);
+        $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
+        $showOrganizationTree = ($isSystemAdmin && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
+            || (! $isSystemAdmin && $actor->canManageSubordinateUsers());
         $unitProvinces = collect();
         $unitProvinceCounts = collect();
+        $unitRootType = 'province';
+        $unitRootCount = 0;
 
         if ($showOrganizationTree) {
-            $unitProvinces = Province::query()->orderBy('name')->get(['code', 'name']);
-            $locatedAccounts = User::query()
-                ->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('roles.name', Role::SYSTEM_ADMIN));
-            $unitProvinceCounts = (clone $locatedAccounts)
-                ->select('province_code')
-                ->selectRaw('COUNT(*) AS account_count')
-                ->whereNotNull('province_code')
-                ->groupBy('province_code')
-                ->pluck('account_count', 'province_code');
+            if ($isSystemAdmin) {
+                $unitProvinces = Province::query()->orderBy('name')->get(['code', 'name']);
+                $locatedAccounts = User::query()
+                    ->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('roles.name', Role::SYSTEM_ADMIN));
+                $unitProvinceCounts = (clone $locatedAccounts)
+                    ->select('province_code')
+                    ->selectRaw('COUNT(*) AS account_count')
+                    ->whereNotNull('province_code')
+                    ->groupBy('province_code')
+                    ->pluck('account_count', 'province_code');
+            } elseif ($actor->roleScopeLevel() === 'global') {
+                $unitProvinces = Province::query()->orderBy('name')->get(['code', 'name']);
+                $unitProvinceCounts = (clone $this->manageableUsers($actor))
+                    ->select('province_code')
+                    ->selectRaw('COUNT(*) AS account_count')
+                    ->whereNotNull('province_code')
+                    ->groupBy('province_code')
+                    ->pluck('account_count', 'province_code');
+            } elseif ($actor->roleScopeLevel() === 'province') {
+                $unitProvinces = Province::query()
+                    ->where('code', $actor->province_code)
+                    ->get(['code', 'name']);
+            } elseif ($actor->roleScopeLevel() === 'commune') {
+                $unitRootType = 'commune';
+                $unitProvinces = Commune::query()
+                    ->where('code', $actor->commune_code)
+                    ->get(['code', 'name', 'province_code']);
+            }
+
+            if (! $isSystemAdmin) {
+                $unitRootCount = $this->manageableUsers($actor)->count();
+            }
         }
 
         $provinceCode = $filter['province_code'] ?? $actor->province_code;
-        $communeCode = $filter['commune_code'] ?? null;
+        $communeCode = $filter['commune_code'] ?? (
+            $actor->roleScopeLevel() === 'commune' ? $actor->commune_code : null
+        );
         $villageCode = $filter['village_code'] ?? null;
         $query = $this->manageableUsers($actor)
             ->with(['roles.permissions', 'villages', 'commune', 'province']);
@@ -61,7 +90,16 @@ class UserAccessControlService
             $query->whereHas('villages', fn (Builder $villages) => $villages->where('villages.code', $villageCode));
         }
 
-        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode);
+        if (filled($filter['q'] ?? null)) {
+            $search = trim((string) $filter['q']);
+            $query->where(function (Builder $builder) use ($search): void {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('username', 'like', "%{$search}%");
+            });
+        }
+
+        $search = trim((string) ($filter['q'] ?? ''));
+        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode) || $search !== '';
         $query->orderByRaw(
             'CASE
                 WHEN EXISTS (
@@ -101,8 +139,11 @@ class UserAccessControlService
         )->orderBy('name');
 
         $allUsers = $showOrganizationTree
-            ? $query->paginate(30)->withQueryString()
+            ? $query->paginate(10)->withQueryString()
             : $query->get();
+        $usersForView = $showOrganizationTree ? $allUsers->getCollection() : $allUsers;
+        $this->addStatusManagementFlags($actor, $usersForView);
+        $this->addPasswordResetFlags($actor, $usersForView);
         $totalUserCount = $showOrganizationTree ? $allUsers->total() : $allUsers->count();
         $hierarchy = [];
         $noLocationUsers = collect();
@@ -177,6 +218,8 @@ class UserAccessControlService
             'showOrganizationTree',
             'unitProvinces',
             'unitProvinceCounts',
+            'unitRootType',
+            'unitRootCount',
         );
     }
 
@@ -218,13 +261,13 @@ class UserAccessControlService
     public function manageableProvinces(User $actor, ?User $user = null): Collection
     {
         $query = Province::query()->orderBy('name');
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $actor->province_code);
-        } else {
+        if ($actor->roleScopeLevel() === 'global' || $actor->hasRole(Role::SYSTEM_ADMIN)) {
             $occupied = DelegatedAccess::occupiedTerritorialCodes('province', $user?->id);
             if ($occupied !== []) {
                 $query->whereNotIn('code', $occupied);
             }
+        } else {
+            $query->where('code', $actor->province_code);
         }
 
         return $query->get(['code', 'name']);
@@ -250,8 +293,11 @@ class UserAccessControlService
     public function canManageUser(User $actor, User $target): bool
     {
         $targetLevel = $target->roleScopeLevel();
-        if ($targetLevel === null || $targetLevel === 'global') {
-            return $actor->hasRole(Role::SYSTEM_ADMIN);
+        if ($targetLevel === null) {
+            return false;
+        }
+        if ($targetLevel === 'global') {
+            return $actor->hasRole(Role::SYSTEM_ADMIN) && $target->hasRole(Role::SYSTEM_ADMIN) === false;
         }
 
         if (! in_array($targetLevel, DelegatedAccess::manageableAccountLevels($actor), true)) {
@@ -266,6 +312,127 @@ class UserAccessControlService
         }
 
         return DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
+    }
+
+    public function canResetUserPassword(User $actor, User $target): bool
+    {
+        return ! $actor->is($target)
+            && $this->canManageUser($actor, $target);
+    }
+
+    public function resetPassword(User $user): void
+    {
+        $user->password = User::TEMPORARY_PASSWORD;
+        $user->save();
+    }
+
+    public function canChangeUserStatus(User $actor, User $target): bool
+    {
+        $targetLevel = $target->roleScopeLevel();
+        if (! in_array($targetLevel, $this->statusTargetLevels($actor), true)) {
+            return false;
+        }
+
+        if (! $actor->hasRole(Role::SYSTEM_ADMIN) && ! $actor->canManageSubordinateUsers()) {
+            return false;
+        }
+
+        $assignableRoleIds = $actor->hasRole(Role::SYSTEM_ADMIN)
+            ? null
+            : $this->availableRoles($actor, [$targetLevel])->modelKeys();
+
+        return $this->statusTargetIsManageable($actor, $target, $targetLevel, $assignableRoleIds);
+    }
+
+    private function addStatusManagementFlags(User $actor, Collection $users): void
+    {
+        $targetLevels = $this->statusTargetLevels($actor);
+        $canManageAccounts = $actor->hasRole(Role::SYSTEM_ADMIN) || $actor->canManageSubordinateUsers();
+
+        foreach ($users as $user) {
+            $targetLevel = $user->roleScopeLevel();
+            $assignableRoleIds = in_array($targetLevel, $targetLevels, true)
+                && $canManageAccounts
+                && ! $actor->hasRole(Role::SYSTEM_ADMIN)
+                ? $this->availableRoles($actor, [$targetLevel])->modelKeys()
+                : null;
+            $canChangeStatus = in_array($targetLevel, $targetLevels, true)
+                && $canManageAccounts
+                && $this->statusTargetIsManageable($actor, $user, $targetLevel, $assignableRoleIds);
+            $user->setAttribute('can_change_account_status', $canChangeStatus);
+        }
+    }
+
+    private function addPasswordResetFlags(User $actor, Collection $users): void
+    {
+        foreach ($users as $user) {
+            $user->setAttribute('can_reset_account_password', $this->canResetUserPassword($actor, $user));
+        }
+    }
+
+    private function statusTargetIsManageable(
+        User $actor,
+        User $target,
+        string $targetLevel,
+        ?array $assignableRoleIds
+    ): bool {
+        $target->loadMissing(['roles', 'villages']);
+        if ($assignableRoleIds !== null && $target->roles->contains(
+            fn (Role $role): bool => ! in_array($role->id, $assignableRoleIds, true)
+        )) {
+            return false;
+        }
+
+        $villageCodes = $target->villages->pluck('code')->all();
+        if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            if ($targetLevel === 'global') {
+                return ! $target->hasRole(Role::SYSTEM_ADMIN)
+                    && $target->province_code === null
+                    && $target->commune_code === null
+                    && $villageCodes === [];
+            }
+
+            return $target->province_code !== null
+                && $targetLevel === 'province'
+                && $target->commune_code === null
+                && $villageCodes === [];
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
+            return $targetLevel === 'province'
+                && $target->province_code !== null
+                && $target->commune_code === null
+                && $villageCodes === [];
+        }
+
+        if ($target->province_code !== $actor->province_code || $actor->province_code === null) {
+            return false;
+        }
+
+        return match ($actor->roleScopeLevel()) {
+            'province' => $targetLevel === 'commune'
+                && $target->commune_code !== null
+                && $villageCodes === [],
+            'commune' => $targetLevel === 'village'
+                && $target->commune_code === $actor->commune_code
+                && $target->commune_code !== null
+                && $villageCodes !== [],
+            default => false,
+        };
+    }
+
+    private function statusTargetLevels(User $actor): array
+    {
+        if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            return ['global', 'province'];
+        }
+
+        return match ($actor->roleScopeLevel()) {
+            'global' => ['province'],
+            'province' => ['commune'],
+            'commune' => ['village'],
+            default => [],
+        };
     }
 
     public function validateRoleForScope(Role $role, string $scopeLevel, User $actor): void
@@ -344,7 +511,7 @@ class UserAccessControlService
             return User::query()
                 ->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('roles.name', Role::SYSTEM_ADMIN))
                 ->where(function (Builder $query): void {
-                    $query->whereIn('scope_level', ['province', 'commune', 'village'])
+                    $query->whereIn('scope_level', ['global', 'province', 'commune', 'village'])
                         ->orWhere(function (Builder $legacy): void {
                             $legacy->whereNull('scope_level')
                                 ->where(function (Builder $unassigned): void {
@@ -360,6 +527,9 @@ class UserAccessControlService
         $query = User::query()
             ->whereIn('scope_level', $levels)
             ->where('id', '!=', $actor->id);
+        if ($actor->roleScopeLevel() === 'global') {
+            $query->whereHas('roles', fn (Builder $roles) => $roles->where('roles.created_by', $actor->id));
+        }
         $this->constrainToActorArea($query, $actor);
 
         return $query;
@@ -368,6 +538,10 @@ class UserAccessControlService
     private function constrainToActorArea(Builder $query, User $actor): void
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            return;
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
             return;
         }
 
@@ -387,8 +561,10 @@ class UserAccessControlService
 
     private function assertTerritorialAdminIsUnique(User $actor, string $scopeLevel, array $scope): void
     {
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)
-            || ! DelegatedAccess::hasActiveTerritorialAdmin($scopeLevel, $scope)) {
+        if (
+            (! $actor->hasRole(Role::SYSTEM_ADMIN) && $actor->roleScopeLevel() !== 'global')
+            || ! DelegatedAccess::hasActiveTerritorialAdmin($scopeLevel, $scope)
+        ) {
             return;
         }
 
@@ -408,7 +584,7 @@ class UserAccessControlService
             $user->password = $data['password'];
         }
         $user->is_active = (bool) ($data['is_active'] ?? true);
-        $user->province_code = $scope['province_code'];
+        $user->province_code = $scope['province_code'] ?? null;
         $user->commune_code = $scope['commune_code'] ?? null;
         $user->scope_level = $scopeLevel;
     }

@@ -300,6 +300,14 @@
             border-width: .15em;
         }
 
+        .app-navbar .dropdown-menu:not(.show) {
+            display: none;
+        }
+
+        .app-navbar .dropdown-menu.show {
+            display: block;
+        }
+
         .app-inline-note {
             display: flex;
             align-items: flex-start;
@@ -324,6 +332,7 @@
         html {
             min-width: 320px;
             scroll-padding-top: 1rem;
+            scrollbar-gutter: stable;
         }
 
         body {
@@ -634,8 +643,8 @@
 
         @media (max-width: 767.98px) {
             main.py-4 {
-                padding-top: 1rem !important;
-                padding-bottom: 1rem !important;
+                padding-top: .75rem !important;
+                padding-bottom: .75rem !important;
             }
 
             main > .container,
@@ -978,11 +987,61 @@
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" data-turbo-eval="false"></script>
+    <script>
+        (() => {
+            if (window.bootstrap?.Dropdown || window.appNavbarFallbackInitialized) return;
+            window.appNavbarFallbackInitialized = true;
+
+            const closeDropdowns = (except = null) => {
+                document.querySelectorAll('.app-navbar .dropdown-menu.show').forEach((menu) => {
+                    if (menu === except) return;
+                    menu.classList.remove('show');
+                    menu.closest('.dropdown')?.querySelector('[data-bs-toggle="dropdown"]')
+                        ?.setAttribute('aria-expanded', 'false');
+                });
+            };
+
+            document.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+
+                const dropdownToggle = target.closest('.app-navbar [data-bs-toggle="dropdown"]');
+                if (dropdownToggle) {
+                    event.preventDefault();
+                    const menu = dropdownToggle.closest('.dropdown')?.querySelector(':scope > .dropdown-menu');
+                    if (!menu) return;
+
+                    const opening = !menu.classList.contains('show');
+                    closeDropdowns(menu);
+                    menu.classList.toggle('show', opening);
+                    dropdownToggle.setAttribute('aria-expanded', String(opening));
+                    return;
+                }
+
+                const collapseToggle = target.closest('.app-navbar [data-bs-toggle="collapse"]');
+                if (collapseToggle) {
+                    event.preventDefault();
+                    const selector = collapseToggle.getAttribute('data-bs-target');
+                    const collapse = selector ? document.querySelector(selector) : null;
+                    if (!collapse) return;
+
+                    const expanded = collapse.classList.toggle('show');
+                    collapseToggle.setAttribute('aria-expanded', String(expanded));
+                    return;
+                }
+
+                if (!target.closest('.app-navbar .dropdown')) closeDropdowns();
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeDropdowns();
+            });
+        })();
+    </script>
     @stack('scripts')
     <script>
         (() => {
             let loadingTimer;
-            let activeFetches = 0;
             let isNavigating = false;
 
             const showLoadingAlert = () => {
@@ -994,7 +1053,7 @@
 
             const updateLoadingAlert = () => {
                 const loadingAlert = document.getElementById('app-loading-alert');
-                if (isNavigating || activeFetches > 0) {
+                if (isNavigating) {
                     loadingTimer = window.setTimeout(showLoadingAlert, 180);
                     return;
                 }
@@ -1005,40 +1064,6 @@
             };
 
             if (!window.appLoadingAlertInitialized) {
-                window.showAppLoadingAlert = () => {
-                    activeFetches++;
-                    updateLoadingAlert();
-                };
-                window.hideAppLoadingAlert = () => {
-                    activeFetches = Math.max(0, activeFetches - 1);
-                    updateLoadingAlert();
-                };
-
-                const nativeFetch = window.fetch.bind(window);
-                window.fetch = async (...args) => {
-                    const input = args[0];
-                    const requestOptions = args[1];
-                    const headers = new Headers(
-                        requestOptions?.headers
-                        ?? (input instanceof Request ? input.headers : undefined),
-                    );
-                    const requestUrl = input instanceof Request ? input.url : String(input);
-                    if (
-                        headers.get('X-Sec-Purpose') === 'prefetch'
-                        || headers.get('Sec-Purpose') === 'prefetch'
-                        || /\/households\/imports\/\d+\/status(?:\?|$)/.test(requestUrl)
-                    ) {
-                        return nativeFetch(...args);
-                    }
-
-                    window.showAppLoadingAlert();
-                    try {
-                        return await nativeFetch(...args);
-                    } finally {
-                        window.hideAppLoadingAlert();
-                    }
-                };
-
                 document.addEventListener('turbo:before-visit', () => {
                     isNavigating = true;
                     updateLoadingAlert();
@@ -1229,7 +1254,7 @@
                 }, true);
                 document.addEventListener('change', (event) => {
                     const select = event.target.closest('[data-pagination-select]');
-                    if (!select || event.defaultPrevented) return;
+                    if (!select || event.defaultPrevented || select.closest('[data-ajax-pagination]')) return;
                     select.form?.requestSubmit();
                 });
                 window.appConfirmFormsInitialized = true;

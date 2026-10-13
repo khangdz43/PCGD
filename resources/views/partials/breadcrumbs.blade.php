@@ -77,10 +77,10 @@
         $breadcrumbs[] = ['label' => 'Thông tin tài khoản'];
     } elseif (request()->routeIs('admin.roles.*')) {
         if (request()->routeIs('admin.roles.index')) {
-            $breadcrumbs[] = ['label' => 'Nhóm quyền'];
+            $breadcrumbs[] = ['label' => 'Quản lý nhóm người dùng'];
         } else {
-            $breadcrumbs[] = ['label' => 'Nhóm quyền', 'url' => route('admin.roles.index')];
-            $breadcrumbs[] = ['label' => request()->routeIs('admin.roles.create') ? 'Tạo nhóm quyền' : 'Sửa nhóm quyền'];
+            $breadcrumbs[] = ['label' => 'Quản lý nhóm người dùng', 'url' => route('admin.roles.index')];
+            $breadcrumbs[] = ['label' => request()->routeIs('admin.roles.create') ? 'Tạo nhóm người dùng' : 'Sửa nhóm người dùng'];
         }
     } elseif (request()->routeIs('admin.users.*')) {
         if (request()->routeIs('admin.users.index')) {
@@ -93,7 +93,7 @@
 @endphp
 
 @if (count($breadcrumbs) > 1)
-    <div class="app-breadcrumb-wrap mb-4 py-2">
+    <div class="app-breadcrumb-wrap mb-2 py-1">
         <div class="container">
             <nav aria-label="Đường dẫn trang">
                 <ol class="breadcrumb app-breadcrumb">

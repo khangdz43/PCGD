@@ -22,6 +22,7 @@ class UserRoleController extends Controller
         $actor = $request->user();
         $provinces = $this->users->provincesForFilter($actor);
         $filter = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
             'province_code' => ['nullable', 'string', Rule::in($provinces->pluck('code')->all())],
             'commune_code' => [
                 'nullable',
@@ -55,7 +56,7 @@ class UserRoleController extends Controller
             'actor' => $actor,
             'roles' => $this->users->rolesForForm($actor, $accountLevels),
             'accountLevels' => $accountLevels,
-            'accountScopeLevel' => old('scope_level', $accountLevels[0] ?? 'province'),
+            'accountScopeLevel' => old('scope_level', 'province'),
             'provinces' => $this->users->manageableProvinces($actor),
             'selectedLocations' => $this->users->selectedLocations(),
         ]);
@@ -66,9 +67,7 @@ class UserRoleController extends Controller
         $actor = $request->user();
         $data = $request->validate($this->rules($actor));
         $role = Role::findOrFail($data['role_id']);
-        $scopeLevel = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
-            : $data['scope_level'];
+        $scopeLevel = $data['scope_level'] ?? 'province';
         $this->users->validateRoleForScope($role, $scopeLevel, $actor);
         $scope = $request->validate($this->scopeRules($scopeLevel));
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
@@ -101,9 +100,7 @@ class UserRoleController extends Controller
 
         $data = $request->validate($this->rules($actor, $user));
         $role = Role::findOrFail($data['role_id']);
-        $scopeLevel = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
-            : $data['scope_level'];
+        $scopeLevel = $data['scope_level'] ?? 'province';
         $this->users->validateRoleForScope($role, $scopeLevel, $actor);
         $scope = $request->validate($this->scopeRules($scopeLevel));
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
@@ -115,7 +112,7 @@ class UserRoleController extends Controller
     public function updateStatus(Request $request, User $user): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($this->users->canManageUser($actor, $user), 403);
+        abort_unless($this->users->canChangeUserStatus($actor, $user), 403);
 
         $data = $request->validate([
             'is_active' => ['required', 'boolean'],
@@ -135,11 +132,22 @@ class UserRoleController extends Controller
         );
     }
 
+    public function resetPassword(Request $request, User $user): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($this->users->canResetUserPassword($actor, $user), 403);
+
+        $this->users->resetPassword($user);
+
+        return to_route('admin.users.index')->with(
+            'success',
+            'Đã đặt lại mật khẩu về '.User::TEMPORARY_PASSWORD.'.'
+        );
+    }
+
     private function rules(User $actor, ?User $user = null): array
     {
-        $scopeLevel = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
-            : request()->input('scope_level');
+        $scopeLevel = request()->input('scope_level', 'province');
         $manageableLevels = DelegatedAccess::manageableAccountLevels($actor);
         $roleIds = in_array($scopeLevel, $manageableLevels, true)
             ? $this->users->availableRoles($actor, [$scopeLevel])->modelKeys()
@@ -159,15 +167,22 @@ class UserRoleController extends Controller
                 'integer',
                 Rule::exists('roles', 'id')->where('guard_name', 'web')->whereIn('id', $roleIds),
             ],
-            'scope_level' => $actor->hasRole(Role::SYSTEM_ADMIN)
-                ? ['sometimes', Rule::in(['province'])]
-                : ['required', Rule::in($manageableLevels)],
+            'scope_level' => ['required', Rule::in($manageableLevels)],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }
 
     private function scopeRules(string $scopeLevel): array
     {
+        if ($scopeLevel === 'global') {
+            return [
+                'province_code' => ['prohibited'],
+                'commune_code' => ['prohibited'],
+                'village_codes' => ['prohibited'],
+                'school_code' => ['prohibited'],
+            ];
+        }
+
         $rules = [
             'province_code' => ['required', 'string', Rule::exists('provinces', 'code')],
             'commune_code' => ['prohibited'],

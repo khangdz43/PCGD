@@ -70,7 +70,7 @@ class RoleManagementService
         return $role->users()
             ->with(['province:code,name', 'commune:code,name', 'villages:code,name'])
             ->orderBy('users.name')
-            ->paginate(20);
+            ->paginate(5);
     }
 
     public function manageablePermissions(User $actor, array $scopeLevels): Collection
@@ -102,7 +102,7 @@ class RoleManagementService
     public function defaultScopeLevel(User $actor, array $scopeLevels): string
     {
         $preferred = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
+            ? 'global'
             : match ($actor->roleScopeLevel()) {
                 'province' => 'province',
                 'commune' => 'commune',

@@ -34,7 +34,7 @@ class VillageService
             $query->where('commune_code', $filters['commune_code']);
         }
 
-        return $query->orderBy('name')->paginate(15)->withQueryString();
+        return $query->orderBy('name')->paginate(10)->withQueryString();
     }
 
     public function provincesFor(User $user): Collection

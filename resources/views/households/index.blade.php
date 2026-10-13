@@ -6,28 +6,27 @@
 <div class="container">
 
 
-    <div class="household-page-heading d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
+    <div class="household-page-heading d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
         <div>
-            <h1 class="h3 mb-1">Phiếu điều tra hộ</h1>
-            <p class="text-muted mb-0">Một phiếu có thể gồm nhiều hộ; nhân khẩu được quản lý riêng trong từng hộ.</p>
+            <h1 class="h5 mb-0">Phiếu điều tra hộ</h1>
         </div>
         <div class="household-page-actions d-flex flex-wrap gap-2">
             <!-- request()->query())  là lấy toàn bộ tham số lọc trên url truyền sang route này -->
             @can('export-households')
-                <a class="btn btn-outline-success" id="export-households-button" href="{{ route('households.export', request()->query(), false) }}" data-turbo="false">
+                <a class="btn btn-sm btn-outline-success" id="export-households-button" href="{{ route('households.export', request()->query(), false) }}" data-turbo="false">
                     <i class="fa-solid fa-file-export me-1" aria-hidden="true"></i> Xuất dữ liệu
                 </a>
-                <a class="btn btn-outline-secondary" href="{{ route('households.template', [], false) }}" data-turbo="false">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ route('households.template', [], false) }}" data-turbo="false">
                     <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải mẫu Excel
                 </a>
             @endcan
             @can('import-households')
-                <a class="btn btn-outline-primary" href="{{ route('households.import.create', [], false) }}">
+                <a class="btn btn-sm btn-outline-primary" href="{{ route('households.import.create', [], false) }}">
                     <i class="fa-solid fa-file-import me-1" aria-hidden="true"></i> Nhập Excel
                 </a>
             @endcan
             @can('create-households')
-                <a class="btn btn-primary" href="{{ route('households.create', [], false) }}">
+                <a class="btn btn-sm btn-primary" href="{{ route('households.create', [], false) }}">
                     <i class="fa-solid fa-plus me-1" aria-hidden="true"></i> Tạo phiếu điều tra
                 </a>
             @endcan
@@ -36,7 +35,7 @@
 
 
 
-    <form id="household-filter-form" method="GET" action="{{ route('households.index', [], false) }}" class="household-filter-form bg-white border rounded-2 p-2 mb-3">
+    <form id="household-filter-form" method="GET" action="{{ route('households.index', [], false) }}" class="household-filter-form bg-white border rounded-2 p-2 mb-2">
         <div class="household-filter-field">
             <label for="household-search" class="visually-hidden">Mã phiếu hoặc chủ hộ</label>
             <input id="household-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Mã phiếu / Chủ hộ">
@@ -65,7 +64,7 @@
         <span id="household-filter-status" class="small text-danger" role="status" aria-live="polite"></span>
     </form>
 
-    <div id="household-results" aria-live="polite">
+    <div id="household-results" aria-live="polite" data-loaded-from="{{ $households->currentPage() }}" data-loaded-through="{{ $households->currentPage() }}">
         @can('delete-households')
             <form id="bulk-delete-form" method="POST" action="{{ route('households.bulk-destroy', request()->query(), false) }}" class="household-bulk-actions d-flex align-items-center gap-2 mb-3" data-confirm="Xóa các phiếu đã chọn sẽ xóa cả danh sách thành viên trong hộ. Bạn có chắc không?" data-confirm-title="Xác nhận xóa phiếu">
                 @csrf
@@ -80,12 +79,12 @@
             <i class="fa-solid fa-arrows-left-right" aria-hidden="true"></i>
             Vuốt ngang bảng để xem thêm thông tin.
         </p>
-        <div class="table-responsive household-table-scroll bg-white border rounded-2">
-            <table class="table table-hover align-middle mb-0">
+        <div class="table-responsive household-table-scroll bg-white border rounded-2" tabindex="0" aria-label="Danh sách hộ, cuộn để xem các trang tiếp theo">
+            <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th scope="col" class="text-center">
-                            <input class="form-check-input" type="checkbox" id="select-all-households" title="Chọn tất cả hộ trên trang" aria-label="Chọn tất cả hộ trên trang">
+                            <input class="form-check-input" type="checkbox" id="select-all-households" title="Chọn tất cả hộ đã tải" aria-label="Chọn tất cả hộ đã tải">
                         </th>
                         <th scope="col">Mã phiếu / Hộ</th>
                         <th scope="col">Chủ hộ</th>
@@ -96,7 +95,7 @@
                 </thead>
                 <tbody>
                     @forelse ($households as $household)
-                    <tr data-household-id="{{ $household->id }}">
+                    <tr data-household-id="{{ $household->id }}" data-household-page="{{ $households->currentPage() }}">
                         <td class="text-center">
                             <input
                                 class="form-check-input household-checkbox"
@@ -148,7 +147,7 @@
         </div>
 
         @if ($households->hasPages())
-            <nav class="d-flex justify-content-end mt-3" aria-label="Phân trang phiếu điều tra">
+            <nav class="d-flex justify-content-end mt-2" aria-label="Phân trang phiếu điều tra">
                 <ul class="pagination pagination-sm mb-0 align-items-center">
                     <li class="page-item {{ $households->onFirstPage() ? 'disabled' : '' }}">
                         @if ($households->onFirstPage())
@@ -190,7 +189,7 @@
             </nav>
         @endif
 
-        <section class="member-browser mt-4">
+        <section class="member-browser mt-3">
             <div class="member-browser-heading d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                 <div>
                     <h2 class="h5 mb-1">Đối tượng điều tra</h2>
@@ -413,9 +412,8 @@
     }
 
     .household-table-scroll {
-        max-height: 24rem;
-        overflow-x: auto;
-        overflow-y: auto;
+        max-height: min(16rem, 55vh);
+        overflow: auto;
     }
 
     .household-table-scroll thead th {
@@ -427,9 +425,8 @@
     }
 
     .member-table-scroll {
-        max-height: 34rem;
-        overflow-x: auto;
-        overflow-y: auto;
+        max-height: min(16rem, 55vh);
+        overflow: auto;
     }
 
     .member-table {
@@ -663,13 +660,12 @@
         }
 
         .household-page-heading {
-            align-items: stretch !important;
-            gap: .85rem !important;
-            margin-bottom: 1rem !important;
+            align-items: center !important;
+            gap: .5rem !important;
         }
 
         .household-page-heading h1 {
-            font-size: 1.35rem;
+            font-size: 1.05rem;
         }
 
         .household-page-actions {
@@ -799,6 +795,7 @@
         activeRequest?.abort();
         const requestController = new AbortController();
         activeRequest = requestController;
+        let refreshed = false;
         results.setAttribute('aria-busy', 'true');
         results.classList.add('household-results-loading');
         filterStatus.textContent = '';
@@ -818,6 +815,10 @@
             if (!nextResults) throw new Error('Household results were not found in the response.');
 
             results.innerHTML = nextResults.innerHTML;
+            const pageSelect = results.querySelector('[data-household-page-select]');
+            const refreshedPage = Number(pageSelect?.value || url.searchParams.get('page') || 1);
+            results.dataset.loadedFrom = String(refreshedPage);
+            results.dataset.loadedThrough = String(refreshedPage);
             if (historyMode !== 'none') {
                 window.history[historyMode]({}, '', `${url.pathname}${url.search}`);
             }
@@ -830,6 +831,7 @@
             updateClearButton();
             updateBulkDeleteState();
             updateMemberTable();
+            refreshed = true;
         } catch (error) {
             if (error.name !== 'AbortError') {
                 console.error('Không tải được danh sách hộ:', error);
@@ -840,7 +842,223 @@
                 activeRequest = null;
                 results.removeAttribute('aria-busy');
                 results.classList.remove('household-results-loading');
+                if (refreshed) {
+                    window.requestAnimationFrame(() => {
+                        const scroller = results.querySelector('.household-table-scroll');
+                        if (Number(results.dataset.loadedFrom) > 1) {
+                            prependPreviousHouseholdPage();
+                        } else if (scroller && scroller.scrollHeight <= scroller.clientHeight + 1) {
+                            appendNextHouseholdPage();
+                        }
+                    });
+                }
             }
+        }
+    }
+
+    function updateHouseholdPagination(pageNumber, pageUrl) {
+        const pagination = results.querySelector('nav[aria-label="Phân trang phiếu điều tra"]');
+        const select = pagination?.querySelector('[data-household-page-select]');
+        if (!pagination || !select) return;
+
+        const page = Math.max(1, Math.min(Number(pageNumber), select.options.length));
+        select.value = String(page);
+
+        const items = pagination.querySelectorAll('.page-item');
+        const updateControl = (item, targetPage, label, relation) => {
+            if (!item) return;
+            const isDisabled = targetPage < 1 || targetPage > select.options.length;
+            item.classList.toggle('disabled', isDisabled);
+
+            if (isDisabled) {
+                const span = document.createElement('span');
+                span.className = 'page-link px-3';
+                span.setAttribute('aria-disabled', 'true');
+                span.setAttribute('aria-label', label);
+                span.innerHTML = label === 'Trang trước' ? '&lsaquo;' : '&rsaquo;';
+                item.replaceChildren(span);
+                return;
+            }
+
+            const targetUrl = new URL(pageUrl, window.location.href);
+            targetUrl.searchParams.set('page', String(targetPage));
+            const link = document.createElement('a');
+            link.className = 'page-link px-3';
+            link.href = `${targetUrl.pathname}${targetUrl.search}`;
+            link.rel = relation;
+            link.setAttribute('aria-label', label);
+            link.innerHTML = label === 'Trang trước' ? '&lsaquo;' : '&rsaquo;';
+            item.replaceChildren(link);
+        };
+
+        updateControl(items[0], page - 1, 'Trang trước', 'prev');
+        updateControl(items[2], page + 1, 'Trang sau', 'next');
+    }
+
+    let isAppendingHouseholds = false;
+    let isPrependingHouseholds = false;
+
+    function householdPageUrl(page) {
+        const url = new URL(filterForm.action, window.location.href);
+        url.search = window.location.search;
+        url.searchParams.set('page', String(page));
+        return url;
+    }
+
+    async function appendNextHouseholdPage() {
+        if (isAppendingHouseholds || isPrependingHouseholds || activeRequest) return;
+
+        const scroller = results.querySelector('.household-table-scroll');
+        const body = scroller?.querySelector('tbody');
+        const select = results.querySelector('[data-household-page-select]');
+        if (!scroller || !body || !select) return;
+
+        const nextPage = Number(results.dataset.loadedThrough || select.value) + 1;
+        if (nextPage > select.options.length) return;
+
+        const url = householdPageUrl(nextPage);
+        const controller = new AbortController();
+        activeRequest = controller;
+        isAppendingHouseholds = true;
+        results.setAttribute('aria-busy', 'true');
+
+        const loadingRow = document.createElement('tr');
+        loadingRow.dataset.householdLoadingRow = 'true';
+        loadingRow.innerHTML = '<td colspan="6" class="text-center text-muted py-2">Đang tải thêm hộ…</td>';
+        body.appendChild(loadingRow);
+
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: 'text/html',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const pageDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const nextResults = pageDocument.getElementById('household-results');
+            const nextBody = nextResults?.querySelector('.household-table-scroll tbody');
+            const nextMemberBody = nextResults?.querySelector('#member-table-body');
+            const nextSelect = nextResults?.querySelector('[data-household-page-select]');
+            const memberBody = results.querySelector('#member-table-body');
+            if (!nextBody || !nextMemberBody || !memberBody || !nextSelect) {
+                throw new Error('Không tìm thấy dữ liệu trang hộ tiếp theo.');
+            }
+
+            loadingRow.remove();
+            nextBody.querySelectorAll('tr[data-household-id]').forEach((row) => {
+                row.dataset.householdPage = String(nextPage);
+                body.appendChild(row);
+            });
+            const emptyMemberRow = memberBody.querySelector('#empty-member-row');
+            nextMemberBody.querySelectorAll('.member-row').forEach((row) => {
+                memberBody.insertBefore(row, emptyMemberRow);
+            });
+            results.dataset.loadedThrough = String(nextPage);
+            updateBulkDeleteState();
+            updateMemberTable();
+        } catch (error) {
+            loadingRow.remove();
+            if (error.name !== 'AbortError') {
+                console.error('Không tải được trang hộ tiếp theo:', error);
+                filterStatus.textContent = 'Không tải được trang hộ tiếp theo. Cuộn xuống để thử lại.';
+            }
+        } finally {
+            if (activeRequest === controller) {
+                activeRequest = null;
+                results.removeAttribute('aria-busy');
+            }
+            isAppendingHouseholds = false;
+            window.requestAnimationFrame(() => {
+                const currentScroller = results.querySelector('.household-table-scroll');
+                if (currentScroller && currentScroller.scrollHeight <= currentScroller.clientHeight + 1) {
+                    appendNextHouseholdPage();
+                }
+            });
+        }
+    }
+
+    async function prependPreviousHouseholdPage() {
+        if (isAppendingHouseholds || isPrependingHouseholds || activeRequest) return;
+
+        const scroller = results.querySelector('.household-table-scroll');
+        const body = scroller?.querySelector('tbody');
+        const select = results.querySelector('[data-household-page-select]');
+        if (!scroller || !body || !select) return;
+
+        const previousPage = Number(results.dataset.loadedFrom || select.value) - 1;
+        if (previousPage < 1) return;
+
+        const controller = new AbortController();
+        activeRequest = controller;
+        isPrependingHouseholds = true;
+        results.setAttribute('aria-busy', 'true');
+
+        const loadingRow = document.createElement('tr');
+        loadingRow.dataset.householdLoadingRow = 'true';
+        loadingRow.innerHTML = '<td colspan="6" class="text-center text-muted py-2">Đang tải trang trước…</td>';
+        body.prepend(loadingRow);
+
+        try {
+            const response = await fetch(householdPageUrl(previousPage), {
+                headers: {
+                    Accept: 'text/html',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            const pageDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const previousResults = pageDocument.getElementById('household-results');
+            const previousBody = previousResults?.querySelector('.household-table-scroll tbody');
+            const previousMemberBody = previousResults?.querySelector('#member-table-body');
+            const previousRows = previousBody?.querySelectorAll('tr[data-household-id]');
+            const previousMemberRows = previousMemberBody?.querySelectorAll('.member-row');
+            const memberBody = results.querySelector('#member-table-body');
+            if (!previousBody || !previousMemberBody || !previousRows?.length || !memberBody) {
+                throw new Error('Không tìm thấy dữ liệu trang hộ trước đó.');
+            }
+
+            const oldScrollHeight = scroller.scrollHeight;
+            const oldScrollTop = scroller.scrollTop;
+            const rows = document.createDocumentFragment();
+            previousRows.forEach((row) => {
+                row.dataset.householdPage = String(previousPage);
+                rows.appendChild(row);
+            });
+            loadingRow.remove();
+            body.prepend(rows);
+
+            const emptyMemberRow = memberBody.querySelector('#empty-member-row');
+            previousMemberRows?.forEach((row) => memberBody.insertBefore(row, emptyMemberRow));
+            results.dataset.loadedFrom = String(previousPage);
+            updateBulkDeleteState();
+            updateMemberTable();
+
+            window.requestAnimationFrame(() => {
+                scroller.scrollTop = oldScrollTop + scroller.scrollHeight - oldScrollHeight;
+            });
+        } catch (error) {
+            loadingRow.remove();
+            if (error.name !== 'AbortError') {
+                console.error('Không tải được trang hộ trước đó:', error);
+                filterStatus.textContent = 'Không tải được trang hộ trước đó. Cuộn lên để thử lại.';
+            }
+        } finally {
+            if (activeRequest === controller) {
+                activeRequest = null;
+                results.removeAttribute('aria-busy');
+            }
+            isPrependingHouseholds = false;
+            window.requestAnimationFrame(() => {
+                const currentScroller = results.querySelector('.household-table-scroll');
+                if (currentScroller && currentScroller.scrollHeight <= currentScroller.clientHeight + 1) {
+                    appendNextHouseholdPage();
+                }
+            });
         }
     }
 
@@ -900,6 +1118,42 @@
 
     window.addEventListener('popstate', () => {
         refreshHouseholds(new URL(window.location.href), 'none');
+    });
+
+    results.addEventListener('scroll', (event) => {
+        const scroller = event.target;
+        if (!(scroller instanceof HTMLElement) || !scroller.matches('.household-table-scroll')) return;
+
+        const rows = scroller.querySelectorAll('tbody tr[data-household-page]');
+        const stickyHeaderHeight = scroller.querySelector('thead')?.getBoundingClientRect().height || 0;
+        const scrollTop = scroller.getBoundingClientRect().top + scroller.clientTop + stickyHeaderHeight;
+        const visibleRow = [...rows].find((row) => row.getBoundingClientRect().bottom > scrollTop);
+        if (visibleRow) {
+            const visiblePage = Number(visibleRow.dataset.householdPage);
+            const select = results.querySelector('[data-household-page-select]');
+            if (select && Number(select.value) !== visiblePage) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('page', String(visiblePage));
+                updateHouseholdPagination(visiblePage, url);
+                window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+            }
+        }
+
+        if (scroller.scrollTop <= 80 && Number(results.dataset.loadedFrom) > 1) {
+            prependPreviousHouseholdPage();
+        }
+        if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 80) {
+            appendNextHouseholdPage();
+        }
+    }, true);
+
+    window.requestAnimationFrame(() => {
+        const scroller = results.querySelector('.household-table-scroll');
+        if (Number(results.dataset.loadedFrom) > 1) {
+            prependPreviousHouseholdPage();
+        } else if (scroller && scroller.scrollHeight <= scroller.clientHeight + 1) {
+            appendNextHouseholdPage();
+        }
     });
 
     let lastMemberScrollLeft = 0;

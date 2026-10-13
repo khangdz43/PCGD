@@ -13,6 +13,8 @@ class User extends Authenticatable
 {
     use HasFactory;
 
+    public const TEMPORARY_PASSWORD = 'Huukhang2k4#';
+
     protected $fillable = [
         'name',
         'username',
@@ -88,7 +90,7 @@ class User extends Authenticatable
         if (
             ! $this->hasRole(Role::SYSTEM_ADMIN)
             && (
-                ! in_array($scopeLevel, ['province', 'commune', 'village'], true)
+                ! in_array($scopeLevel, ['global', 'province', 'commune', 'village'], true)
                 || ! $this->permissionIsAllowedAtScope($name, $scopeLevel)
             )
         ) {
@@ -98,7 +100,7 @@ class User extends Authenticatable
         if (
             $name === AccessPermission::MANAGE_SCHOOLS
             && ! $this->hasRole(Role::SYSTEM_ADMIN)
-            && $scopeLevel !== 'province'
+            && ! in_array($scopeLevel, ['global', 'province'], true)
         ) {
             return false;
         }
@@ -108,11 +110,9 @@ class User extends Authenticatable
             return $this->hasPermissionWithinDelegation($name, []);
         }
 
-        if ($name === AccessPermission::VIEW_HOUSEHOLDS) {
-            foreach (AccessPermission::impliedPermissions($name) as $implyingPermission) {
-                if ($this->hasPermissionWithinDelegation($implyingPermission, [])) {
-                    return true;
-                }
+        foreach (AccessPermission::impliedPermissions($name) as $implyingPermission) {
+            if ($this->hasPermissionWithinDelegation($implyingPermission, [])) {
+                return true;
             }
         }
      
@@ -138,7 +138,7 @@ class User extends Authenticatable
         if ($this->hasRole(Role::SYSTEM_ADMIN)) {
             return 'global';
         }
-        if (in_array($this->scope_level, ['province', 'commune', 'village'], true)) {
+        if (in_array($this->scope_level, ['global', 'province', 'commune', 'village'], true)) {
             return $this->scope_level;
         }
         // lấy ra list scope_level của user này
@@ -150,7 +150,7 @@ class User extends Authenticatable
             ->values();
         // nếu count != 1 trả về null , 1 user chỉ có 1 level thôi
         if ($levels->count() !== 1) {
-            return $levels->isEmpty() && in_array($this->scope_level, ['province', 'commune', 'village'], true)
+            return $levels->isEmpty() && in_array($this->scope_level, ['global', 'province', 'commune', 'village'], true)
                 ? $this->scope_level
                 : null;
         }
@@ -174,7 +174,7 @@ class User extends Authenticatable
 
         $scopeLevel = $this->roleScopeLevel();
         if (
-            ! in_array($scopeLevel, ['province', 'commune', 'village'], true)
+            ! in_array($scopeLevel, ['global', 'province', 'commune', 'village'], true)
             || ! $this->permissionIsAllowedAtScope($name, $scopeLevel)
         ) {
             return false;
@@ -226,7 +226,6 @@ class User extends Authenticatable
     // kiểm tra quyền có phù hợp với cấp bậc không
     private function permissionIsAllowedAtScope(string $name, string $scopeLevel): bool
     {
-        return in_array($name, AccessPermission::permissionsForScope($scopeLevel), true)
-            || ( in_array($scopeLevel, ['province', 'commune'], true));
+        return in_array($name, AccessPermission::permissionsForScope($scopeLevel), true);
     }
 }

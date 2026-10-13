@@ -44,7 +44,7 @@
                 <select id="scope_level" class="form-select @error('scope_level') is-invalid @enderror" name="scope_level" required>
                     @foreach ($scopeLevels as $level)
                         <option value="{{ $level }}" @selected($scopeLevel === $level)>
-                            {{ ['province' => 'Tỉnh', 'commune' => 'Xã', 'village' => 'Thôn / xóm'][$level] ?? $level }}
+                            {{ ['global' => 'Trung ương', 'province' => 'Tỉnh', 'commune' => 'Xã', 'village' => 'Thôn / xóm'][$level] ?? $level }}
                         </option>
                     @endforeach
                 </select>
@@ -60,9 +60,21 @@
             @endif
         </p>
         @php
+            $permissionDefinitions = \App\Support\AccessPermission::definitions();
             $selected = collect(old('permissions', $role->exists ? $role->permissions->modelKeys() : []))
                 ->map(fn ($id) => (int) $id)
                 ->all();
+            $selectedPermissionNames = $permissions
+                ->whereIn('id', $selected)
+                ->pluck('name');
+            if ($selectedPermissionNames->contains(\App\Support\AccessPermission::MANAGE_USER_ACCOUNTS)) {
+                $groupManagementPermissionId = $permissions
+                    ->firstWhere('name', \App\Support\AccessPermission::MANAGE_ACCESS_CONTROL)
+                    ?->id;
+                if ($groupManagementPermissionId !== null) {
+                    $selected[] = (int) $groupManagementPermissionId;
+                }
+            }
             $householdPermissions = collect(\App\Support\AccessPermission::householdPermissions());
             $selectedHouseholdPermissionIds = $permissions
                 ->whereIn('name', $householdPermissions)
@@ -98,7 +110,7 @@
                             <tr class="table-secondary">
                                 <th colspan="2" scope="rowgroup">Quản trị về nhân khẩu và phiếu</th>
                             </tr>
-                            <tr @class(['d-none' => $scopeLevel === 'village']) data-group-control data-scopes="{{ $role->name === \App\Models\Role::SYSTEM_ADMIN ? 'global' : 'commune' }}">
+                            <tr @class(['d-none' => $scopeLevel === 'village']) data-group-control data-scopes="{{ $role->name === \App\Models\Role::SYSTEM_ADMIN ? 'global' : implode(',', array_intersect($scopeLevels, ['global', 'commune'])) }}">
                                 <td class="text-center">
                                     <input
                                         id="permission-group-households"
@@ -138,7 +150,7 @@
                                     </td>
                                     <td>
                                         <label class="form-label mb-0 fw-semibold" for="permission-{{ $permission->id }}">
-                                            {{ $permission->description ?: 'Chưa có mô tả' }}
+                                            {{ $permissionDefinitions[$permission->name] ?? $permission->description ?: 'Chưa có mô tả' }}
                                         </label>
                                     </td>
                                 </tr>
@@ -174,7 +186,7 @@
                                     </td>
                                     <td>
                                         <label class="form-label mb-0 fw-semibold" for="permission-{{ $permission->id }}">
-                                            {{ $permission->description ?: 'Chưa có mô tả' }}
+                                            {{ $permissionDefinitions[$permission->name] ?? $permission->description ?: 'Chưa có mô tả' }}
                                         </label>
                                     </td>
                                 </tr>
@@ -259,6 +271,14 @@
 
         checkboxes.forEach((checkbox) => {
             checkbox.addEventListener('change', () => {
+                if (checkbox.dataset.permissionName === 'manage-user-accounts' && checkbox.checked) {
+                    const groupManagementPermission = checkboxes.find(
+                        (item) => item.dataset.permissionName === 'manage-access-control'
+                    );
+                    if (groupManagementPermission && !groupManagementPermission.disabled) {
+                        groupManagementPermission.checked = true;
+                    }
+                }
                 if (checkbox.closest('[data-household-permission]')) {
                     updateHouseholdMaster();
                 }

@@ -25,7 +25,7 @@ final class DelegatedAccess
         );
         
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return self::CHILD_LEVELS['global'];
+            return ['global', ...self::CHILD_LEVELS['global']];
         }
 
         return self::managedLevels($actor);
@@ -34,7 +34,7 @@ final class DelegatedAccess
     public static function manageableRoleLevels(User $actor): array
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return ['province'];
+            return ['global', 'province'];
         }
         return self::managedLevels($actor);
     }
@@ -113,6 +113,12 @@ final class DelegatedAccess
         }
 
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            if ($targetLevel === 'global') {
+                return ($scope['province_code'] ?? null) === null
+                    && ($scope['commune_code'] ?? null) === null
+                    && $villageCodes === [];
+            }
+
             return filled($scope['province_code'] ?? null)
                 && match ($targetLevel) {
                     'province' => ($scope['commune_code'] ?? null) === null && $villageCodes === [],
@@ -120,6 +126,13 @@ final class DelegatedAccess
                     'village' => filled($scope['commune_code'] ?? null) && $villageCodes !== [],
                     default => false,
                 };
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
+            return $targetLevel === 'province'
+                && filled($scope['province_code'] ?? null)
+                && ($scope['commune_code'] ?? null) === null
+                && $villageCodes === [];
         }
 
         if ($actor->province_code === null || $scope['province_code'] !== $actor->province_code) {
@@ -180,6 +193,10 @@ final class DelegatedAccess
             return ['province_code' => null, 'commune_code' => null];
         }
 
+        if ($actor->roleScopeLevel() === 'global') {
+            return ['province_code' => null, 'commune_code' => null];
+        }
+
         return [
             'province_code' => $actor->province_code,
             'commune_code' => in_array($actor->roleScopeLevel(), ['commune', 'village'], true)
@@ -198,6 +215,13 @@ final class DelegatedAccess
                     'village' => $target->commune_code !== null && $target->managedVillageCodes() !== [],
                     default => false,
                 };
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
+                return $targetLevel === 'province'
+                    && $target->province_code !== null
+                    && $target->commune_code === null
+                    && $target->managedVillageCodes() === [];
         }
 
         if ($actor->province_code === null || $target->province_code !== $actor->province_code) {

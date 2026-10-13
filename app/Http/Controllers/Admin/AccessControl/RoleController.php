@@ -31,6 +31,10 @@ class RoleController extends Controller
         abort_unless($this->roles->canManageRole($request->user(), $role), 403);
         $members = $this->roles->membersFor($role);
 
+        if ($request->expectsJson() || $request->ajax()) {
+            return view('admin.access-control.roles._members', compact('role', 'members'));
+        }
+
         return view('admin.access-control.roles.members', compact('role', 'members'));
     }
 

@@ -4,17 +4,9 @@
 
 @section('content')
 <div class="container">
-    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
-        <div>
-            <h1 class="h3 mb-1">Danh sách thôn/xóm</h1>
-            <p class="text-muted mb-0">Quản lý thôn, bản theo xã/phường.</p>
-        </div>
-        <a class="btn btn-primary" href="{{ route('villages.create', [], false) }}">
-            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i> Thêm thôn/xóm
-        </a>
-    </div>
+    <h1 class="visually-hidden">Danh sách thôn/xóm</h1>
     <!-- check cái truyền từ controller success í -->
-    <form id="village-filter-form" method="GET" action="{{ route('villages.index', [], false) }}" class="directory-filter-form bg-white border rounded-2 p-2 mb-3">
+    <form id="village-filter-form" method="GET" action="{{ route('villages.index', [], false) }}" class="directory-filter-form bg-white border rounded-2 p-2 mb-2">
         <div class="directory-filter-field">
             <label for="village-search" class="visually-hidden">Mã hoặc tên thôn/xóm</label>
             <input id="village-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Mã / Tên thôn, xóm">
@@ -29,12 +21,15 @@
         <button class="btn btn-sm btn-outline-secondary directory-filter-clear" type="button" id="clear-village-filters" title="Xóa bộ lọc" aria-label="Xóa bộ lọc">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
         </button>
+        <a class="btn btn-sm btn-primary directory-filter-add" href="{{ route('villages.create', [], false) }}">
+            <i class="fa-solid fa-plus me-1" aria-hidden="true"></i> Thêm thôn/xóm
+        </a>
         <span id="village-filter-status" class="small text-danger" role="status" aria-live="polite"></span>
     </form>
 
     <div id="village-results" aria-live="polite">
         <div class="table-responsive bg-white border rounded-2">
-            <table class="table table-hover align-middle mb-0">
+            <table class="table table-sm table-hover align-middle mb-0">
                 <thead class="table-light">
                     <tr>
                         <th scope="col">Mã thôn/xóm</th>
@@ -74,8 +69,7 @@
             </table>
         </div>
 
-        <!-- phân trang do thăng villages nó là đối tượng Page r ở controller index í -->
-        <div class="mt-3">{{ $villages->links('pagination::bootstrap-5') }}</div>
+        <div class="mt-2" data-turbo="false">{{ $villages->links('pagination::bootstrap-5') }}</div>
     </div>
 </div>
 
@@ -83,7 +77,7 @@
 <style>
     .directory-filter-form {
         display: grid;
-        grid-template-columns: minmax(160px, 1.4fr) repeat(2, minmax(140px, 1fr)) auto;
+        grid-template-columns: minmax(140px, 1.4fr) repeat(2, minmax(120px, 1fr)) auto auto;
         align-items: center;
         gap: 0.5rem;
     }
@@ -103,6 +97,10 @@
         padding: 0;
     }
 
+    .directory-filter-add {
+        white-space: nowrap;
+    }
+
     .directory-filter-form [id$="-filter-status"]:empty {
         display: none;
     }
@@ -112,13 +110,16 @@
     }
 
     #village-results.directory-results-loading {
-        opacity: 0.55;
         pointer-events: none;
     }
 
     @media (max-width: 767.98px) {
         .directory-filter-form {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .directory-filter-add {
+            width: 100%;
         }
     }
 </style>
@@ -145,6 +146,7 @@
     }
 
     async function refreshVillages(url = villageFilterUrl()) {
+        const scrollPosition = window.scrollY;
         villageFilterRequest?.abort();
         const requestController = new AbortController();
         villageFilterRequest = requestController;
@@ -169,6 +171,7 @@
             villageResults.innerHTML = nextResults.innerHTML;
             window.history.replaceState({}, '', `${url.pathname}${url.search}`);
             updateVillageClearButton();
+            window.requestAnimationFrame(() => window.scrollTo(0, scrollPosition));
             return true;
         } catch (error) {
             if (error.name !== 'AbortError') {

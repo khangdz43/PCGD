@@ -28,6 +28,7 @@ Route::prefix('admin')
     ->name('admin.')
     ->middleware(['auth', 'active', 'can:manage-user-accounts'])
     ->group(function (): void {
+        Route::post('users/{user}/reset-password', [UserRoleController::class, 'resetPassword'])->name('users.reset-password');
         Route::patch('users/{user}/status', [UserRoleController::class, 'updateStatus'])->name('users.status');
         Route::resource('users', UserRoleController::class)->except('show', 'destroy');
     });

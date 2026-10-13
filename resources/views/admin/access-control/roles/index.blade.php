@@ -43,7 +43,7 @@
         display: flex;
         align-items: center;
         gap: .6rem;
-        padding: .65rem .85rem;
+        padding: .5rem .7rem;
         cursor: pointer;
         user-select: none;
         transition: background-color .15s ease;
@@ -105,9 +105,7 @@
     }
 
     .scope-header .scope-desc {
-        font-size: .8rem;
-        color: #64748b;
-        margin-top: 1px;
+        display: none;
     }
 
     .scope-header .scope-badge {
@@ -148,7 +146,7 @@
     }
 
     .scope-body-inner {
-        padding: 0 .85rem .7rem;
+        padding: 0 .65rem .55rem;
     }
 
     /* ===== Role Card ===== */
@@ -156,10 +154,10 @@
         display: flex;
         align-items: center;
         gap: .7rem;
-        padding: .65rem .75rem;
+        padding: .45rem .6rem;
         border: 1px solid #e5e9ef;
         border-radius: .4rem;
-        margin-bottom: .4rem;
+        margin-bottom: .3rem;
         background: #fff;
         transition: background-color .15s ease, border-color .15s ease;
     }
@@ -254,7 +252,15 @@
         background: #f1f3f5;
         color: #59636e;
         border-color: #e0e4e8;
-        cursor: help;
+        cursor: pointer;
+    }
+
+    .role-permissions-extra {
+        display: contents;
+    }
+
+    .role-permissions-extra[hidden] {
+        display: none;
     }
 
     /* Member count */
@@ -262,7 +268,7 @@
         flex-shrink: 0;
     }
 
-    .role-members a {
+    .role-members-toggle {
         display: inline-flex;
         align-items: center;
         gap: .35rem;
@@ -272,15 +278,48 @@
         border-radius: .45rem;
         background: #f1f5f9;
         color: #475569;
-        text-decoration: none;
         border: 1px solid #e2e8f0;
+        cursor: pointer;
         transition: background-color .15s ease, border-color .15s ease;
     }
 
-    .role-members a:hover {
+    .role-members-toggle:hover {
         background: #e9edf2;
         color: #334155;
         border-color: #cbd5e1;
+    }
+
+    .role-members-panel {
+        margin: -.1rem 0 .45rem 3rem;
+        padding: .5rem;
+        border: 1px solid #e5e9ef;
+        border-radius: .4rem;
+        background: #fff;
+    }
+
+    .role-members-panel[hidden] {
+        display: none;
+    }
+
+    .role-members-panel[aria-busy="true"] {
+        min-height: 3rem;
+        color: #64748b;
+    }
+
+    .role-members-table-scroll {
+        max-height: min(16rem, 55vh);
+        overflow: auto;
+    }
+
+    .role-members-table-scroll thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #f8f9fa;
+    }
+
+    .role-members-page-select {
+        width: 4rem;
     }
 
     /* Actions */
@@ -320,28 +359,21 @@
             justify-content: flex-end;
             margin-top: .35rem;
         }
+
+        .role-members-panel {
+            margin-left: 0;
+        }
     }
 </style>
 @endpush
 
 @section('content')
 <div class="container">
-    {{-- Header --}}
-    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div>
-            <h1 class="h3 mb-1">
-                <i class="fa-solid fa-layer-group text-primary me-2"></i>Nhóm người dùng / Phòng ban
-            </h1>
-            <p class="text-muted mb-0" style="font-size:.88rem">Phân cấp theo phạm vi hoạt động</p>
-        </div>
-        <a class="btn btn-primary" href="{{ route('admin.roles.create') }}">
-            <i class="fa-solid fa-plus me-1"></i> Thêm nhóm người dùng
-        </a>
-    </div>
+    <h1 class="visually-hidden">Nhóm người dùng / Phòng ban</h1>
 
     @php
     $scopeConfig = [
-    'global' => ['label' => 'Trung ương', 'icon' => 'fa-globe', 'desc' => 'Quản trị toàn hệ thống', 'limit' => 4],
+    'global' => ['label' => 'Trung ương', 'icon' => 'fa-globe', 'desc' => 'Nhóm quyền trung ương được chọn', 'limit' => 4],
     'province' => ['label' => 'Cấp Tỉnh', 'icon' => 'fa-city', 'desc' => 'Quản lý cấp tỉnh / thành phố', 'limit' => 3],
     'commune' => ['label' => 'Cấp Xã', 'icon' => 'fa-building-columns', 'desc' => 'Quản lý cấp xã / phường', 'limit' => 2],
     'village' => ['label' => 'Cấp Thôn', 'icon' => 'fa-house-chimney', 'desc' => 'Quản lý cấp thôn / bản / xóm', 'limit' => 0],
@@ -355,15 +387,18 @@
     @endphp
 
     {{-- Controls --}}
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <span class="text-muted" style="font-size:.85rem">
             <i class="fa-solid fa-shield-halved me-1"></i>Tổng cộng <strong>{{ $roles->count() }}</strong> nhóm &middot; <strong>{{ $roles->sum('users_count') }}</strong> thành viên
         </span>
-        <div class="tree-controls">
-            <button type="button" class="btn btn-outline-secondary" onclick="toggleAllScopes(true)">
+        <div class="tree-controls align-items-center">
+            <a class="btn btn-sm btn-primary" href="{{ route('admin.roles.create') }}">
+                <i class="fa-solid fa-plus me-1"></i> Thêm nhóm
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllScopes(true)">
                 <i class="fa-solid fa-angles-down me-1"></i>Mở tất cả
             </button>
-            <button type="button" class="btn btn-outline-secondary" onclick="toggleAllScopes(false)">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleAllScopes(false)">
                 <i class="fa-solid fa-angles-up me-1"></i>Thu gọn
             </button>
         </div>
@@ -410,22 +445,44 @@
                                 @foreach($role->permissions->take($permLimit) as $perm)
                                 <span class="perm-tag">
                                     <i class="fa-solid fa-key" style="font-size:.55rem;margin-right:2px"></i>
-                                    {{ $perm->description ?: $perm->name }}
+                                    {{ \App\Support\AccessPermission::definitions()[$perm->name] ?? $perm->description ?: $perm->name }}
                                 </span>
                                 @endforeach
                                 @if($role->permissions->count() > $permLimit)
-                                <span class="perm-tag more" title="{{ $role->permissions->skip($permLimit)->map(fn($p) => $p->description ?: $p->name)->join(', ') }}">
-                                    +{{ $role->permissions->count() - $permLimit }} quyền khác
+                                @php($extraPermissionsId = 'role-permissions-extra-' . $role->id)
+                                <span class="role-permissions-extra" id="{{ $extraPermissionsId }}" hidden>
+                                    @foreach($role->permissions->skip($permLimit) as $perm)
+                                    <span class="perm-tag">
+                                        <i class="fa-solid fa-key" style="font-size:.55rem;margin-right:2px"></i>
+                                        {{ \App\Support\AccessPermission::definitions()[$perm->name] ?? $perm->description ?: $perm->name }}
+                                    </span>
+                                    @endforeach
                                 </span>
+                                <button
+                                    class="perm-tag more"
+                                    type="button"
+                                    data-role-permissions-toggle
+                                    aria-expanded="false"
+                                    aria-controls="{{ $extraPermissionsId }}"
+                                    data-collapsed-label="+{{ $role->permissions->count() - $permLimit }} quyền khác"
+                                >+{{ $role->permissions->count() - $permLimit }} quyền khác</button>
                                 @endif
                             </div>
                             @endif
                         </div>
                         <div class="role-members">
-                            <a href="{{ route('admin.roles.members', $role) }}" title="Xem thành viên">
+                            <button
+                                class="role-members-toggle"
+                                type="button"
+                                data-role-members-toggle
+                                data-url="{{ route('admin.roles.members', $role) }}"
+                                aria-expanded="false"
+                                aria-controls="role-members-{{ $role->id }}"
+                                title="Hiện danh sách thành viên bên dưới"
+                            >
                                 <i class="fa-solid fa-users"></i>
                                 {{ $role->users_count }} thành viên
-                            </a>
+                            </button>
                         </div>
                         <div class="role-actions">
                             @if ($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN) || $role->created_by === $actor->id)
@@ -444,6 +501,13 @@
                             @endif
                         </div>
                     </div>
+                    <div
+                        class="role-members-panel"
+                        id="role-members-{{ $role->id }}"
+                        data-role-members-panel
+                        data-loaded="false"
+                        hidden
+                    ></div>
                     @endforeach
                 </div>
             </div>
@@ -464,6 +528,144 @@
 @push('scripts')
 <script>
     (() => {
+        const loadMembers = async (panel, url, toggle, append = false) => {
+            if (!url) return;
+
+            if (panel.getAttribute('aria-busy') === 'true') return;
+
+            const scrollPosition = append ? null : window.scrollY;
+            panel.setAttribute('aria-busy', 'true');
+            if (!append) panel.textContent = 'Đang tải danh sách thành viên…';
+            try {
+                const response = await fetch(url, {
+                    headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    throw new Error(`Không tải được thành viên nhóm (HTTP ${response.status}).`);
+                }
+                const responseHtml = await response.text();
+                if (append) {
+                    const document = new DOMParser().parseFromString(responseHtml, 'text/html');
+                    const currentBody = panel.querySelector('.role-members-table-scroll tbody');
+                    const nextBody = document.querySelector('.role-members-table-scroll tbody');
+                    const currentPagination = panel.querySelector('nav[aria-label="Phân trang thành viên nhóm"]');
+                    const nextPagination = document.querySelector('nav[aria-label="Phân trang thành viên nhóm"]');
+                    if (!currentBody || !nextBody) {
+                        throw new Error('Dữ liệu trang tiếp theo không có danh sách tài khoản.');
+                    }
+
+                    nextBody.querySelectorAll('tr').forEach((row) => currentBody.appendChild(row));
+                    if (currentPagination && nextPagination) {
+                        currentPagination.replaceWith(nextPagination);
+                    } else if (currentPagination) {
+                        currentPagination.remove();
+                    }
+                } else {
+                    panel.innerHTML = responseHtml;
+                }
+                panel.dataset.loaded = 'true';
+                if (scrollPosition !== null) {
+                    window.requestAnimationFrame(() => window.scrollTo({ top: scrollPosition }));
+                }
+            } catch (error) {
+                console.error('Không tải được danh sách thành viên nhóm:', error);
+                if (append) {
+                    window.showAppNotification('error', error.message || 'Không tải được trang tài khoản tiếp theo.');
+                } else {
+                    panel.textContent = error.message || 'Không tải được danh sách thành viên. Vui lòng thử lại.';
+                    panel.dataset.loaded = 'false';
+                }
+            } finally {
+                panel.removeAttribute('aria-busy');
+            }
+        };
+
+        if (window.roleMembersPaginationReady !== true) {
+            window.roleMembersPaginationReady = true;
+            document.addEventListener('click', async (event) => {
+                const paginationButton = event.target.closest('[data-role-members-page]');
+                if (paginationButton instanceof HTMLSelectElement) return;
+                if (!paginationButton) return;
+
+                event.preventDefault();
+                const panel = paginationButton.closest('[data-role-members-panel]');
+                if (!panel) return;
+
+                panel.hidden = false;
+                const toggle = panel.previousElementSibling?.querySelector('[data-role-members-toggle]');
+                toggle?.setAttribute('aria-expanded', 'true');
+                await loadMembers(panel, paginationButton.dataset.url, toggle);
+            }, true);
+            document.addEventListener('change', async (event) => {
+                const pageSelect = event.target.closest('select[data-role-members-page]');
+                if (!pageSelect) return;
+
+                const panel = pageSelect.closest('[data-role-members-panel]');
+                if (!panel) return;
+
+                panel.hidden = false;
+                const toggle = panel.previousElementSibling?.querySelector('[data-role-members-toggle]');
+                toggle?.setAttribute('aria-expanded', 'true');
+                await loadMembers(panel, pageSelect.value, toggle);
+            }, true);
+            document.addEventListener('scroll', (event) => {
+                const scroller = event.target;
+                if (!(scroller instanceof HTMLElement) || !scroller.matches('.role-members-table-scroll')) return;
+                if (scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 80) return;
+
+                const panel = scroller.closest('[data-role-members-panel]');
+                const nextPage = panel?.querySelector(
+                    'button[data-role-members-page][aria-label="Trang sau"]',
+                );
+                if (!panel || !nextPage) return;
+
+                const toggle = panel.previousElementSibling?.querySelector('[data-role-members-toggle]');
+                loadMembers(panel, nextPage.dataset.url, toggle, true);
+            }, true);
+        }
+
+        if (window.rolePermissionsToggleReady !== true) {
+            window.rolePermissionsToggleReady = true;
+            document.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-role-permissions-toggle]');
+                if (!button) return;
+
+                const extraPermissions = document.getElementById(button.getAttribute('aria-controls'));
+                if (!extraPermissions) return;
+
+                const expanded = button.getAttribute('aria-expanded') === 'true';
+                button.setAttribute('aria-expanded', String(!expanded));
+                extraPermissions.hidden = expanded;
+                button.textContent = expanded
+                    ? button.dataset.collapsedLabel
+                    : 'Ẩn quyền';
+            });
+        }
+
+        const rolesTree = document.querySelector('.roles-tree');
+        if (rolesTree && rolesTree.dataset.membersReady !== 'true') {
+            rolesTree.dataset.membersReady = 'true';
+            rolesTree.addEventListener('click', async (event) => {
+                const toggle = event.target.closest('[data-role-members-toggle]');
+                if (!toggle) return;
+
+                const panel = toggle.closest('.role-card')?.nextElementSibling;
+                if (!panel || !panel.matches('[data-role-members-panel]')) return;
+                if (toggle && !panel.hidden) {
+                    panel.hidden = true;
+                    toggle.setAttribute('aria-expanded', 'false');
+                    return;
+                }
+
+                panel.hidden = false;
+                toggle.setAttribute('aria-expanded', 'true');
+                if (panel.dataset.loaded === 'true') return;
+
+                await loadMembers(panel, toggle.dataset.url, toggle);
+            });
+        }
+
         window.toggleScope = (header) => {
             const body = header.nextElementSibling;
             const isOpen = header.getAttribute('aria-expanded') === 'true';

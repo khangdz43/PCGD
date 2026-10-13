@@ -51,19 +51,27 @@ class GeographyLookupService
         }
 
         $communeList = $communes->select('code', 'name')->get();
-        if ($includeAccountCounts
-            && $user->hasRole(Role::SYSTEM_ADMIN)
-            && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS)) {
-            $counts = DB::table('users')
-                ->whereIn('commune_code', $communeList->pluck('code'))
-                ->whereNotExists(function ($query): void {
+        if ($includeAccountCounts && (
+            ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
+            || $user->canManageSubordinateUsers()
+        )) {
+            $countsQuery = DB::table('users')
+                ->whereIn('commune_code', $communeList->pluck('code'));
+            if ($user->hasRole(Role::SYSTEM_ADMIN)) {
+                $countsQuery->whereNotExists(function ($query): void {
                     $query->selectRaw('1')
                         ->from('model_has_roles')
                         ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
                         ->whereColumn('model_has_roles.model_id', 'users.id')
                         ->where('model_has_roles.model_type', User::class)
                         ->where('roles.name', Role::SYSTEM_ADMIN);
-                })
+                });
+            } else {
+                $countsQuery->where('province_code', $user->province_code)
+                    ->where('id', '!=', $user->id)
+                    ->whereIn('scope_level', DelegatedAccess::manageableAccountLevels($user));
+            }
+            $counts = $countsQuery
                 ->select('commune_code')
                 ->selectRaw('COUNT(*) AS account_count')
                 ->groupBy('commune_code')
@@ -96,22 +104,31 @@ class GeographyLookupService
         }
 
         $villageList = $villages->select('code', 'name')->get();
-        if ($includeAccountCounts
-            && $user->hasRole(Role::SYSTEM_ADMIN)
-            && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS)) {
-            $counts = DB::table('user_villages')
+        if ($includeAccountCounts && (
+            ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
+            || $user->canManageSubordinateUsers()
+        )) {
+            $countsQuery = DB::table('user_villages')
                 ->join('users', 'users.id', '=', 'user_villages.user_id')
-                ->whereIn('user_villages.village_code', $villageList->pluck('code'))
-                ->whereNotExists(function ($query): void {
+                ->whereIn('user_villages.village_code', $villageList->pluck('code'));
+            if ($user->hasRole(Role::SYSTEM_ADMIN)) {
+                $countsQuery->whereNotExists(function ($query): void {
                     $query->selectRaw('1')
                         ->from('model_has_roles')
                         ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
                         ->whereColumn('model_has_roles.model_id', 'users.id')
                         ->where('model_has_roles.model_type', User::class)
                         ->where('roles.name', Role::SYSTEM_ADMIN);
-                })
+                });
+            } else {
+                $countsQuery->where('users.province_code', $user->province_code)
+                    ->where('users.commune_code', $user->commune_code)
+                    ->where('users.id', '!=', $user->id)
+                    ->where('users.scope_level', 'village');
+            }
+            $counts = $countsQuery
                 ->select('user_villages.village_code')
-                ->selectRaw('COUNT(*) AS account_count')
+                ->selectRaw('COUNT(DISTINCT users.id) AS account_count')
                 ->groupBy('user_villages.village_code')
                 ->pluck('account_count', 'village_code');
 

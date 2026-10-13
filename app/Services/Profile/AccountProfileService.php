@@ -67,6 +67,7 @@ class AccountProfileService
 
     public function updatePassword(User $user, string $password): void
     {
-        $user->update(['password' => $password]);
+        $user->password = $password;
+        $user->save();
     }
 }

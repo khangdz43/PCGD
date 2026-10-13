@@ -108,11 +108,11 @@
     .user-card {
         display: flex;
         align-items: center;
-        gap: .7rem;
-        padding: .6rem .75rem;
+        gap: .55rem;
+        padding: .45rem .6rem;
         border: 1px solid #e5e9ef;
         border-radius: .4rem;
-        margin-bottom: .4rem;
+        margin-bottom: .3rem;
         background: #fff;
         transition: background-color .15s ease, border-color .15s ease;
     }
@@ -120,6 +120,29 @@
     .user-card:hover {
         background: #f8fafc;
         border-color: #cbd5e1;
+    }
+
+    .user-card-central {
+        border-color: #c4b5fd;
+        background: #faf8ff;
+    }
+
+    .user-card-central:hover {
+        border-color: #8b5cf6;
+        background: #f5f3ff;
+    }
+
+    .account-scope-badge {
+        display: inline-block;
+        margin-left: .35rem;
+        padding: .08rem .4rem;
+        border: 1px solid #c4b5fd;
+        border-radius: 999px;
+        background: #ede9fe;
+        color: #5b21b6;
+        font-size: .68rem;
+        font-weight: 700;
+        vertical-align: middle;
     }
 
     .user-avatar {
@@ -272,7 +295,7 @@
 
     .user-location-filter {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+        grid-template-columns: minmax(170px, 1.25fr) repeat(3, minmax(120px, 1fr)) auto auto;
         gap: .5rem;
         align-items: center;
     }
@@ -286,6 +309,10 @@
     }
 
     .user-location-filter .form-select {
+        min-width: 0;
+    }
+
+    .user-location-filter .form-control {
         min-width: 0;
     }
 
@@ -311,14 +338,12 @@
     }
 
     .unit-browser {
-        position: sticky;
-        top: 1rem;
-        overflow: hidden;
+        overflow: visible;
     }
 
     .unit-browser-tree {
-        max-height: min(65vh, 46rem);
-        overflow: auto;
+        max-height: min(16rem, 55vh);
+        overflow-y: auto;
         padding: .5rem;
     }
 
@@ -334,12 +359,14 @@
         justify-content: space-between;
         align-items: center;
         gap: 1rem;
-        padding: .85rem 1rem;
+        padding: .6rem .8rem;
         border-bottom: 1px solid #e8edf3;
     }
 
     .account-list-body {
-        padding: .75rem;
+        max-height: min(34rem, 65vh);
+        overflow-y: auto;
+        padding: .5rem;
     }
 
     .account-list-body .user-card:last-child {
@@ -363,6 +390,14 @@
         align-items: center;
         gap: .25rem;
         min-width: 0;
+    }
+
+    .unit-tree-node[data-unit-type="province"] > .unit-tree-row {
+        position: sticky;
+        top: -.5rem;
+        z-index: 2;
+        background: #fff;
+        box-shadow: 0 1px 0 #dfe4eb;
     }
 
     .unit-tree-toggle,
@@ -456,6 +491,10 @@
     }
 
     @media (max-width: 991.98px) {
+        .user-location-filter {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .user-management-layout {
             grid-template-columns: minmax(0, 1fr);
         }
@@ -467,12 +506,14 @@
         }
 
         .user-location-filter .location-picker-field:first-child {
-            grid-column: 1 / -1;
+            grid-column: auto;
         }
 
-        .user-location-filter .btn {
+        .user-location-filter .form-control,
+        .user-location-filter [data-clear-user-filter],
+        .user-location-filter .btn-primary {
             grid-column: 1 / -1;
-            justify-self: start;
+            width: 100%;
         }
 
         .unit-browser {
@@ -480,7 +521,7 @@
         }
 
         .unit-browser-tree {
-            max-height: 40vh;
+            max-height: min(16rem, 55vh);
         }
     }
 
@@ -667,28 +708,12 @@
 
 @section('content')
 <div class="container">
-
-    {{-- Header --}}
-    <div class="user-management-header d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-        <div>
-            <h1 class="h3 mb-1">
-                <i class="fa-solid fa-sitemap text-secondary me-2"></i>
-                Quản lý tài khoản
-            </h1>
-
-            <p class="text-muted mb-0" style="font-size:.88rem">
-                {{ $showOrganizationTree ? 'Chọn đơn vị bên trái để xem tài khoản theo địa bàn' : 'Hiển thị phân cấp theo địa bàn quản lý' }}
-            </p>
-        </div>
-
-        <a class="btn btn-primary" href="{{ route('admin.users.create') }}">
-            <i class="fa-solid fa-user-plus me-1"></i>
-            Tạo tài khoản
-        </a>
-    </div>
+    <h1 class="visually-hidden">Quản lý tài khoản</h1>
 
     {{-- Lọc theo địa bàn --}}
-    <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-3 {{ $showOrganizationTree ? 'd-none' : '' }}" id="user-location-filter">
+    <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-2" id="user-location-filter">
+        <label class="visually-hidden" for="user-search">Tìm theo tên hoặc tên đăng nhập</label>
+        <input id="user-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Tìm tên hoặc tên đăng nhập">
         @include('partials.location-picker', [
             'pickerId' => 'user-list-location',
             'provinces' => $provinces,
@@ -698,11 +723,12 @@
             'showVillage' => true,
             'inline' => true,
         ])
-        @if($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
-            <a class="btn btn-sm btn-outline-secondary" href="{{ route('admin.users.index') }}" data-clear-user-filter @if(!$isFiltering) hidden @endif>
-                <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Bỏ lọc
-            </a>
-        @endif
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-user-filter @if(!$isFiltering) hidden @endif>
+            <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Xóa lọc
+        </button>
+        <a class="btn btn-sm btn-primary" href="{{ route('admin.users.create') }}">
+            <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i>Tạo tài khoản
+        </a>
     </form>
 
     <div class="row g-3 user-management-layout">
@@ -712,7 +738,7 @@
             </aside>
         @endif
         <section class="{{ $showOrganizationTree ? 'col-lg-8 col-xl-9' : 'col-12' }}" aria-label="Danh sách tài khoản">
-    <div id="account-tree-results" aria-live="polite">
+    <div id="account-tree-results" aria-live="polite" data-ajax-pagination>
         @if ($showOrganizationTree)
             <div class="account-list-panel">
                 <div class="account-list-header">
@@ -1025,8 +1051,10 @@
 
             const updateActiveUnit = (url = new URL(window.location.href)) => {
                 if (!unitTree) return;
-                const provinceCode = url.searchParams.get('province_code') || '';
-                const communeCode = url.searchParams.get('commune_code') || '';
+                const scopedRoot = unitTree.querySelector('.unit-tree-node[data-scope-root]');
+                const provinceCode = url.searchParams.get('province_code') || scopedRoot?.dataset.provinceCode || '';
+                const communeCode = url.searchParams.get('commune_code')
+                    || (scopedRoot?.dataset.unitType === 'commune' ? scopedRoot.dataset.unitCode : '');
                 const villageCode = url.searchParams.get('village_code') || '';
                 unitTree.querySelectorAll('.unit-tree-node').forEach((node) => {
                     const type = node.dataset.unitType;
@@ -1038,8 +1066,69 @@
                 });
             };
 
-            const refreshResults = async (url) => {
+            const revealSelectedUnit = async (url = new URL(window.location.href)) => {
+                if (!unitTree) return;
+                const provinceCode = url.searchParams.get('province_code');
+                const scopedRoot = unitTree.querySelector('.unit-tree-node[data-scope-root]');
+                const communeCode = url.searchParams.get('commune_code')
+                    || (scopedRoot?.dataset.unitType === 'commune' ? scopedRoot.dataset.unitCode : '');
+                const villageCode = url.searchParams.get('village_code');
+                const rootType = unitTree.querySelector('.unit-tree-node')?.dataset.unitType || 'province';
+                if (rootType === 'commune') {
+                    if (!communeCode) return;
+                    let node = [...unitTree.querySelectorAll('.unit-tree-node[data-unit-type="commune"]')]
+                        .find((item) => item.dataset.unitCode === communeCode);
+                    if (!node) return;
+                    if (villageCode) {
+                        const children = await expandUnitNode(node);
+                        node = [...children.querySelectorAll(':scope > .unit-tree-node[data-unit-type="village"]')]
+                            .find((item) => item.dataset.unitCode === villageCode);
+                    }
+                    if (node) {
+                        updateActiveUnit(url);
+                        node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                    return;
+                }
+                const scopedProvinceCode = provinceCode || scopedRoot?.dataset.provinceCode;
+                if (!scopedProvinceCode) return;
+
+                let node = [...unitTree.querySelectorAll('.unit-tree-node[data-unit-type="province"]')]
+                    .find((item) => item.dataset.unitCode === scopedProvinceCode);
+                if (!node) return;
+
+                if (communeCode || villageCode) {
+                    const children = await expandUnitNode(node);
+                    if (communeCode) {
+                        node = [...children.querySelectorAll(':scope > .unit-tree-node[data-unit-type="commune"]')]
+                            .find((item) => item.dataset.unitCode === communeCode);
+                        if (!node) return;
+                        if (villageCode) {
+                            const villages = await expandUnitNode(node);
+                            node = [...villages.querySelectorAll(':scope > .unit-tree-node[data-unit-type="village"]')]
+                                .find((item) => item.dataset.unitCode === villageCode);
+                        }
+                    }
+                }
+
+                if (node) {
+                    updateActiveUnit(url);
+                    node.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                }
+            };
+
+            const expandUnitNode = async (parent) => {
+                if (parent.dataset.treeLoaded !== 'true') await loadUnitChildren(parent);
+                const toggle = parent.querySelector(':scope > .unit-tree-row [data-tree-toggle]');
+                const children = parent.querySelector(':scope > [data-unit-children]');
+                toggle.setAttribute('aria-expanded', 'true');
+                children.hidden = false;
+                return children;
+            };
+
+            const refreshResults = async (url, preserveScroll = false) => {
                 const version = ++requestVersion;
+                const scrollPosition = preserveScroll ? window.scrollY : null;
                 activeRequest?.abort();
                 activeRequest = new AbortController();
                 results.setAttribute('aria-busy', 'true');
@@ -1062,14 +1151,17 @@
                     if (version !== requestVersion) return;
 
                     results.innerHTML = updatedResults.innerHTML;
-                    const hasFilters = ['province_code', 'commune_code', 'village_code']
+                    const hasFilters = ['q', 'province_code', 'commune_code', 'village_code']
                         .some((key) => url.searchParams.has(key));
-                    const clearLink = filterForm.querySelector('[data-clear-user-filter]');
-                    if (clearLink) clearLink.hidden = !hasFilters;
+                    const clearButton = filterForm.querySelector('[data-clear-user-filter]');
+                    if (clearButton) clearButton.hidden = !hasFilters;
                     const clearTreeFilter = unitTree?.querySelector('[data-clear-user-filter]');
                     if (clearTreeFilter) clearTreeFilter.hidden = !hasFilters;
                     window.history.replaceState({}, '', url);
                     updateActiveUnit(url);
+                    if (scrollPosition !== null) {
+                        window.requestAnimationFrame(() => window.scrollTo({ top: scrollPosition }));
+                    }
                 } catch (error) {
                     if (error.name !== 'AbortError') {
                         window.showAppNotification('error', error.message || 'Không thể lọc danh sách tài khoản.');
@@ -1086,7 +1178,7 @@
                 if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
                 event.preventDefault();
-                refreshResults(new URL(link.href, window.location.href));
+                refreshResults(new URL(link.href, window.location.href), true);
             });
 
             results.addEventListener('change', (event) => {
@@ -1100,7 +1192,7 @@
                         url.searchParams.set(key, value);
                     }
                 });
-                refreshResults(url);
+                refreshResults(url, true);
             });
 
             const createUnitNode = (type, unit, provinceCode, communeCode = '') => {
@@ -1203,51 +1295,10 @@
 
             if (unitTree && !unitTree.dataset.ajaxReady) {
                 unitTree.dataset.ajaxReady = 'true';
-                const revealSelectedUnit = async () => {
-                    const url = new URL(window.location.href);
-                    const provinceCode = url.searchParams.get('province_code');
-                    const communeCode = url.searchParams.get('commune_code');
-                    const villageCode = url.searchParams.get('village_code');
-                    if (!provinceCode) return;
-
-                    let node = [...unitTree.querySelectorAll('.unit-tree-node[data-unit-type="province"]')]
-                        .find((item) => item.dataset.unitCode === provinceCode);
-                    if (!node) return;
-                    if (!communeCode && !villageCode) {
-                        node.scrollIntoView({ block: 'nearest' });
-                        updateActiveUnit(url);
-                        return;
-                    }
-
-                    const expand = async (parent) => {
-                        if (parent.dataset.treeLoaded !== 'true') await loadUnitChildren(parent);
-                        const toggle = parent.querySelector(':scope > .unit-tree-row [data-tree-toggle]');
-                        const children = parent.querySelector(':scope > [data-unit-children]');
-                        toggle.setAttribute('aria-expanded', 'true');
-                        children.hidden = false;
-                        return children;
-                    };
-
-                    let children = await expand(node);
-                    if (communeCode) {
-                        node = [...children.querySelectorAll(':scope > .unit-tree-node[data-unit-type="commune"]')]
-                            .find((item) => item.dataset.unitCode === communeCode);
-                        if (!node) return;
-                        if (villageCode) {
-                            children = await expand(node);
-                            node = [...children.querySelectorAll(':scope > .unit-tree-node[data-unit-type="village"]')]
-                                .find((item) => item.dataset.unitCode === villageCode);
-                        }
-                    }
-                    if (node) {
-                        node.scrollIntoView({ block: 'nearest' });
-                        updateActiveUnit(url);
-                    }
-                };
-
                 unitTree.addEventListener('click', async (event) => {
                     const clearButton = event.target.closest('[data-clear-user-filter]');
                     if (clearButton) {
+                        filterForm.querySelector('[name="q"]').value = '';
                         filterForm.querySelector('[data-province]').value = '';
                         const commune = filterForm.querySelector('[data-commune]');
                         commune.replaceChildren(new Option('-- Chọn Xã/Phường --', ''));
@@ -1299,17 +1350,28 @@
                         window.showAppNotification('error', error.message || 'Không thể lọc tài khoản theo đơn vị.');
                     }
                 });
-                updateActiveUnit();
-                revealSelectedUnit().catch((error) => {
+                const initialUrl = selectedFiltersUrl();
+                updateActiveUnit(initialUrl);
+                revealSelectedUnit(initialUrl).catch((error) => {
                     window.showAppNotification('error', error.message || 'Không thể mở đơn vị đang lọc.');
                 });
             }
 
             filterForm.addEventListener('change', (event) => {
                 if (event.target.matches('[data-province], [data-commune], [data-village]')) {
-                    refreshResults(selectedFiltersUrl());
-                    updateActiveUnit(selectedFiltersUrl());
+                    const url = selectedFiltersUrl();
+                    refreshResults(url);
+                    updateActiveUnit(url);
+                    revealSelectedUnit(url).catch((error) => {
+                        window.showAppNotification('error', error.message || 'Không thể mở đơn vị đang lọc.');
+                    });
                 }
+            });
+
+            let searchTimer;
+            filterForm.querySelector('[name="q"]').addEventListener('input', () => {
+                window.clearTimeout(searchTimer);
+                searchTimer = window.setTimeout(() => refreshResults(selectedFiltersUrl()), 250);
             });
 
             filterForm.addEventListener('click', (event) => {
@@ -1318,6 +1380,7 @@
                     || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
                 event.preventDefault();
+                filterForm.querySelector('[name="q"]').value = '';
                 filterForm.querySelector('[data-province]').value = '';
                 const commune = filterForm.querySelector('[data-commune]');
                 commune.replaceChildren(new Option('-- Chọn Xã/Phường --', ''));

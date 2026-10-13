@@ -299,7 +299,7 @@ class UserAccessControlService
     {
         $targetLevel = $target->roleScopeLevel();
         if ($targetLevel === null) {
-            return false;
+            return $actor->hasRole(Role::SYSTEM_ADMIN);
         }
         if ($targetLevel === 'global') {
             return $actor->hasRole(Role::SYSTEM_ADMIN) && $target->hasRole(Role::SYSTEM_ADMIN) === false;

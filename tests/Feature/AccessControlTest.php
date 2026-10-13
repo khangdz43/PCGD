@@ -199,7 +199,7 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($accountManager)
             ->get(route('admin.index'))
-            ->assertRedirectToRoute('admin.users.index');
+            ->assertRedirectToRoute('admin.roles.index');
     }
 
     public function test_household_member_deletion_returns_json_without_redirecting(): void
@@ -743,23 +743,23 @@ class AccessControlTest extends TestCase
     public function test_inactive_accounts_cannot_sign_in_and_active_accounts_can(): void
     {
         $active = User::factory()->create([
-            'email' => 'active@example.test',
+            'username' => 'active-account',
             'password' => Hash::make('password'),
             'is_active' => true,
         ]);
-        $this->post('/login', ['email' => $active->email, 'password' => 'password'])
+        $this->post('/login', ['username' => $active->username, 'password' => 'password'])
             ->assertRedirectToRoute('index');
         $this->assertAuthenticatedAs($active);
 
         $this->post('/logout')->assertRedirectToRoute('login');
 
         $inactive = User::factory()->create([
-            'email' => 'inactive@example.test',
+            'username' => 'inactive-account',
             'password' => Hash::make('password'),
-            'is_active' => false,
         ]);
-        $this->post('/login', ['email' => $inactive->email, 'password' => 'password'])
-            ->assertSessionHasErrors('email');
+        $inactive->forceFill(['is_active' => false])->save();
+        $this->post('/login', ['username' => $inactive->username, 'password' => 'password'])
+            ->assertSessionHasErrors('username');
         $this->assertGuest();
     }
 
@@ -767,12 +767,15 @@ class AccessControlTest extends TestCase
     {
         $this->artisan('app:create-admin')
             ->expectsQuestion('Tên người quản trị', 'Quản trị hệ thống')
-            ->expectsQuestion('Email đăng nhập', 'root@example.test')
+            ->expectsQuestion('Tên đăng nhập', 'root')
             ->expectsQuestion('Mật khẩu (ít nhất 12 ký tự)', 'a-secure-password-123')
             ->expectsQuestion('Nhập lại mật khẩu', 'a-secure-password-123')
             ->assertSuccessful();
 
-        $this->assertDatabaseHas('users', ['email' => 'root@example.test']);
+        $this->assertDatabaseHas('users', ['username' => 'root', 'name' => 'Quản trị hệ thống']);
+        $admin = User::where('username', 'root')->firstOrFail();
+        $this->assertTrue(Hash::check('a-secure-password-123', $admin->password));
+        $this->assertTrue($admin->hasRole(Role::SYSTEM_ADMIN));
         $this->assertDatabaseHas('roles', ['name' => Role::SYSTEM_ADMIN, 'scope_level' => 'global']);
         $this->assertDatabaseMissing('roles', ['name' => 'province-admin']);
         $this->assertDatabaseMissing('roles', ['name' => 'commune-admin']);
@@ -2315,7 +2318,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $legacyPermission = Permission::create([
-            'name' => AccessPermission::MANAGE_CATALOGS,
+            'name' => 'manage-catalogs',
             'guard_name' => 'web',
         ]);
 
@@ -2352,8 +2355,9 @@ class AccessControlTest extends TestCase
         ]);
         $legacyRole->permissions()->attach($legacyPermission);
         $legacyManager->roles()->attach($legacyRole, ['assigned_by' => null]);
-        $this->assertTrue(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_VILLAGES));
+        $this->assertFalse(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_SCHOOLS));
+        $this->assertFalse(Gate::forUser($legacyManager)->allows('manage-catalogs'));
         $this->actingAs($legacyManager)->get('/schools')->assertForbidden();
 
         $provinceManager = User::factory()->create([
@@ -3117,7 +3121,7 @@ class AccessControlTest extends TestCase
         $admin->roles()->attach($adminRole);
 
         $target = User::factory()->create([
-            'email' => 'unassigned@example.test',
+            'username' => 'unassigned-account',
             'province_code' => null,
             'commune_code' => null,
             'is_active' => true,
@@ -3127,11 +3131,11 @@ class AccessControlTest extends TestCase
         $this->actingAs($admin)
             ->get('/admin/users')
             ->assertOk()
-            ->assertSee('unassigned@example.test');
+            ->assertSee('unassigned-account');
         $this->get("/admin/users/{$target->id}/edit")->assertOk();
         $this->put("/admin/users/{$target->id}", [
             'name' => $target->name,
-            'email' => $target->email,
+            'username' => $target->username,
             'password' => '',
             'password_confirmation' => '',
             'role_id' => $provinceRole->id,
@@ -3283,7 +3287,7 @@ class AccessControlTest extends TestCase
         $this->get('/households?page=2')
             ->assertOk()
             ->assertSee('<option value="2" selected>2</option>', false)
-            ->assertSee('<td class="household-code-cell" title="08">', false)
+            ->assertSee('<td class="household-code-cell" title="10">', false)
             ->assertDontSee('<td class="household-code-cell" title="01">', false);
 
         $this->get('/households?school_year=all')
@@ -3339,9 +3343,9 @@ class AccessControlTest extends TestCase
         $this->actingAs($user)
             ->get('/households')
             ->assertOk()
-            ->assertSee('<td class="text-nowrap">11', false)
-            ->assertSee('<td class="text-nowrap">12', false)
-            ->assertDontSee('<td class="text-nowrap">13', false)
+            ->assertSee('<td class="household-code-cell" title="11">', false)
+            ->assertSee('<td class="household-code-cell" title="12">', false)
+            ->assertDontSee('<td class="household-code-cell" title="13">', false)
             ->assertSee('-- Tất cả thôn được giao --');
     }
 
@@ -3389,8 +3393,8 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertSee('if (exportButton) {', false)
             ->assertSee("exportButton?.addEventListener('click'", false)
-            ->assertSee('<td class="text-nowrap">21', false)
-            ->assertSee('<td class="text-nowrap">22', false);
+            ->assertSee('<td class="household-code-cell" title="21">', false)
+            ->assertSee('<td class="household-code-cell" title="22">', false);
     }
 
     public function test_household_pagination_uses_previous_next_controls_and_a_page_selector(): void
@@ -3421,8 +3425,8 @@ class AccessControlTest extends TestCase
             ->assertSee('value="37"', false)
             ->assertSee('>37</option>', false)
             ->assertSee('data-household-page="1"', false)
-            ->assertSee('<td class="text-nowrap">007</td>', false)
-            ->assertDontSee('<td class="text-nowrap">008</td>', false)
+            ->assertSee('<td class="household-code-cell" title="007">', false)
+            ->assertDontSee('<td class="household-code-cell" title="008">', false)
             ->assertSee('aria-label="Trang sau"', false)
             ->assertSee('aria-label="Trang trước"', false);
 
@@ -3430,8 +3434,8 @@ class AccessControlTest extends TestCase
             ->get('/households?school_year=all&page=2')
             ->assertOk()
             ->assertSee('data-household-page="2"', false)
-            ->assertSee('<td class="text-nowrap">008</td>', false)
-            ->assertDontSee('<td class="text-nowrap">007</td>', false);
+            ->assertSee('<td class="household-code-cell" title="008">', false)
+            ->assertDontSee('<td class="household-code-cell" title="007">', false);
 
         $this->actingAs($user)
             ->get('/households?school_year=all&page=3')
@@ -3444,7 +3448,7 @@ class AccessControlTest extends TestCase
             ->assertDontSee('<span class="page-link">...</span>', false);
     }
 
-    public function test_legacy_school_scope_now_uses_commune_scope_instead_of_school_code(): void
+    public function test_commune_scoped_accounts_are_not_limited_by_legacy_school_codes(): void
     {
         DB::table('provinces')->insert([
             'code' => 'P1',
@@ -3477,12 +3481,15 @@ class AccessControlTest extends TestCase
             ['person_id' => 2, 'school_code' => 'S2', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
-        $role = Role::create(['name' => 'school-officer', 'scope_level' => 'school', 'guard_name' => 'web']);
+        $role = Role::create(['name' => 'commune-officer', 'scope_level' => 'commune', 'guard_name' => 'web']);
         $user = User::factory()->create([
-            'province_code' => 'P1',
-            'commune_code' => 'C1',
             'is_active' => true,
         ]);
+        $user->forceFill([
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'scope_level' => 'commune',
+        ])->save();
         $user->roles()->attach($role);
 
         $visibleCodes = DataAccessScope::households(Household::query(), $user)
@@ -3569,10 +3576,13 @@ class AccessControlTest extends TestCase
         $viewPermission = Permission::where('name', AccessPermission::VIEW_HOUSEHOLDS)->firstOrFail();
         $managerRole->permissions()->sync([$accountPermission->id, $viewPermission->id]);
         $manager = User::factory()->create([
-            'province_code' => 'P1',
-            'commune_code' => 'C1',
             'is_active' => true,
         ]);
+        $manager->forceFill([
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'scope_level' => 'commune',
+        ])->save();
         $manager->roles()->attach($managerRole);
         $villageRole = Role::create([
             'name' => 'village-reader',
@@ -3586,7 +3596,7 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($manager)->post('/admin/users', [
             'name' => 'Quản lý nhiều thôn',
-            'email' => 'multiple-villages@example.test',
+            'username' => 'multiple-villages',
             'password' => 'a-secure-password-123',
             'password_confirmation' => 'a-secure-password-123',
             'role_id' => $villageRole->id,
@@ -3597,14 +3607,14 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertRedirectToRoute('admin.users.index');
 
-        $villageUser = User::where('email', 'multiple-villages@example.test')->firstOrFail();
+        $villageUser = User::where('username', 'multiple-villages')->firstOrFail();
         $this->assertEqualsCanonicalizing(['V1', 'V2'], $villageUser->managedVillageCodes());
         $this->assertDatabaseHas('user_villages', ['user_id' => $villageUser->id, 'village_code' => 'V1']);
         $this->assertDatabaseHas('user_villages', ['user_id' => $villageUser->id, 'village_code' => 'V2']);
 
         $this->from('/admin/users/create')->post('/admin/users', [
             'name' => 'Ngoài xã',
-            'email' => 'outside-commune@example.test',
+            'username' => 'outside-commune',
             'password' => 'a-secure-password-123',
             'password_confirmation' => 'a-secure-password-123',
             'role_id' => $villageRole->id,

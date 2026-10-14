@@ -92,8 +92,9 @@
                                     @if ($import->file_path)
                                         <a
                                             data-original-download
-                                            class="btn btn-sm btn-outline-primary mb-1 {{ $isProcessing || $import->status === 'FAILED' ? 'd-none' : '' }}"
+                                            class="btn btn-sm btn-outline-primary mb-1"
                                             href="{{ route('households.import.download', $import, false) }}"
+                                            download="{{ $import->file_name }}"
                                         >
                                             <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải file gốc
                                         </a>
@@ -103,6 +104,7 @@
                                             data-error-download
                                             class="btn btn-sm btn-outline-danger mb-1 {{ $import->status === 'FAILED' ? '' : 'd-none' }}"
                                             href="{{ route('households.import.download-errors', $import, false) }}"
+                                            download="{{ pathinfo($import->file_name, PATHINFO_FILENAME) }}-loi{{ pathinfo($import->file_name, PATHINFO_EXTENSION) ? '.'.pathinfo($import->file_name, PATHINFO_EXTENSION) : '' }}"
                                         >
                                             <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải file lỗi
                                         </a>
@@ -222,7 +224,7 @@
                     : label;
                 statusLabel.className = `badge ${badgeClass}`;
                 errorDownload?.classList.toggle('d-none', !status.has_error_file);
-                originalDownload?.classList.toggle('d-none', status.status === 'FAILED' || ['PENDING', 'PROCESSING'].includes(status.status));
+                originalDownload?.classList.remove('d-none');
                 if (deleteButton) deleteButton.disabled = ['PENDING', 'PROCESSING'].includes(status.status);
                 if (!['PENDING', 'PROCESSING'].includes(status.status)) {
                     progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');

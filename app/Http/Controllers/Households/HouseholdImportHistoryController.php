@@ -36,7 +36,6 @@ class HouseholdImportHistoryController extends Controller
     public function download(Request $request, ImportLog $importLog): BinaryFileResponse
     {
         abort_unless($importLog->user_id === $request->user()->id, 404);
-        abort_if(in_array($importLog->status, ['PENDING', 'PROCESSING'], true), 409, 'File đang được xử lý.');
         abort_unless($importLog->file_path !== null && Storage::disk('local')->exists($importLog->file_path), 404);
 
         return response()->download(

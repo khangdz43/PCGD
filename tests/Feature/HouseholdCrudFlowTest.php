@@ -573,12 +573,12 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonFragment([
                 'id' => $successful->id,
                 'status' => 'SUCCESS',
-                'action_label' => 'Xem lịch sử tải lên',
+                'action_label' => 'Xem',
             ])
             ->assertJsonFragment([
                 'id' => $failed->id,
                 'status' => 'FAILED',
-                'action_label' => 'Tải file có đánh dấu lỗi',
+                'action_label' => 'Xem',
             ]);
 
         $this->postJson(route('households.import-notifications.acknowledge'), [

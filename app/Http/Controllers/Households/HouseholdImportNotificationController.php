@@ -26,12 +26,8 @@ class HouseholdImportNotificationController extends Controller
                 'message' => $importLog->status === 'SUCCESS'
                     ? "File \"{$importLog->file_name}\" đã nhập thành công: {$importLog->success_rows} dòng."
                     : "File \"{$importLog->file_name}\" nhập thất bại: {$importLog->success_rows} dòng thành công, {$importLog->error_rows} dòng lỗi.",
-                'action_url' => $importLog->status === 'FAILED' && $importLog->file_path !== null
-                    ? route('households.import.download-errors', $importLog, false)
-                    : route('households.import-history', [], false),
-                'action_label' => $importLog->status === 'FAILED' && $importLog->file_path !== null
-                    ? 'Tải file có đánh dấu lỗi'
-                    : 'Xem lịch sử tải lên',
+                'action_url' => route('households.import-history', [], false),
+                'action_label' => 'Xem',
             ])->values(),
         ]);
     }

@@ -129,15 +129,23 @@
 @push('scripts')
 <script>
     (() => {
-        document.querySelectorAll('[data-delete-import-history]').forEach((form) => {
-            form.addEventListener('submit', async (event) => {
+        if (!window.householdImportHistoryDeleteHandlerInitialized) {
+            window.householdImportHistoryDeleteHandlerInitialized = true;
+            document.addEventListener('submit', async (event) => {
+                const form = event.target instanceof HTMLFormElement
+                    ? event.target.closest('[data-delete-import-history]')
+                    : null;
+                if (!form) return;
+
                 event.preventDefault();
-                if (!await window.appConfirm('Xóa lịch sử và các file tải lên của lần nhập này?' , {
+                if (form.dataset.processing === 'true') return;
+                if (!await window.appConfirm('Xóa lịch sử và các file tải lên của lần nhập này?', {
                     title: 'Xác nhận xóa lịch sử tải lên',
                     confirmText: 'Xóa lịch sử',
                 })) return;
 
                 const button = form.querySelector('button');
+                form.dataset.processing = 'true';
                 button.disabled = true;
 
                 try {
@@ -152,18 +160,20 @@
                     const result = await response.json();
                     if (!response.ok) throw new Error(result.message || 'Không thể xóa lịch sử tải lên.');
 
-                    const row = form.closest('[data-import-row]');
-                    row.remove();
+                    form.closest('[data-import-row]').remove();
                     window.showAppNotification('success', result.message);
                 } catch (error) {
+                    form.dataset.processing = 'false';
                     button.disabled = false;
                     window.showAppNotification('error', error.message || 'Không thể xóa lịch sử tải lên.');
                 }
             });
-        });
+        }
 
         document.querySelectorAll('[data-import-row][data-status-url]').forEach((row) => {
+            if (row.dataset.statusPolling === 'true') return;
             if (row.dataset.status === 'SUCCESS' || row.dataset.status === 'FAILED' || row.dataset.status === 'ROLLED_BACK') return;
+            row.dataset.statusPolling = 'true';
 
             const statusLabel = row.querySelector('[data-status-label]');
             const progressTrack = row.querySelector('[role="progressbar"]');

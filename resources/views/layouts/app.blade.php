@@ -92,7 +92,11 @@
 
         .app-notifications-wrap.is-toast,
         .app-notifications-wrap:has(.app-notifications-toast) {
-            place-items: start end;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-start;
+            gap: .65rem;
             padding: 1rem;
         }
 
@@ -1141,6 +1145,18 @@
                     error: { title: 'Thao tác chưa thành công', icon: 'fa-circle-exclamation', className: 'danger' },
                 };
                 const typeInfo = notificationTypes[type] || notificationTypes.info;
+                const notificationTitle = title || typeInfo.title;
+                const notificationKey = JSON.stringify([
+                    typeInfo.className,
+                    notificationTitle,
+                    message,
+                    action?.href || '',
+                    action?.label || '',
+                ]);
+                const duplicate = Array.from(document.querySelectorAll('.app-notification'))
+                    .some((item) => item.dataset.notificationKey === notificationKey);
+                if (duplicate) return;
+
                 const container = document.querySelector('.app-notifications-wrap');
                 if (!container) return;
                 container.classList.add('is-visible');
@@ -1182,6 +1198,7 @@
                 closeIcon.className = 'fa-solid fa-xmark';
                 closeIcon.setAttribute('aria-hidden', 'true');
                 closeButton.appendChild(closeIcon);
+                notification.dataset.notificationKey = notificationKey;
                 notification.append(icon, content, closeButton);
                 container.appendChild(notification);
 
@@ -1197,7 +1214,10 @@
                 };
                 closeButton.addEventListener('click', dismiss);
                 if ((type === 'success' || type === 'info') && !action) {
-                    window.setTimeout(dismiss, 6500);
+                    window.setTimeout(dismiss, 4000);
+                }
+                if (action && (type === 'success' || type === 'error')) {
+                    window.setTimeout(dismiss, 6000);
                 }
             };
 

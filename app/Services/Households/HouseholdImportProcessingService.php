@@ -68,7 +68,6 @@ class HouseholdImportProcessingService
         } catch (Throwable) {
             $importLog->update([
                 'status' => 'FAILED',
-                'error_details' => [['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.']],
             ]);
 
             return response()->json(['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.'], 422);
@@ -496,21 +495,10 @@ class HouseholdImportProcessingService
             ]);
         }
 
-        $errorDetails = array_map(
-            static fn (string $cell, array $messages): array => [
-                'cell' => $cell,
-                'row' => (int) substr($cell, 1),
-                'message' => implode(' | ', array_unique($messages)),
-            ],
-            array_keys($errorsByRow),
-            array_values($errorsByRow)
-        );
-
         $importLog->update([
             'status' => 'FAILED',
             'total_rows' => $totalRows,
             'error_rows' => count($errorsByRow),
-            'error_details' => array_slice($errorDetails, 0, 200),
             'error_file_path' => $errorFilePath,
         ]);
     }

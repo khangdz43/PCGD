@@ -2054,7 +2054,6 @@ class AccessControlTest extends TestCase
             $table->integer('success_rows')->default(0);
             $table->integer('error_rows')->default(0);
             $table->string('status')->nullable();
-            $table->json('error_details')->nullable();
             $table->timestamp('created_at')->useCurrent();
         });
         Schema::table('households', function (Blueprint $table): void {
@@ -2177,12 +2176,11 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('progress', 0);
         (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportProcessingService::class));
         $this->assertSame('FAILED', $importLog->fresh()->status);
-        $this->assertStringContainsString('không thuộc xã được chọn', $importLog->fresh()->error_details[0]['message']);
-        $this->assertSame('A5', $importLog->fresh()->error_details[0]['cell']);
-        $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $importLog->fresh()->error_details[0]['message']);
         $this->assertNotNull($importLog->fresh()->error_file_path);
         $annotatedWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
-        $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $annotatedWorkbook->getSheet(1)->getCell('A5')->getValue());
+        $errorMessage = $annotatedWorkbook->getSheet(1)->getCell('A5')->getValue();
+        $this->assertStringContainsString('không thuộc xã được chọn', $errorMessage);
+        $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $errorMessage);
         $annotatedWorkbook->disconnectWorksheets();
         $originalWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->file_path));
         $this->assertEmpty($originalWorkbook->getSheet(1)->getCell('A5')->getValue());
@@ -2301,7 +2299,13 @@ class AccessControlTest extends TestCase
         $importLog = ImportLog::findOrFail($response->json('import_id'));
         (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportProcessingService::class));
         $this->assertSame('FAILED', $importLog->fresh()->status);
-        $this->assertStringContainsString('không tồn tại trong danh mục trường học', $importLog->fresh()->error_details[0]['message']);
+        $this->assertNotNull($importLog->fresh()->error_file_path);
+        $annotatedWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
+        $this->assertStringContainsString(
+            'không tồn tại trong danh mục trường học',
+            $annotatedWorkbook->getSheet(1)->getCell('A5')->getValue()
+        );
+        $annotatedWorkbook->disconnectWorksheets();
         $this->assertDatabaseMissing('households', ['household_code' => 'HK-IMPORT']);
         $this->assertDatabaseMissing('schools', ['code' => 'S-UNKNOWN']);
         $spreadsheet->disconnectWorksheets();

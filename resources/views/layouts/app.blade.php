@@ -1133,7 +1133,7 @@
                 window.appNotificationsInitialized = true;
             }
 
-            window.showAppNotification = (type, message, title) => {
+            window.showAppNotification = (type, message, title, action = null) => {
                 const notificationTypes = {
                     success: { title: 'Thao tác thành công', icon: 'fa-circle-check', className: 'success' },
                     info: { title: 'Thông tin', icon: 'fa-circle-info', className: 'info' },
@@ -1144,7 +1144,7 @@
                 const container = document.querySelector('.app-notifications-wrap');
                 if (!container) return;
                 container.classList.add('is-visible');
-                if (type === 'success') {
+                if (type === 'success' || action) {
                     container.classList.add('is-toast');
                 }
                 const notification = document.createElement('div');
@@ -1169,6 +1169,13 @@
                 body.className = 'app-notification-message';
                 body.textContent = message;
                 content.append(heading, body);
+                if (action?.href && action?.label) {
+                    const actionLink = document.createElement('a');
+                    actionLink.className = 'btn btn-sm btn-outline-primary mt-2';
+                    actionLink.href = action.href;
+                    actionLink.textContent = action.label;
+                    content.appendChild(actionLink);
+                }
                 closeButton.className = 'app-notification-close';
                 closeButton.type = 'button';
                 closeButton.setAttribute('aria-label', 'Đóng thông báo');
@@ -1189,12 +1196,80 @@
                     }, 220);
                 };
                 closeButton.addEventListener('click', dismiss);
-                if (type === 'success' || type === 'info') {
+                if ((type === 'success' || type === 'info') && !action) {
                     window.setTimeout(dismiss, 6500);
                 }
             };
 
             window.alert = (message) => window.showAppNotification('info', String(message));
+
+            @auth
+                if (!window.householdImportNotificationsInitialized) {
+                    window.householdImportNotificationsInitialized = true;
+                    const notificationUrl = @json(route('households.import-notifications', [], false));
+                    const acknowledgeUrl = @json(route('households.import-notifications.acknowledge', [], false));
+                    const csrfToken = @json(csrf_token());
+                    const displayedIds = new Set();
+                    let checkingNotifications = false;
+
+                    const checkHouseholdImportNotifications = async () => {
+                        if (checkingNotifications || document.visibilityState !== 'visible') return;
+                        checkingNotifications = true;
+
+                        try {
+                            const response = await fetch(notificationUrl, {
+                                headers: { Accept: 'application/json' },
+                                credentials: 'same-origin',
+                            });
+                            if (!response.ok) throw new Error('Không thể kiểm tra kết quả nhập dữ liệu.');
+
+                            const payload = await response.json();
+                            if (document.visibilityState !== 'visible') return;
+                            const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
+                            const ids = [];
+
+                            notifications.forEach((item) => {
+                                ids.push(item.id);
+                                if (displayedIds.has(item.id)) return;
+                                displayedIds.add(item.id);
+                                const failed = item.status === 'FAILED';
+                                window.showAppNotification(
+                                    failed ? 'error' : 'success',
+                                    item.message,
+                                    failed ? 'Nhập dữ liệu thất bại' : 'Nhập dữ liệu thành công',
+                                    { href: item.action_url, label: item.action_label },
+                                );
+                            });
+
+                            if (ids.length > 0) {
+                                const acknowledgeResponse = await fetch(acknowledgeUrl, {
+                                    method: 'POST',
+                                    headers: {
+                                        Accept: 'application/json',
+                                        'Content-Type': 'application/json',
+                                        'X-CSRF-TOKEN': csrfToken,
+                                    },
+                                    body: JSON.stringify({ ids }),
+                                    credentials: 'same-origin',
+                                });
+                                if (!acknowledgeResponse.ok) throw new Error('Không thể ghi nhận thông báo kết quả nhập.');
+                            }
+                        } catch (error) {
+                            console.warn(error);
+                        } finally {
+                            checkingNotifications = false;
+                        }
+                    };
+
+                    checkHouseholdImportNotifications();
+                    window.setInterval(checkHouseholdImportNotifications, 2000);
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'visible') {
+                            checkHouseholdImportNotifications();
+                        }
+                    });
+                }
+            @endauth
 
             const confirmDialog = document.getElementById('app-confirm-dialog');
             const confirmMessage = document.getElementById('app-confirm-message');

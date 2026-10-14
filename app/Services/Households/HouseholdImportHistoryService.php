@@ -41,23 +41,9 @@ class HouseholdImportHistoryService
         }
         $sheet ??= $spreadsheet->getActiveSheet();
 
-        $messagesByCell = [];
-        foreach ($importLog->error_details ?? [] as $error) {
-            $message = is_array($error) ? (string) ($error['message'] ?? '') : (string) $error;
-            $cell = is_array($error) ? ($error['cell'] ?? null) : null;
-            if ($cell === null && is_array($error) && isset($error['row'])) {
-                $cell = 'A'.$error['row'];
-            }
-            if ($cell === null && preg_match('/^Dòng\s+(\d+):\s*(.*)$/u', $message, $matches)) {
-                $cell = 'A'.$matches[1];
-                $message = $matches[2];
-            }
-            $cell ??= 'A1';
-            if (! preg_match('/^A\d+$/', $cell)) {
-                $cell = 'A1';
-            }
-            $messagesByCell[$cell][] = $message;
-        }
+        $messagesByCell = [
+            'A1' => ['Không thể tạo file ghi chú lỗi tự động. Vui lòng kiểm tra nhật ký xử lý.'],
+        ];
 
         foreach ($messagesByCell as $cell => $messages) {
             $sheet->setCellValue($cell, implode(' | ', array_unique($messages)));

@@ -344,7 +344,12 @@ class HouseholdCrudFlowTest extends TestCase
                 'file_name' => 'households.xlsx',
                 'status' => 'PENDING',
             ]);
-            Queue::assertPushedOn('imports', ProcessHouseholdImport::class);
+            Queue::assertPushed(ProcessHouseholdImport::class, function (ProcessHouseholdImport $job): bool {
+                self::assertSame('database', $job->connection);
+                self::assertSame('default', $job->queue);
+
+                return true;
+            });
 
             $importLog = ImportLog::query()->firstOrFail();
             $this->assertTrue(Storage::disk('local')->exists($importLog->file_path));
@@ -483,6 +488,58 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertExactJson([]);
     }
 
+    public function test_import_completion_notifications_are_persistent_and_scoped_to_the_owner(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $otherUser = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $successful = $this->createImportLog($user, [
+            'status' => 'SUCCESS',
+            'success_rows' => 12,
+            'file_path' => 'household-imports/success/source.xlsx',
+        ]);
+        $failed = $this->createImportLog($user, [
+            'status' => 'FAILED',
+            'success_rows' => 3,
+            'error_rows' => 2,
+            'file_path' => 'household-imports/failed/source.xlsx',
+        ]);
+        $pending = $this->createImportLog($user, ['status' => 'PROCESSING']);
+        $alreadyRead = $this->createImportLog($user, [
+            'status' => 'SUCCESS',
+            'notification_read_at' => now(),
+        ]);
+        $foreign = $this->createImportLog($otherUser, ['status' => 'FAILED']);
+
+        $this->actingAs($user)
+            ->getJson(route('households.import-notifications'))
+            ->assertOk()
+            ->assertJsonCount(2, 'notifications')
+            ->assertJsonFragment([
+                'id' => $successful->id,
+                'status' => 'SUCCESS',
+                'action_label' => 'Xem lịch sử tải lên',
+            ])
+            ->assertJsonFragment([
+                'id' => $failed->id,
+                'status' => 'FAILED',
+                'action_label' => 'Tải file có đánh dấu lỗi',
+            ]);
+
+        $this->postJson(route('households.import-notifications.acknowledge'), [
+            'ids' => [$successful->id, $failed->id, $pending->id, $foreign->id],
+        ])->assertOk()->assertJsonPath('acknowledged', true);
+
+        self::assertNotNull($successful->fresh()->notification_read_at);
+        self::assertNotNull($failed->fresh()->notification_read_at);
+        self::assertNull($pending->fresh()->notification_read_at);
+        self::assertNotNull($alreadyRead->fresh()->notification_read_at);
+        self::assertNull($foreign->fresh()->notification_read_at);
+
+        $this->getJson(route('households.import-notifications'))
+            ->assertOk()
+            ->assertExactJson(['notifications' => []]);
+    }
+
     private function createSchema(): void
     {
         Schema::create('users', function (Blueprint $table): void {
@@ -586,12 +643,12 @@ class HouseholdCrudFlowTest extends TestCase
             $table->string('file_path')->nullable();
             $table->string('error_file_path')->nullable();
             $table->json('context')->nullable();
+            $table->timestamp('notification_read_at')->nullable();
             $table->unsignedInteger('total_rows')->default(0);
             $table->unsignedInteger('processed_rows')->default(0);
             $table->unsignedInteger('success_rows')->default(0);
             $table->unsignedInteger('error_rows')->default(0);
             $table->string('status')->nullable();
-            $table->json('error_details')->nullable();
             $table->timestamp('created_at')->useCurrent();
         });
         Schema::create('persons', function (Blueprint $table): void {

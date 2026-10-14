@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Throwable;
 
@@ -43,7 +44,6 @@ class ProcessHouseholdImport implements ShouldQueue
         } catch (Throwable $exception) {
             $importLog->update([
                 'status' => 'FAILED',
-                'error_details' => [['message' => $exception->getMessage()]],
             ]);
 
             throw $exception;
@@ -53,12 +53,13 @@ class ProcessHouseholdImport implements ShouldQueue
     public function failed(?Throwable $exception): void
     {
         $importLog = ImportLog::find($this->importLogId);
-        if ($importLog !== null && $importLog->status !== 'FAILED') {
-            $importLog->update([
-                'status' => 'FAILED',
-                'error_details' => [['message' => $exception?->getMessage() ?? 'Không thể xử lý file nhập.']],
-            ]);
+        if ($importLog !== null) {
+            $importLog->update(['status' => 'FAILED']);
         }
 
+        Log::error('Không thể xử lý file nhập hộ gia đình.', [
+            'import_log_id' => $this->importLogId,
+            'exception' => $exception,
+        ]);
     }
 }

@@ -7,6 +7,7 @@ use App\Http\Controllers\Geography\VillageController;
 use App\Http\Controllers\Households\HouseholdController;
 use App\Http\Controllers\Households\HouseholdImportExportController;
 use App\Http\Controllers\Households\HouseholdImportHistoryController;
+use App\Http\Controllers\Households\HouseholdImportNotificationController;
 use App\Http\Controllers\Households\HouseholdImportStatusController;
 use App\Http\Controllers\Households\HouseholdPersonController;
 use App\Http\Controllers\Profile\AccountController;
@@ -19,6 +20,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::get('/', [ProvinceController::class, 'home'])->name('index');
     Route::get('/account', [AccountController::class, 'show'])->name('account.show');
     Route::put('/account/password', [AccountController::class, 'updatePassword'])->name('account.password.update');
+    Route::get('/households/import-notifications', [HouseholdImportNotificationController::class, 'index'])
+        ->name('households.import-notifications');
+    Route::post('/households/import-notifications/acknowledge', [HouseholdImportNotificationController::class, 'acknowledge'])
+        ->name('households.import-notifications.acknowledge');
     Route::get('/api/provinces/{provinceCode}/communes', [ProvinceController::class, 'getCommunes']);
     Route::get('/api/communes/{communeCode}/villages', [CommuneController::class, 'getVillages']);
     Route::get('/api/provinces/{provinceCode}/schools', [SchoolController::class, 'getByProvince']);

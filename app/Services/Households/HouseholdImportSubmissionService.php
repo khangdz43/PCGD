@@ -32,7 +32,9 @@ class HouseholdImportSubmissionService
             'status' => 'PENDING',
         ]);
 
-        ProcessHouseholdImport::dispatch($importLog->id)->onQueue('imports');
+        ProcessHouseholdImport::dispatch($importLog->id)
+            ->onConnection('database')
+            ->onQueue('default');
 
         return $importLog;
     }

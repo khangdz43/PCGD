@@ -47,7 +47,7 @@ class HouseholdImportHistoryController extends Controller
         $errorFilePath = $historyService->errorFilePath($importLog);
 
         $extension = pathinfo($importLog->file_name, PATHINFO_EXTENSION);
-        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME).'-loi'.($extension !== '' ? '.'.$extension : '');
+        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME) . '-loi' . ($extension !== '' ? '.' . $extension : '');
 
         return response()->download(
             Storage::disk('local')->path($errorFilePath),
@@ -55,22 +55,28 @@ class HouseholdImportHistoryController extends Controller
         );
     }
 
-    public function destroyImportedRecords(
-        Request $request,
-        ImportLog $importLog,
-        HouseholdImportHistoryService $historyService,
-    ): JsonResponse {
+    public function destroy(Request $request, ImportLog $importLog): JsonResponse
+    {
         abort_unless($importLog->user_id === $request->user()->id, 404);
-        abort_if(in_array($importLog->status, ['PENDING', 'PROCESSING'], true), 409, 'Không thể xóa file đang xử lý.');
-        abort_unless($importLog->status === 'SUCCESS', 409, 'Chỉ có thể xóa phiếu của lần nhập thành công.');
+        abort_if(
+            in_array($importLog->status, ['PENDING', 'PROCESSING'], true),
+            409,
+            'Không thể xóa lịch sử khi file đang được xử lý.',
+        );
 
-        $deleted = $historyService->deleteImportedRecords($importLog);
+        $paths = array_unique(array_filter([
+            $importLog->file_path,
+            $importLog->error_file_path,
+        ]));
 
-        return response()->json([
-            'message' => "Đã xóa {$deleted['households']} phiếu và {$deleted['persons']} nhân khẩu đã nhập từ file. Lịch sử tải lên vẫn được giữ.",
-            'status' => 'ROLLED_BACK',
-            'deleted_households' => $deleted['households'],
-            'deleted_persons' => $deleted['persons'],
-        ]);
+        foreach ($paths as $path) {
+            if (Storage::disk('local')->exists($path) && ! Storage::disk('local')->delete($path)) {
+                throw new \RuntimeException('Không thể xóa file khỏi lịch sử tải lên.');
+            }
+        }
+
+        $importLog->delete();
+
+        return response()->json(['message' => 'Đã xóa lịch sử tải file']);
     }
 }

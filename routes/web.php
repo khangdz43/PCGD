@@ -50,7 +50,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/households/imports/{importLog}/status', HouseholdImportStatusController::class)->name('households.import.status');
         Route::get('/households/imports/{importLog}/download', [HouseholdImportHistoryController::class, 'download'])->name('households.import.download');
         Route::get('/households/imports/{importLog}/download-errors', [HouseholdImportHistoryController::class, 'downloadErrors'])->name('households.import.download-errors');
-        Route::delete('/households/imports/{importLog}', [HouseholdImportHistoryController::class, 'destroyImportedRecords'])->name('households.import.destroy');
+        Route::delete('/households/imports/{importLog}', [HouseholdImportHistoryController::class, 'destroy'])->name('households.import.destroy');
     });
 
     Route::middleware('can:create-households')->group(function (): void {

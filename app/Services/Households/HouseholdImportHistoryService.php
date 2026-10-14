@@ -2,12 +2,7 @@
 
 namespace App\Services\Households;
 
-use App\Models\Household;
 use App\Models\ImportLog;
-use App\Models\Person;
-use App\Models\PersonDisability;
-use App\Models\PersonEducation;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -71,42 +66,4 @@ class HouseholdImportHistoryService
         return $errorFilePath;
     }
 
-    public function deleteImportedRecords(ImportLog $importLog): array
-    {
-        return DB::transaction(function () use ($importLog): array {
-            $householdIds = Household::query()
-                ->where('import_log_id', $importLog->id)
-                ->lockForUpdate()
-                ->pluck('id');
-            $personIds = Person::query()
-                ->where('import_log_id', $importLog->id)
-                ->orWhereIn('household_id', $householdIds)
-                ->lockForUpdate()
-                ->pluck('id');
-
-            $personCount = $personIds->count();
-            PersonDisability::query()->whereIn('person_id', $personIds)->delete();
-            PersonEducation::query()
-                ->where('import_log_id', $importLog->id)
-                ->orWhereIn('person_id', $personIds)
-                ->delete();
-            Person::query()->whereIn('id', $personIds)->delete();
-            $householdCount = Household::query()
-                ->where('import_log_id', $importLog->id)
-                ->delete();
-
-            $context = $importLog->context ?? [];
-            $context['deleted_households'] = $householdCount;
-            $context['deleted_persons'] = $personCount;
-            $importLog->update([
-                'status' => 'ROLLED_BACK',
-                'context' => $context,
-            ]);
-
-            return [
-                'households' => $householdCount,
-                'persons' => $personCount,
-            ];
-        });
-    }
 }

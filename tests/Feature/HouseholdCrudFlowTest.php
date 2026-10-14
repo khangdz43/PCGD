@@ -197,7 +197,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('households.members.store', $household).'?is_head=1', $this->personPayload(null))
+            ->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertRedirect(route('households.show', $household))
             ->assertSessionHas('success');
 
@@ -208,7 +208,7 @@ class HouseholdCrudFlowTest extends TestCase
             'relationship_with_head' => 'Chủ hộ',
         ]);
 
-        $this->post(route('households.members.store', $household).'?is_head=1', $this->personPayload(null))
+        $this->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertRedirect(route('households.show', $household))
             ->assertSessionHas('warning');
 
@@ -304,13 +304,64 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertStatus(409);
     }
 
+    public function test_import_history_can_be_removed_without_deleting_imported_households(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $successful = $this->createImportLog($user, [
+            'status' => 'SUCCESS',
+            'file_path' => 'household-imports/success/source.xlsx',
+            'error_file_path' => 'household-imports/success/error-source.xlsx',
+        ]);
+        $failed = $this->createImportLog($user, [
+            'status' => 'FAILED',
+            'file_path' => 'household-imports/failed/source.xlsx',
+        ]);
+        $rolledBack = $this->createImportLog($user, ['status' => 'ROLLED_BACK']);
+        $this->createImportLog($user, ['status' => 'PROCESSING']);
+
+        Storage::disk('local')->put($successful->file_path, 'original');
+        Storage::disk('local')->put($successful->error_file_path, 'annotated');
+        Storage::disk('local')->put($failed->file_path, 'failed');
+
+        $householdId = DB::table('households')->insertGetId([
+            'household_code' => 'KEPT-AFTER-HISTORY-DELETE',
+            'school_year' => $this->currentSchoolYear(),
+            'import_log_id' => $successful->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $page = $this->actingAs($user)->get(route('households.import-history'));
+        $page->assertOk()->assertSee('Xóa lịch sử');
+        self::assertSame(4, substr_count($page->getContent(), 'data-delete-import-history action='));
+
+        $this->deleteJson(route('households.import.destroy', $successful))
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã xóa lịch sử tải file');
+
+        $this->assertDatabaseMissing('import_logs', ['id' => $successful->id]);
+        $this->assertDatabaseHas('households', ['id' => $householdId]);
+        Storage::disk('local')->assertMissing($successful->file_path);
+        Storage::disk('local')->assertMissing($successful->error_file_path);
+
+        $this->deleteJson(route('households.import.destroy', $failed))
+            ->assertOk();
+        $this->assertDatabaseMissing('import_logs', ['id' => $failed->id]);
+        Storage::disk('local')->assertMissing($failed->file_path);
+
+        $this->deleteJson(route('households.import.destroy', $rolledBack))
+            ->assertOk();
+        $this->assertDatabaseMissing('import_logs', ['id' => $rolledBack->id]);
+    }
+
     public function test_import_submission_stores_the_file_and_queues_processing(): void
     {
         Queue::fake();
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-');
-        $xlsxPath = $filePath.'.xlsx';
+        $xlsxPath = $filePath . '.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -396,11 +447,11 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('villages', ['code' => 'V03', 'name' => 'Thôn Ba đã sửa']);
 
         $this->post(route('villages.store'), [
-                'code' => 'V04',
-                'name' => 'Thôn ngoài vùng',
-                'province_code' => 'P02',
-                'commune_code' => 'C02',
-            ])
+            'code' => 'V04',
+            'name' => 'Thôn ngoài vùng',
+            'province_code' => 'P02',
+            'commune_code' => 'C02',
+        ])
             ->assertForbidden();
 
         $this->assertDatabaseMissing('villages', ['code' => 'V04']);
@@ -736,7 +787,7 @@ class HouseholdCrudFlowTest extends TestCase
     private function userWithPermissions(array $permissionNames, string $scopeLevel = 'commune'): User
     {
         $role = Role::create([
-            'name' => 'commune-'.uniqid(),
+            'name' => 'commune-' . uniqid(),
             'guard_name' => 'web',
             'scope_level' => $scopeLevel,
         ]);
@@ -751,7 +802,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $user = User::create([
             'name' => 'Người dùng thử',
-            'username' => 'test-'.uniqid(),
+            'username' => 'test-' . uniqid(),
             'password' => Hash::make('password'),
         ]);
         $user->forceFill([
@@ -828,6 +879,6 @@ class HouseholdCrudFlowTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-".($year + 1);
+        return "{$year}-" . ($year + 1);
     }
 }

@@ -249,7 +249,7 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('is_household_head', true);
         $this->assertDatabaseMissing('persons', ['id' => $headId]);
 
-        $bulkIds = collect(['Anh', 'Chị'])->map(fn (string $relationship): int => DB::table('persons')->insertGetId([
+        $bulkIds = collect(['Anh', 'Chị'])->map(fn(string $relationship): int => DB::table('persons')->insertGetId([
             'household_id' => $household->id,
             'relationship_with_head' => $relationship,
             'created_at' => now(),
@@ -361,7 +361,7 @@ class AccessControlTest extends TestCase
             ->assertSee(route('account.show'))
             ->assertSee('app-account-card', false)
             ->assertSee('app-account-location', false)
-            ->assertSee('Năm học: '.$this->currentSchoolYear())
+            ->assertSee('Năm học: ' . $this->currentSchoolYear())
             ->assertSee('Đăng xuất');
     }
 
@@ -1206,7 +1206,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $permissions = collect(range(1, 4))->map(fn (int $index) => Permission::create([
+        $permissions = collect(range(1, 4))->map(fn(int $index) => Permission::create([
             'name' => "test-permission-{$index}",
             'description' => "Quyền kiểm thử {$index}",
             'guard_name' => 'web',
@@ -1304,7 +1304,7 @@ class AccessControlTest extends TestCase
                 'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
                 'guard_name' => 'web',
             ],
-        ])->map(fn (array $attributes) => Permission::create($attributes));
+        ])->map(fn(array $attributes) => Permission::create($attributes));
         $schoolManagerRole->permissions()->attach($provincePermissions);
 
         $this->actingAs($admin)
@@ -1581,7 +1581,7 @@ class AccessControlTest extends TestCase
             ->get('/households/import')
             ->assertOk()
             ->assertSee('id="import-school-year"', false)
-            ->assertSee('name="school_year" value="'.(now()->month >= 8 ? now()->year : now()->year - 1).'-'.((now()->month >= 8 ? now()->year : now()->year - 1) + 1).'"', false)
+            ->assertSee('name="school_year" value="' . (now()->month >= 8 ? now()->year : now()->year - 1) . '-' . ((now()->month >= 8 ? now()->year : now()->year - 1) + 1) . '"', false)
             ->assertDontSee('<select id="import-school-year"', false)
             ->assertSee('value="P1" selected', false)
             ->assertDontSee('value="P2"', false)
@@ -1895,11 +1895,13 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]));
 
-        foreach ([
-            ['name' => 'Tài khoản thường', 'role' => $regularRole, 'scope' => 'province'],
-            ['name' => 'Tài khoản quản trị xã', 'role' => $communeRole, 'scope' => 'commune'],
-            ['name' => 'Tài khoản quản trị tỉnh', 'role' => $provinceRole, 'scope' => 'province'],
-        ] as $account) {
+        foreach (
+            [
+                ['name' => 'Tài khoản thường', 'role' => $regularRole, 'scope' => 'province'],
+                ['name' => 'Tài khoản quản trị xã', 'role' => $communeRole, 'scope' => 'commune'],
+                ['name' => 'Tài khoản quản trị tỉnh', 'role' => $provinceRole, 'scope' => 'province'],
+            ] as $account
+        ) {
             $user = User::factory()->create([
                 'name' => $account['name'],
                 'scope_level' => $account['scope'],
@@ -2037,7 +2039,7 @@ class AccessControlTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-".($year + 1);
+        return "{$year}-" . ($year + 1);
     }
 
     public function test_import_rejects_school_code_outside_the_selected_commune(): void
@@ -2140,7 +2142,7 @@ class AccessControlTest extends TestCase
             return UploadedFile::fake()->createWithContent('import.xls', $fileContents);
         };
         $currentSchoolYearStart = now()->month >= 8 ? now()->year : now()->year - 1;
-        $previousSchoolYear = ($currentSchoolYearStart - 1).'-'.$currentSchoolYearStart;
+        $previousSchoolYear = ($currentSchoolYearStart - 1) . '-' . $currentSchoolYearStart;
 
         $this->actingAs($user)
             ->post('/households/import', [
@@ -2218,8 +2220,9 @@ class AccessControlTest extends TestCase
             ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
         $this->assertNotNull($importLog->fresh()->error_file_path);
         $this->deleteJson(route('households.import.destroy', $importLog))
-            ->assertStatus(409);
-        $this->assertDatabaseHas('import_logs', ['id' => $importLog->id]);
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã xóa lịch sử tải file');
+        $this->assertDatabaseMissing('import_logs', ['id' => $importLog->id]);
 
         $successfulImport = ImportLog::create([
             'file_name' => 'successful.xls',
@@ -2268,22 +2271,17 @@ class AccessControlTest extends TestCase
 
         $this->deleteJson(route('households.import.destroy', $successfulImport))
             ->assertOk()
-            ->assertJsonPath('status', 'ROLLED_BACK')
-            ->assertJsonPath('deleted_households', 1)
-            ->assertJsonPath('deleted_persons', 1);
-        $this->assertDatabaseMissing('households', ['id' => $householdId]);
-        $this->assertDatabaseMissing('persons', ['id' => $personId]);
-        $this->assertDatabaseMissing('person_educations', ['person_id' => $personId]);
-        $this->assertDatabaseMissing('person_disabilities', ['person_id' => $personId]);
+            ->assertJsonPath('message', 'Đã xóa lịch sử tải file');
+        $this->assertDatabaseHas('households', ['id' => $householdId]);
+        $this->assertDatabaseHas('persons', ['id' => $personId]);
+        $this->assertDatabaseHas('person_educations', ['person_id' => $personId]);
+        $this->assertDatabaseHas('person_disabilities', ['person_id' => $personId]);
         $this->assertDatabaseHas('households', ['id' => $otherHouseholdId]);
-        $this->assertDatabaseHas('import_logs', ['id' => $successfulImport->id, 'status' => 'ROLLED_BACK']);
+        $this->assertDatabaseMissing('import_logs', ['id' => $successfulImport->id]);
         $this->deleteJson(route('households.import.destroy', $successfulImport))
-            ->assertStatus(409);
+            ->assertNotFound();
         $this->get('/households/imports')
             ->assertOk()
-            ->assertSee('successful.xls')
-            ->assertSee('Đã xóa phiếu nhập')
-            ->assertSee('1 phiếu và 1 nhân khẩu đã xóa')
             ->assertSee('other-successful.xls');
 
         $sheet->setCellValue('O2', 'Số phiếu');
@@ -3235,15 +3233,15 @@ class AccessControlTest extends TestCase
         ]);
 
         $currentSchoolYear = now()->month >= 8
-            ? now()->year.'-'.(now()->year + 1)
-            : (now()->year - 1).'-'.now()->year;
-        $previousSchoolYear = ((int) explode('-', $currentSchoolYear)[0] - 1).'-'.explode('-', $currentSchoolYear)[0];
+            ? now()->year . '-' . (now()->year + 1)
+            : (now()->year - 1) . '-' . now()->year;
+        $previousSchoolYear = ((int) explode('-', $currentSchoolYear)[0] - 1) . '-' . explode('-', $currentSchoolYear)[0];
         DB::table('households')->insert([
             ['household_code' => '01', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '02', 'school_year' => $previousSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '03', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
             ...array_map(
-                static fn (int $code): array => [
+                static fn(int $code): array => [
                     'household_code' => sprintf('%02d', $code),
                     'school_year' => $currentSchoolYear,
                     'province_code' => 'P1',
@@ -3282,7 +3280,7 @@ class AccessControlTest extends TestCase
             ->assertSee('value="P1" selected', false)
             ->assertSee('data-selected-code="C1"', false)
             ->assertSee('data-selected-code="V1"', false)
-            ->assertSee('value="'.$currentSchoolYear.'" selected', false)
+            ->assertSee('value="' . $currentSchoolYear . '" selected', false)
             ->assertSee('Vuốt ngang bảng để xem thêm thông tin.')
             ->assertSee('title="Xem chi tiết hộ"', false)
             ->assertDontSee('class="household-row"', false)
@@ -3323,8 +3321,8 @@ class AccessControlTest extends TestCase
             ['code' => 'V3', 'name' => 'Thôn ngoài phạm vi', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
         $schoolYear = now()->month >= 8
-            ? now()->year.'-'.(now()->year + 1)
-            : (now()->year - 1).'-'.now()->year;
+            ? now()->year . '-' . (now()->year + 1)
+            : (now()->year - 1) . '-' . now()->year;
         DB::table('households')->insert([
             ['household_code' => '11', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '12', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],

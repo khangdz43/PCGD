@@ -417,6 +417,11 @@ class HouseholdImportProcessingService
                         ]);
                     }
                 }
+
+                $importLog->update([
+                    'status' => 'SUCCESS',
+                    'success_rows' => $totalRows,
+                ]);
             });
         } catch (Throwable $exception) {
             $this->recordFailedImport(
@@ -429,12 +434,6 @@ class HouseholdImportProcessingService
 
             return response()->json(['message' => 'Nhập dữ liệu thất bại: '.$exception->getMessage()], 422);
         }
-
-        // update status ở bảng import_logs
-        $importLog->update([
-            'status' => 'SUCCESS',
-            'success_rows' => $totalRows,
-        ]);
 
         $destination = $user->can('view-households')
             ? route('households.index', [], false)

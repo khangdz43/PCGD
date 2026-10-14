@@ -2,20 +2,24 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessHouseholdImport;
 use App\Models\Household;
 use App\Models\ImportLog;
 use App\Models\Permission;
 use App\Models\Person;
 use App\Models\Role;
 use App\Models\User;
-use App\Jobs\ProcessHouseholdImport;
+use App\Services\Households\HouseholdImportProcessingService;
 use App\Support\AccessPermission;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Tests\TestCase;
 
 class HouseholdCrudFlowTest extends TestCase
@@ -197,7 +201,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
+            ->post(route('households.members.store', $household).'?is_head=1', $this->personPayload(null))
             ->assertRedirect(route('households.show', $household))
             ->assertSessionHas('success');
 
@@ -208,7 +212,7 @@ class HouseholdCrudFlowTest extends TestCase
             'relationship_with_head' => 'Chủ hộ',
         ]);
 
-        $this->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
+        $this->post(route('households.members.store', $household).'?is_head=1', $this->personPayload(null))
             ->assertRedirect(route('households.show', $household))
             ->assertSessionHas('warning');
 
@@ -280,6 +284,31 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('progress', 100)
             ->assertJsonPath('status', 'SUCCESS');
+    }
+
+    public function test_import_statuses_can_be_checked_in_one_request_for_owned_imports_only(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $otherUser = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $processing = $this->createImportLog($user, [
+            'status' => 'PROCESSING',
+            'processed_rows' => 9,
+            'total_rows' => 10,
+        ]);
+        $completed = $this->createImportLog($user, ['status' => 'SUCCESS']);
+        $foreign = $this->createImportLog($otherUser, ['status' => 'PROCESSING']);
+
+        $this->actingAs($user)
+            ->getJson(route('households.import.statuses', [
+                'ids' => [$processing->id, $completed->id, $foreign->id],
+            ]))
+            ->assertOk()
+            ->assertJsonCount(2, 'statuses')
+            ->assertJsonPath('statuses.'.$processing->id.'.status', 'PROCESSING')
+            ->assertJsonPath('statuses.'.$processing->id.'.progress', 81)
+            ->assertJsonPath('statuses.'.$completed->id.'.status', 'SUCCESS')
+            ->assertJsonPath('statuses.'.$completed->id.'.progress', 100)
+            ->assertJsonMissingPath('statuses.'.$foreign->id);
     }
 
     public function test_import_history_hides_other_users_records_and_blocks_pending_downloads(): void
@@ -361,17 +390,17 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-');
-        $xlsxPath = $filePath . '.xlsx';
+        $xlsxPath = $filePath.'.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
-            $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet;
+            $spreadsheet = new Spreadsheet;
             $spreadsheet->getActiveSheet()->setCellValue('A1', 'fixture');
-            \PhpOffice\PhpSpreadsheet\IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
             $spreadsheet->disconnectWorksheets();
 
             $response = $this->actingAs($user)->postJson(route('households.import.store'), [
-                'file' => new \Illuminate\Http\UploadedFile(
+                'file' => new UploadedFile(
                     $xlsxPath,
                     'households.xlsx',
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -403,6 +432,7 @@ class HouseholdCrudFlowTest extends TestCase
             Queue::assertPushed(ProcessHouseholdImport::class, function (ProcessHouseholdImport $job): bool {
                 self::assertSame('database', $job->connection);
                 self::assertSame('default', $job->queue);
+                self::assertSame(2, $job->tries);
 
                 return true;
             });
@@ -414,6 +444,25 @@ class HouseholdCrudFlowTest extends TestCase
                 unlink($xlsxPath);
             }
         }
+    }
+
+    public function test_completed_import_jobs_are_not_processed_again_when_retried(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $importLog = $this->createImportLog($user, [
+            'status' => 'SUCCESS',
+            'file_path' => 'household-imports/completed/source.xlsx',
+        ]);
+
+        (new ProcessHouseholdImport($importLog->id))->handle(
+            app(HouseholdImportProcessingService::class)
+        );
+
+        $this->assertDatabaseHas('import_logs', [
+            'id' => $importLog->id,
+            'status' => 'SUCCESS',
+        ]);
     }
 
     public function test_commune_manager_can_create_and_update_villages_only_in_their_commune(): void
@@ -787,7 +836,7 @@ class HouseholdCrudFlowTest extends TestCase
     private function userWithPermissions(array $permissionNames, string $scopeLevel = 'commune'): User
     {
         $role = Role::create([
-            'name' => 'commune-' . uniqid(),
+            'name' => 'commune-'.uniqid(),
             'guard_name' => 'web',
             'scope_level' => $scopeLevel,
         ]);
@@ -802,7 +851,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $user = User::create([
             'name' => 'Người dùng thử',
-            'username' => 'test-' . uniqid(),
+            'username' => 'test-'.uniqid(),
             'password' => Hash::make('password'),
         ]);
         $user->forceFill([
@@ -879,6 +928,6 @@ class HouseholdCrudFlowTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-" . ($year + 1);
+        return "{$year}-".($year + 1);
     }
 }

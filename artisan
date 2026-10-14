@@ -3,6 +3,7 @@
 
 use Illuminate\Foundation\Application;
 use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Process\Process;
 
 define('LARAVEL_START', microtime(true));
 
@@ -13,6 +14,63 @@ require __DIR__.'/vendor/autoload.php';
 /** @var Application $app */
 $app = require_once __DIR__.'/bootstrap/app.php';
 
-$status = $app->handleCommand(new ArgvInput);
+$input = new ArgvInput;
+$queueWorker = null;
 
-exit($status);
+if ($input->getFirstArgument() === 'serve') {
+    $queueWorker = new Process(
+        [
+            PHP_BINARY,
+            __DIR__.'/artisan',
+            'queue:work',
+            'database',
+            '--queue=default,imports',
+            '--tries=2',
+            '--timeout=600',
+            '--sleep=1',
+            '--quiet',
+        ],
+        __DIR__,
+        array_merge(getenv(), $_ENV),
+    );
+    $queueWorker->disableOutput();
+
+    try {
+        $queueWorker->start();
+    } catch (Throwable $exception) {
+        fwrite(STDERR, "Không thể khởi động queue worker: {$exception->getMessage()}".PHP_EOL);
+        exit(1);
+    }
+
+    register_shutdown_function(static function () use ($queueWorker): void {
+        if (! $queueWorker->isRunning()) {
+            return;
+        }
+
+        $restartSignal = new Process(
+            [PHP_BINARY, __DIR__.'/artisan', 'queue:restart'],
+            __DIR__,
+            array_merge(getenv(), $_ENV),
+        );
+        $restartSignal->run();
+        if (! $restartSignal->isSuccessful()) {
+            fwrite(STDERR, "Không thể yêu cầu queue worker dừng an toàn: {$restartSignal->getErrorOutput()}".PHP_EOL);
+            $queueWorker->stop(5);
+
+            return;
+        }
+
+        $shutdownDeadline = microtime(true) + 610;
+        while ($queueWorker->isRunning() && microtime(true) < $shutdownDeadline) {
+            usleep(250_000);
+        }
+
+        if ($queueWorker->isRunning()) {
+            $queueWorker->stop(5);
+        }
+    });
+
+    fwrite(STDOUT, 'Queue worker đã khởi động cùng máy chủ phát triển.'.PHP_EOL);
+}
+
+exit($app->handleCommand($input));

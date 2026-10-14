@@ -35,7 +35,10 @@
                             <th scope="col">Thao tác</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody
+                        data-import-statuses
+                        data-statuses-url="{{ route('households.import.statuses', [], false) }}"
+                    >
                         @foreach ($imports as $import)
                             @php
                                 $isProcessing = in_array($import->status, ['PENDING', 'PROCESSING'], true);
@@ -63,7 +66,7 @@
                             @endphp
                             <tr
                                 data-import-row
-                                data-status-url="{{ route('households.import.status', $import, false) }}"
+                                data-import-id="{{ $import->id }}"
                                 data-status="{{ $import->status }}"
                                 @if (request('import_id') == $import->id) class="table-primary" @endif
                             >
@@ -86,8 +89,12 @@
                                     @endif
                                 </td>
                                 <td class="text-nowrap">
-                                    @if (! $isProcessing && $import->file_path && $import->status !== 'FAILED')
-                                        <a class="btn btn-sm btn-outline-primary mb-1" href="{{ route('households.import.download', $import, false) }}">
+                                    @if ($import->file_path)
+                                        <a
+                                            data-original-download
+                                            class="btn btn-sm btn-outline-primary mb-1 {{ $isProcessing || $import->status === 'FAILED' ? 'd-none' : '' }}"
+                                            href="{{ route('households.import.download', $import, false) }}"
+                                        >
                                             <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải file gốc
                                         </a>
                                     @endif
@@ -170,55 +177,100 @@
             });
         }
 
-        document.querySelectorAll('[data-import-row][data-status-url]').forEach((row) => {
-            if (row.dataset.statusPolling === 'true') return;
-            if (row.dataset.status === 'SUCCESS' || row.dataset.status === 'FAILED' || row.dataset.status === 'ROLLED_BACK') return;
-            row.dataset.statusPolling = 'true';
+        const statusTable = document.querySelector('[data-import-statuses]');
+        if (statusTable && statusTable.dataset.initialized !== 'true') {
+            statusTable.dataset.initialized = 'true';
+            let statusTimer;
+            let isCheckingStatuses = false;
 
-            const statusLabel = row.querySelector('[data-status-label]');
-            const progressTrack = row.querySelector('[role="progressbar"]');
-            const progressBar = row.querySelector('[data-progress-bar]');
-            const progressLabel = row.querySelector('[data-progress-label]');
-            const resultCounts = row.querySelector('[data-result-counts]');
-            const errorDownload = row.querySelector('[data-error-download]');
+            const activeRows = () => Array.from(statusTable.querySelectorAll('[data-import-row]'))
+                .filter((row) => ['PENDING', 'PROCESSING'].includes(row.dataset.status));
 
-            const timer = window.setInterval(async () => {
+            const scheduleStatusCheck = (delay = 5000) => {
+                window.clearTimeout(statusTimer);
+                if (activeRows().length > 0 && document.visibilityState === 'visible') {
+                    statusTimer = window.setTimeout(checkStatuses, delay);
+                }
+            };
+
+            const updateRow = (row, status) => {
+                const statusLabel = row.querySelector('[data-status-label]');
+                const progressTrack = row.querySelector('[role="progressbar"]');
+                const progressBar = row.querySelector('[data-progress-bar]');
+                const progressLabel = row.querySelector('[data-progress-label]');
+                const resultCounts = row.querySelector('[data-result-counts]');
+                const errorDownload = row.querySelector('[data-error-download]');
+                const originalDownload = row.querySelector('[data-original-download]');
+                const deleteButton = row.querySelector('[data-delete-import-history] button');
+                const percent = Math.max(0, Math.min(100, status.progress));
+                const labels = {
+                    PENDING: ['Đang chờ xử lý', 'text-bg-secondary'],
+                    PROCESSING: ['Đang xử lý', 'text-bg-primary'],
+                    SUCCESS: ['Xử lý thành công', 'text-bg-success'],
+                    FAILED: ['Xử lý thất bại', 'text-bg-danger'],
+                    ROLLED_BACK: ['Đã xóa phiếu nhập', 'text-bg-secondary'],
+                };
+                const [label, badgeClass] = labels[status.status] || ['Không xác định', 'text-bg-light'];
+
+                row.dataset.status = status.status;
+                progressBar.style.width = `${percent}%`;
+                progressTrack.setAttribute('aria-valuenow', String(percent));
+                progressLabel.textContent = `${percent}% · ${status.processed_rows}/${status.total_rows} dòng`;
+                resultCounts.textContent = `${status.success_rows} thành công · ${status.error_rows} lỗi`;
+                statusLabel.textContent = label;
+                statusLabel.className = `badge ${badgeClass}`;
+                errorDownload?.classList.toggle('d-none', !status.has_error_file);
+                originalDownload?.classList.toggle('d-none', status.status === 'FAILED' || ['PENDING', 'PROCESSING'].includes(status.status));
+                if (deleteButton) deleteButton.disabled = ['PENDING', 'PROCESSING'].includes(status.status);
+                if (!['PENDING', 'PROCESSING'].includes(status.status)) {
+                    progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                }
+            };
+
+            async function checkStatuses() {
+                if (isCheckingStatuses || document.visibilityState !== 'visible') return;
+                const rows = activeRows();
+                if (rows.length === 0) return;
+
+                isCheckingStatuses = true;
                 try {
-                    const response = await fetch(row.dataset.statusUrl, {
+                    const query = new URLSearchParams();
+                    rows.forEach((row) => query.append('ids[]', row.dataset.importId));
+                    const response = await fetch(`${statusTable.dataset.statusesUrl}?${query}`, {
                         headers: { Accept: 'application/json' },
                         credentials: 'same-origin',
                     });
                     if (!response.ok) throw new Error('Không lấy được trạng thái import.');
 
-                    const status = await response.json();
-                    const percent = Math.max(0, Math.min(100, status.progress));
-                    progressBar.style.width = `${percent}%`;
-                    progressTrack.setAttribute('aria-valuenow', String(percent));
-                    progressLabel.textContent = `${percent}% · ${status.processed_rows}/${status.total_rows} dòng`;
-                    resultCounts.textContent = `${status.success_rows} thành công · ${status.error_rows} lỗi`;
-
-                    const labels = {
-                        PENDING: ['Đang chờ xử lý', 'text-bg-secondary'],
-                        PROCESSING: ['Đang xử lý', 'text-bg-primary'],
-                        SUCCESS: ['Xử lý thành công', 'text-bg-success'],
-                        FAILED: ['Xử lý thất bại', 'text-bg-danger'],
-                        ROLLED_BACK: ['Đã xóa phiếu nhập', 'text-bg-secondary'],
-                    };
-                    const [label, badgeClass] = labels[status.status] || ['Không xác định', 'text-bg-light'];
-                    statusLabel.textContent = label;
-                    statusLabel.className = `badge ${badgeClass}`;
-
-                    if (status.status === 'SUCCESS' || status.status === 'FAILED' || status.status === 'ROLLED_BACK') {
-                        window.clearInterval(timer);
-                        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                    const payload = await response.json();
+                    let completedImport = false;
+                    rows.forEach((row) => {
+                        const status = payload.statuses?.[row.dataset.importId];
+                        if (!status) return;
+                        updateRow(row, status);
+                        completedImport ||= !['PENDING', 'PROCESSING'].includes(status.status);
+                    });
+                    if (completedImport) {
+                        window.dispatchEvent(new Event('household-import-completed'));
                     }
-                    errorDownload.classList.toggle('d-none', !status.has_error_file);
+                    scheduleStatusCheck();
                 } catch (error) {
-                    window.clearInterval(timer);
                     console.error(error);
+                    scheduleStatusCheck(15000);
+                } finally {
+                    isCheckingStatuses = false;
                 }
-            }, 1500);
-        });
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    checkStatuses();
+                } else {
+                    window.clearTimeout(statusTimer);
+                }
+            });
+            checkStatuses();
+        }
     })();
 </script>
 @endpush

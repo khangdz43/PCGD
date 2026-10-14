@@ -47,6 +47,7 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/households/import', [HouseholdImportExportController::class, 'create'])->name('households.import.create');
         Route::post('/households/import', [HouseholdImportExportController::class, 'import'])->name('households.import.store');
         Route::get('/households/imports', HouseholdImportHistoryController::class)->name('households.import-history');
+        Route::get('/households/imports/statuses', [HouseholdImportStatusController::class, 'batch'])->name('households.import.statuses');
         Route::get('/households/imports/{importLog}/status', HouseholdImportStatusController::class)->name('households.import.status');
         Route::get('/households/imports/{importLog}/download', [HouseholdImportHistoryController::class, 'download'])->name('households.import.download');
         Route::get('/households/imports/{importLog}/download-errors', [HouseholdImportHistoryController::class, 'downloadErrors'])->name('households.import.download-errors');

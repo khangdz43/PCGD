@@ -10,8 +10,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Throwable;
 
@@ -21,33 +21,29 @@ class ProcessHouseholdImport implements ShouldQueue
 
     public int $timeout = 600;
 
-    public int $tries = 1;
+    public int $tries = 2;
 
     public function __construct(public int $importLogId) {}
 
     public function handle(HouseholdImportProcessingService $processingService): void
     {
         $importLog = ImportLog::findOrFail($this->importLogId);
+        if (in_array($importLog->status, ['SUCCESS', 'FAILED', 'ROLLED_BACK'], true)) {
+            return;
+        }
+
         $path = Storage::disk('local')->path($importLog->file_path);
 
-        try {
-            $user = User::findOrFail($importLog->user_id);
-            $file = new UploadedFile(
-                $path,
-                $importLog->file_name,
-                mime_content_type($path) ?: 'application/octet-stream',
-                null,
-                true,
-            );
+        $user = User::findOrFail($importLog->user_id);
+        $file = new UploadedFile(
+            $path,
+            $importLog->file_name,
+            mime_content_type($path) ?: 'application/octet-stream',
+            null,
+            true,
+        );
 
-            $processingService->process($importLog, $user, $file);
-        } catch (Throwable $exception) {
-            $importLog->update([
-                'status' => 'FAILED',
-            ]);
-
-            throw $exception;
-        }
+        $processingService->process($importLog, $user, $file);
     }
 
     public function failed(?Throwable $exception): void

@@ -17,6 +17,15 @@
                 <input id="excel-file" name="file" type="file" accept=".xls,.xlsx" class="form-control @error('file') is-invalid @enderror" required>
                 <div class="form-text">Chấp nhận XLS/XLSX, tối đa 20 MB. Dữ liệu bắt đầu từ dòng 5.</div>
                 @error('file') <div class="invalid-feedback">{{ $message }}</div> @enderror
+                <div id="household-import-upload-progress" class="mt-2 d-none" aria-live="polite">
+                    <div class="d-flex justify-content-between small text-muted mb-1">
+                        <span data-upload-progress-label>Đang tải file lên máy chủ...</span>
+                        <span data-upload-progress-value>0%</span>
+                    </div>
+                    <div class="progress" role="progressbar" aria-label="Tiến độ tải file lên" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" data-upload-progress-bar style="width: 0%"></div>
+                    </div>
+                </div>
             </div>
 
             <div class="mb-3">
@@ -74,6 +83,11 @@
         importForm.dataset.queueReady = 'true';
 
         const submitButton = document.getElementById('household-import-submit');
+        const uploadProgress = document.getElementById('household-import-upload-progress');
+        const uploadProgressLabel = uploadProgress.querySelector('[data-upload-progress-label]');
+        const uploadProgressValue = uploadProgress.querySelector('[data-upload-progress-value]');
+        const uploadProgressTrack = uploadProgress.querySelector('[role="progressbar"]');
+        const uploadProgressBar = uploadProgress.querySelector('[data-upload-progress-bar]');
 
         importForm.addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -82,26 +96,50 @@
             submitButton.disabled = true;
             submitButton.setAttribute('aria-busy', 'true');
             submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Đang tải lên...';
+            uploadProgress.classList.remove('d-none');
 
             try {
-                const response = await fetch(importForm.action, {
-                    method: 'POST',
-                    body: new FormData(importForm),
-                    headers: { Accept: 'application/json' },
-                    credentials: 'same-origin',
+                const payload = await new Promise((resolve, reject) => {
+                    const request = new XMLHttpRequest();
+                    request.open('POST', importForm.action);
+                    request.setRequestHeader('Accept', 'application/json');
+                    request.withCredentials = true;
+                    request.upload.addEventListener('progress', (progressEvent) => {
+                        if (!progressEvent.lengthComputable) return;
+                        const percent = Math.round(progressEvent.loaded / progressEvent.total * 100);
+                        uploadProgressValue.textContent = `${percent}%`;
+                        uploadProgressTrack.setAttribute('aria-valuenow', String(percent));
+                        uploadProgressBar.style.width = `${percent}%`;
+                    });
+                    request.addEventListener('load', () => {
+                        let responsePayload = {};
+                        try {
+                            responsePayload = JSON.parse(request.responseText);
+                        } catch {
+                            reject(new Error('Máy chủ trả về phản hồi không hợp lệ.'));
+                            return;
+                        }
+                        if (request.status === 202) {
+                            resolve(responsePayload);
+                            return;
+                        }
+                        const validationMessage = Object.values(responsePayload.errors || {}).flat()[0];
+                        reject(new Error(validationMessage || responsePayload.message || 'Không thể đưa file vào hàng đợi.'));
+                    });
+                    request.addEventListener('error', () => reject(new Error('Không thể kết nối để tải file lên.')));
+                    request.addEventListener('abort', () => reject(new Error('Đã hủy tải file lên.')));
+                    request.send(new FormData(importForm));
                 });
-                const payload = await response.json();
-
-                if (response.status !== 202) {
-                    const validationMessage = Object.values(payload.errors || {}).flat()[0];
-                    throw new Error(validationMessage || payload.message || 'Không thể đưa file vào hàng đợi.');
-                }
-
+                uploadProgressLabel.textContent = 'Đã tải file lên, đang chuyển tới lịch sử xử lý...';
+                uploadProgressValue.textContent = '100%';
+                uploadProgressTrack.setAttribute('aria-valuenow', '100');
+                uploadProgressBar.style.width = '100%';
                 window.location.assign(payload.history_url);
             } catch (error) {
                 submitButton.disabled = false;
                 submitButton.removeAttribute('aria-busy');
                 submitButton.innerHTML = '<i class="fa-solid fa-file-import me-1" aria-hidden="true"></i> Nhập dữ liệu';
+                uploadProgress.classList.add('d-none');
                 window.showAppNotification('error', error.message || 'Không thể tải file lên.');
             }
         });

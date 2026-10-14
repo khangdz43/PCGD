@@ -1281,8 +1281,10 @@
                         }
                     };
 
+                    window.checkHouseholdImportNotifications = checkHouseholdImportNotifications;
                     checkHouseholdImportNotifications();
-                    window.setInterval(checkHouseholdImportNotifications, 2000);
+                    window.setInterval(checkHouseholdImportNotifications, 10000);
+                    document.addEventListener('household-import-completed', checkHouseholdImportNotifications);
                     document.addEventListener('visibilitychange', () => {
                         if (document.visibilityState === 'visible') {
                             checkHouseholdImportNotifications();

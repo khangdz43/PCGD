@@ -82,7 +82,7 @@ class HouseholdImportProcessingService
         $schoolCommuneCodes = School::query()->pluck('commune_code', 'code');
         $schoolYear = $data['school_year'];
         $groups = [];
-        $errors = [];
+        $errors = new HouseholdImportErrorCollector($highestDataRow);
         $totalRows = 0;
         $importLog->update([
             'status' => 'PROCESSING',
@@ -112,7 +112,7 @@ class HouseholdImportProcessingService
                 }
 
                 if ($householdCode === '' || $lastName === '' || $firstName === '') {
-                    $errors[] = ['row' => $row, 'message' => 'Cần có Số phiếu, Họ đệm và Tên.'];
+                    $errors->add($row, 'Cần có Số phiếu, Họ đệm và Tên.');
 
                     continue;
                 }
@@ -121,27 +121,27 @@ class HouseholdImportProcessingService
                 // nếu trống để code là null còn cps trog mảng kia thì trả ra cái code để lưu code dân tộc
                 $ethnicityCode = $ethnicityName === '' ? null : ($ethnicityCodes[$this->normalize($ethnicityName)] ?? null);
                 if ($ethnicityName === '') {
-                    $errors[] = ['row' => $row, 'message' => 'Cần có dân tộc.'];
+                    $errors->add($row, 'Cần có dân tộc.');
                 } elseif ($ethnicityCode === null) {
-                    $errors[] = ['row' => $row, 'message' => "Dân tộc '{$ethnicityName}' chưa có trong danh mục."];
+                    $errors->add($row, "Dân tộc '{$ethnicityName}' chưa có trong danh mục.");
                 }
 
                 $birthDate = $this->birthDate($sheet, $row);
 
                 if ($birthDate['date'] === null) {
-                    $errors[] = ['row' => $row, 'message' => 'Cần có ngày, tháng và năm sinh hợp lệ.'];
+                    $errors->add($row, 'Cần có ngày, tháng và năm sinh hợp lệ.');
                 } elseif ($birthDate['date'] > now()->toDateString()) {
-                    $errors[] = ['row' => $row, 'message' => 'Ngày sinh không được ở tương lai.'];
+                    $errors->add($row, 'Ngày sinh không được ở tương lai.');
                 }
                 //
                 $schoolCode = $this->cell($sheet, 'V'.$row);
                 if ($schoolCode !== '') {
                     if ($schoolCommuneCodes->has($schoolCode)) {
                         if ($schoolCommuneCodes->get($schoolCode) !== $data['commune_code']) {
-                            $errors[] = ['row' => $row, 'message' => "Mã trường '{$schoolCode}' không thuộc xã được chọn."];
+                            $errors->add($row, "Mã trường '{$schoolCode}' không thuộc xã được chọn.");
                         }
                     } else {
-                        $errors[] = ['row' => $row, 'message' => "Mã trường '{$schoolCode}' không tồn tại trong danh mục trường học."];
+                        $errors->add($row, "Mã trường '{$schoolCode}' không tồn tại trong danh mục trường học.");
                     }
                 }
 
@@ -206,7 +206,7 @@ class HouseholdImportProcessingService
                     ] as $field => $label
                 ) {
                     if ($this->hasFutureYear($record[$field])) {
-                        $errors[] = ['row' => $row, 'message' => "{$label} không được lớn hơn ".now()->year.'.'];
+                        $errors->add($row, "{$label} không được lớn hơn ".now()->year.'.');
                     }
                 }
 
@@ -223,16 +223,13 @@ class HouseholdImportProcessingService
         $importLog->update(['processed_rows' => max(0, $highestDataRow - 4)]);
 
         if ($totalRows === 0) {
-            $errors[] = ['row' => null, 'message' => 'Không tìm thấy dòng dữ liệu. Dữ liệu cần bắt đầu từ dòng 5.'];
+            $errors->add(null, 'Không tìm thấy dòng dữ liệu. Dữ liệu cần bắt đầu từ dòng 5.');
         }
 
-        if ($errors !== []) {
+        if ($errors->hasErrors()) {
             $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
 
-            return response()->json(['message' => implode(' ', array_map(
-                static fn (array $error): string => $error['message'],
-                array_slice($errors, 0, 10)
-            ))], 422);
+            return response()->json(['message' => $errors->summary()], 422);
         }
 
         // $groups = [
@@ -247,32 +244,34 @@ class HouseholdImportProcessingService
 
         foreach ($groups as $householdCode => $records) {
             // records là value của từng householdCode(key)
-            $headRecords = [];
-            // lấy value của mảng[key = headlastname]
             $headLastName = $this->firstValue($records, 'head_last_name');
             $headFirstName = $this->firstValue($records, 'head_first_name');
+            $headCount = 0;
+            $headRecord = null;
 
             foreach ($records as $record) {
-                // check tìm ra ông chủ hộ
                 $isHead = $this->normalize((string) $record['relationship_with_head']) === $this->normalize('Chủ hộ')
                     || ($headLastName !== '' && $headFirstName !== '' && $this->normalize($record['last_name']) === $this->normalize($headLastName)
                         && $this->normalize($record['first_name']) === $this->normalize($headFirstName));
 
                 if ($isHead) {
-                    $headRecords[] = $record;
+                    $headCount++;
+                    $headRecord ??= $record;
                 }
             }
 
-            if (count($headRecords) > 1) {
-                $headRows = array_column($headRecords, 'row');
-                foreach ($headRows as $headRow) {
-                    $errors[] = [
-                        'row' => $headRow,
-                        'message' => "Phiếu '{$householdCode}' có nhiều chủ hộ ở dòng ".implode(', ', $headRows).'.',
-                    ];
+            if ($headCount > 1) {
+                foreach ($records as $record) {
+                    $isHead = $this->normalize((string) $record['relationship_with_head']) === $this->normalize('Chủ hộ')
+                        || ($headLastName !== '' && $headFirstName !== ''
+                            && $this->normalize($record['last_name']) === $this->normalize($headLastName)
+                            && $this->normalize($record['first_name']) === $this->normalize($headFirstName));
+
+                    if ($isHead) {
+                        $errors->add($record['row'], "Phiếu '{$householdCode}' có nhiều chủ hộ. Vui lòng kiểm tra các dòng được đánh dấu.");
+                    }
                 }
-            } elseif (count($headRecords) === 1) {
-                $headRecord = $headRecords[0];
+            } elseif ($headCount === 1) {
                 foreach ($records as $record) {
                     if ($record['row'] === $headRecord['row'] || $record['dob']['date'] === null) {
                         continue;
@@ -284,19 +283,16 @@ class HouseholdImportProcessingService
                         $headRecord['dob']['date'],
                     );
                     if ($ageError !== null) {
-                        $errors[] = ['row' => $record['row'], 'message' => $ageError];
+                        $errors->add($record['row'], $ageError);
                     }
                 }
             }
         }
 
-        if ($errors !== []) {
+        if ($errors->hasErrors()) {
             $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
 
-            return response()->json(['message' => implode(' ', array_map(
-                static fn (array $error): string => $error['message'],
-                array_slice($errors, 0, 10)
-            ))], 422);
+            return response()->json(['message' => $errors->summary()], 422);
         }
 
         // check query có tồn tại cái mã hộ này k
@@ -305,19 +301,19 @@ class HouseholdImportProcessingService
             ->whereIn('household_code', array_keys($groups))
             ->value('household_code');
         if ($existingCode !== null) {
-            $duplicateErrors = array_map(
-                static fn (array $record): array => [
-                    'row' => $record['row'],
-                    'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.",
-                ],
-                $groups[$existingCode] ?? []
-            );
+            $duplicateMessage = "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.";
+            foreach ($groups[$existingCode] ?? [] as $record) {
+                $errors->add($record['row'], $duplicateMessage);
+            }
+            if (! $errors->hasErrors()) {
+                $errors->add(null, $duplicateMessage);
+            }
             $this->recordFailedImport(
                 $importLog,
                 $data['file']->getRealPath(),
                 $worksheetName,
                 $totalRows,
-                $duplicateErrors ?: [['row' => null, 'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu."]]
+                $errors,
             );
 
             return response()->json([
@@ -424,13 +420,8 @@ class HouseholdImportProcessingService
                 ]);
             });
         } catch (Throwable $exception) {
-            $this->recordFailedImport(
-                $importLog,
-                $data['file']->getRealPath(),
-                $worksheetName,
-                $totalRows,
-                [['row' => null, 'message' => $exception->getMessage()]]
-            );
+            $errors->add(null, $exception->getMessage());
+            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
 
             return response()->json(['message' => 'Nhập dữ liệu thất bại: '.$exception->getMessage()], 422);
         }
@@ -457,15 +448,8 @@ class HouseholdImportProcessingService
         string $filePath,
         string $worksheetName,
         int $totalRows,
-        array $errors,
+        HouseholdImportErrorCollector $errors,
     ): void {
-        $errorsByRow = [];
-        foreach ($errors as $error) {
-            $row = $error['row'] ?? null;
-            $cell = $row === null ? 'A1' : 'A'.$row;
-            $errorsByRow[$cell][] = $error['message'];
-        }
-
         $errorFilePath = null;
         try {
             $spreadsheet = IOFactory::load($filePath);
@@ -474,8 +458,13 @@ class HouseholdImportProcessingService
                 throw new \RuntimeException('Không tìm thấy trang tính dữ liệu để ghi chú lỗi.');
             }
 
-            foreach ($errorsByRow as $cell => $messages) {
-                $sheet->setCellValue($cell, implode(' | ', array_unique($messages)));
+            foreach ($errors->errors() as $error) {
+                $cell = $error['row'] === null ? 'A1' : 'A'.$error['row'];
+                $existingValue = $error['first_for_row'] ? '' : trim((string) $sheet->getCell($cell)->getValue());
+                $message = $existingValue === ''
+                    ? $error['message']
+                    : $existingValue.' | '.$error['message'];
+                $sheet->setCellValue($cell, $message);
                 $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
                 $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
             }
@@ -497,7 +486,7 @@ class HouseholdImportProcessingService
         $importLog->update([
             'status' => 'FAILED',
             'total_rows' => $totalRows,
-            'error_rows' => count($errorsByRow),
+            'error_rows' => $errors->errorRowCount(),
             'error_file_path' => $errorFilePath,
         ]);
     }

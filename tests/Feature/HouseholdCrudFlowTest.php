@@ -9,6 +9,7 @@ use App\Models\Permission;
 use App\Models\Person;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Households\HouseholdImportErrorCollector;
 use App\Services\Households\HouseholdImportProcessingService;
 use App\Support\AccessPermission;
 use Illuminate\Database\Schema\Blueprint;
@@ -484,6 +485,27 @@ class HouseholdCrudFlowTest extends TestCase
             'id' => $importLog->id,
             'status' => 'SUCCESS',
         ]);
+    }
+
+    public function test_import_error_details_are_spooled_and_counted_per_source_row(): void
+    {
+        $errors = new HouseholdImportErrorCollector(5000);
+        for ($row = 5; $row <= 5000; $row++) {
+            $errors->add($row, 'Thiếu thông tin bắt buộc.');
+        }
+        for ($row = 5; $row <= 104; $row++) {
+            $errors->add($row, 'Ngày sinh không hợp lệ.');
+        }
+
+        self::assertSame(5096, $errors->errorCount());
+        self::assertSame(4996, $errors->errorRowCount());
+        self::assertStringContainsString('Thiếu thông tin bắt buộc.', $errors->summary());
+        self::assertStringContainsString('Ngày sinh không hợp lệ.', $errors->summary());
+
+        $firstErrors = iterator_to_array($errors->errors());
+        self::assertCount(5096, $firstErrors);
+        self::assertTrue($firstErrors[0]['first_for_row']);
+        self::assertFalse($firstErrors[4996]['first_for_row']);
     }
 
     public function test_commune_manager_can_create_and_update_villages_only_in_their_commune(): void

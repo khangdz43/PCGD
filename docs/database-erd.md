@@ -136,7 +136,6 @@ erDiagram
         int success_rows
         int error_rows
         varchar status
-        json error_details
         timestamp created_at
     }
 

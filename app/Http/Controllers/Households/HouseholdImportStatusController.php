@@ -36,11 +36,26 @@ class HouseholdImportStatusController extends Controller
                 'error_rows',
                 'file_path',
             ]);
+        $pendingImportIds = ImportLog::query()
+            ->where('status', 'PENDING')
+            ->oldest('created_at')
+            ->oldest('id')
+            ->pluck('id');
+        $queuePositions = $pendingImportIds->values()->mapWithKeys(
+            fn (int $id, int $index): array => [$id => $index + 1],
+        );
+        $queueTotal = $pendingImportIds->count();
 
         return response()->json([
-            'statuses' => $imports->mapWithKeys(fn (ImportLog $importLog): array => [
-                (string) $importLog->id => $this->statusData($importLog),
-            ]),
+            'statuses' => $imports->mapWithKeys(function (ImportLog $importLog) use ($queuePositions, $queueTotal): array {
+                $status = $this->statusData($importLog);
+                $status['queue_position'] = $importLog->status === 'PENDING'
+                    ? ($queuePositions[$importLog->id] ?? null)
+                    : null;
+                $status['queue_total'] = $importLog->status === 'PENDING' ? $queueTotal : null;
+
+                return [(string) $importLog->id => $status];
+            }),
         ]);
     }
 

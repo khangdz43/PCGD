@@ -20,8 +20,17 @@ class HouseholdImportHistoryController extends Controller
             ->latest('created_at')
             ->paginate(20)
             ->withQueryString();
+        $pendingImportIds = ImportLog::query()
+            ->where('status', 'PENDING')
+            ->oldest('created_at')
+            ->oldest('id')
+            ->pluck('id');
+        $queuePositions = $pendingImportIds->values()->mapWithKeys(
+            fn (int $id, int $index): array => [$id => $index + 1],
+        );
+        $queueTotal = $pendingImportIds->count();
 
-        return view('households.import-history', compact('imports'));
+        return view('households.import-history', compact('imports', 'queuePositions', 'queueTotal'));
     }
 
     public function download(Request $request, ImportLog $importLog): BinaryFileResponse
@@ -47,7 +56,7 @@ class HouseholdImportHistoryController extends Controller
         $errorFilePath = $historyService->errorFilePath($importLog);
 
         $extension = pathinfo($importLog->file_name, PATHINFO_EXTENSION);
-        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME) . '-loi' . ($extension !== '' ? '.' . $extension : '');
+        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME).'-loi'.($extension !== '' ? '.'.$extension : '');
 
         return response()->download(
             Storage::disk('local')->path($errorFilePath),

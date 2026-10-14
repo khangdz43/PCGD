@@ -48,7 +48,7 @@
                                         ? min(90, (int) floor($import->processed_rows * 90 / $import->total_rows))
                                         : 0);
                                 $statusLabel = match ($import->status) {
-                                    'PENDING' => 'Đang chờ xử lý',
+                                    'PENDING' => 'Đang chờ '.($queuePositions[$import->id] ?? '—').'/'.$queueTotal,
                                     'PROCESSING' => 'Đang xử lý',
                                     'SUCCESS' => 'Xử lý thành công',
                                     'FAILED' => 'Xử lý thất bại',
@@ -217,7 +217,9 @@
                 progressTrack.setAttribute('aria-valuenow', String(percent));
                 progressLabel.textContent = `${percent}% · ${status.processed_rows}/${status.total_rows} dòng`;
                 resultCounts.textContent = `${status.success_rows} thành công · ${status.error_rows} lỗi`;
-                statusLabel.textContent = label;
+                statusLabel.textContent = status.status === 'PENDING' && status.queue_position !== null
+                    ? `Đang chờ ${status.queue_position}/${status.queue_total}`
+                    : label;
                 statusLabel.className = `badge ${badgeClass}`;
                 errorDownload?.classList.toggle('d-none', !status.has_error_file);
                 originalDownload?.classList.toggle('d-none', status.status === 'FAILED' || ['PENDING', 'PROCESSING'].includes(status.status));

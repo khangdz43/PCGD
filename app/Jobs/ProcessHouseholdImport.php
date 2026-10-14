@@ -32,6 +32,10 @@ class ProcessHouseholdImport implements ShouldQueue
             return;
         }
 
+        if ($importLog->status !== 'PROCESSING') {
+            $importLog->update(['status' => 'PROCESSING']);
+        }
+
         $path = Storage::disk('local')->path($importLog->file_path);
 
         $user = User::findOrFail($importLog->user_id);

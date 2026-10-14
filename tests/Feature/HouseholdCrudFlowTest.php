@@ -297,18 +297,39 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
         $completed = $this->createImportLog($user, ['status' => 'SUCCESS']);
         $foreign = $this->createImportLog($otherUser, ['status' => 'PROCESSING']);
+        $firstQueued = $this->createImportLog($otherUser, [
+            'status' => 'PENDING',
+            'created_at' => now()->subMinutes(2),
+        ]);
+        $queued = $this->createImportLog($user, [
+            'status' => 'PENDING',
+            'created_at' => now()->subMinute(),
+        ]);
+        $lastQueued = $this->createImportLog($otherUser, [
+            'status' => 'PENDING',
+            'created_at' => now(),
+        ]);
 
         $this->actingAs($user)
             ->getJson(route('households.import.statuses', [
-                'ids' => [$processing->id, $completed->id, $foreign->id],
+                'ids' => [$processing->id, $completed->id, $foreign->id, $queued->id],
             ]))
             ->assertOk()
-            ->assertJsonCount(2, 'statuses')
+            ->assertJsonCount(3, 'statuses')
             ->assertJsonPath('statuses.'.$processing->id.'.status', 'PROCESSING')
             ->assertJsonPath('statuses.'.$processing->id.'.progress', 81)
             ->assertJsonPath('statuses.'.$completed->id.'.status', 'SUCCESS')
             ->assertJsonPath('statuses.'.$completed->id.'.progress', 100)
-            ->assertJsonMissingPath('statuses.'.$foreign->id);
+            ->assertJsonMissingPath('statuses.'.$foreign->id)
+            ->assertJsonPath('statuses.'.$queued->id.'.queue_position', 2)
+            ->assertJsonPath('statuses.'.$queued->id.'.queue_total', 3);
+
+        $this->get(route('households.import-history'))
+            ->assertOk()
+            ->assertSee('Đang chờ 2/3');
+
+        self::assertSame('PENDING', $firstQueued->fresh()->status);
+        self::assertSame('PENDING', $lastQueued->fresh()->status);
     }
 
     public function test_import_history_hides_other_users_records_and_blocks_pending_downloads(): void

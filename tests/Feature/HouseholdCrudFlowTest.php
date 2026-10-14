@@ -338,6 +338,11 @@ class HouseholdCrudFlowTest extends TestCase
                     'households.import.status',
                     ImportLog::query()->first(),
                     false,
+                ))
+                ->assertJsonPath('history_url', route(
+                    'households.import-history',
+                    ['import_id' => ImportLog::query()->first()->id],
+                    false,
                 ));
             $this->assertDatabaseHas('import_logs', [
                 'user_id' => $user->id,

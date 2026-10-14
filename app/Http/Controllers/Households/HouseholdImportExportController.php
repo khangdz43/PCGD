@@ -81,6 +81,7 @@ class HouseholdImportExportController extends Controller
         return response()->json([
             'import_id' => $importLog->id,
             'status_url' => route('households.import.status', $importLog, false),
+            'history_url' => route('households.import-history', ['import_id' => $importLog->id], false),
         ], 202);
     }
 

@@ -97,13 +97,7 @@
                     throw new Error(validationMessage || payload.message || 'Không thể đưa file vào hàng đợi.');
                 }
 
-                window.showAppNotification(
-                    'info',
-                    'File đã được tải lên và đang xử lý nền. Bạn có thể tiếp tục làm việc; hệ thống sẽ thông báo khi có kết quả.',
-                    'Đã nhận file nhập dữ liệu',
-                    { href: @json(route('households.import-history', [], false)), label: 'Xem lịch sử tải lên' },
-                );
-                importForm.reset();
+                window.location.assign(payload.history_url);
             } catch (error) {
                 submitButton.disabled = false;
                 submitButton.removeAttribute('aria-busy');

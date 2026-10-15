@@ -11,6 +11,9 @@ $inline = $inline ?? false;
 $villagePlaceholder = $villagePlaceholder ?? '-- Chọn Thôn/Bản --';
 $initialCommune = $initialCommune ?? null;
 $initialVillages = $initialVillages ?? collect();
+$hideProvince = $hideProvince ?? false;
+$hideCommune = $hideCommune ?? false;
+$hideVillage = $hideVillage ?? false;
 // nếu mà submit lỗi thì lấy value cũ
 ////////
 $selectedProvinceCode = old($provinceName, $provinceCode ?? request($provinceName, ''));
@@ -19,7 +22,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
 @endphp
 
 <div class="{{ $inline ? 'location-picker-inline' : 'row g-3' }}" data-location-picker data-provinces-url="/api/provinces" data-communes-url="/api/communes">
-    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
+    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}" @if ($hideProvince) hidden @endif>
         <label for="{{ $pickerId }}-province" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Tỉnh/Thành phố @if ($provinceRequired)<span class="text-danger">*</span>@endif</label>
         <select id="{{ $pickerId }}-province" name="{{ $provinceName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($provinceName) is-invalid @enderror" data-province @if ($provinceRequired) required @endif>
             <option value="">-- Chọn Tỉnh/Thành phố --</option>
@@ -36,7 +39,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
         @enderror
     </div>
 
-    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
+    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}" @if ($hideCommune) hidden @endif>
         <label for="{{ $pickerId }}-commune" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Xã/Phường @if ($communeRequired)<span class="text-danger">*</span>@endif</label>
         <select id="{{ $pickerId }}-commune" name="{{ $communeName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($communeName) is-invalid @enderror" data-commune data-selected-code="{{ $selectedCommuneCode }}" @disabled($initialCommune === null) @if ($communeRequired) required @endif>
             <option value="">-- Chọn Xã/Phường --</option>
@@ -50,7 +53,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
     </div>
 
     @if ($showVillage)
-    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}">
+    <div class="{{ $inline ? 'location-picker-field' : 'col-md-4' }}" @if ($hideVillage) hidden @endif>
         <label for="{{ $pickerId }}-village" class="form-label {{ $inline ? 'visually-hidden' : '' }}">Thôn/Bản @if ($villageRequired)<span class="text-danger">*</span>@endif</label>
         <select id="{{ $pickerId }}-village" name="{{ $villageName }}" class="form-select {{ $inline ? 'form-select-sm' : '' }} @error($villageName) is-invalid @enderror" data-village data-placeholder="{{ $villagePlaceholder }}" data-selected-code="{{ $selectedVillageCode }}" @disabled($initialCommune === null) @if ($villageRequired) required @endif>
             <option value="">{{ $villagePlaceholder }}</option>
@@ -90,6 +93,11 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                 select.disabled = true;
             }
 
+            function setHiddenSelectionValue(select, value) {
+                if (!select) return;
+                select.value = value;
+            }
+
             function formatCommuneLabel(name) {
                 const normalizedName = name.trim().replace(/\s+/g, ' ');
                 const match = normalizedName.match(/^(Xã|Phường|Thị trấn|Đặc khu)\s+(.+)$/iu);
@@ -125,7 +133,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                 resetSelect(communeSelect, '-- Chọn Xã/Phường --');
                 resetSelect(villageSelect, '-- Chọn Thôn/Bản --');
                 setStatus('');
-                if (!provinceCode) return;
+                if (!provinceCode || !communeSelect) return;
 
                 try {
                     const response = await fetch(`${picker.dataset.provincesUrl}/${encodeURIComponent(provinceCode)}/communes`);
@@ -134,7 +142,7 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                     const communes = await response.json();
                     communes.forEach(commune => communeSelect.add(new Option(formatCommuneLabel(commune.name), commune.code)));
                     communeSelect.disabled = false;
-                    communeSelect.value = selectedCode;
+                    setHiddenSelectionValue(communeSelect, selectedCode);
                     picker.dispatchEvent(new CustomEvent('location:communes-loaded', {
                         detail: {
                             provinceCode,
@@ -152,10 +160,12 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
             }
 
             picker.selectLocation = async (provinceCode = '', selectedCommuneCode = '', selectedVillageCode = '') => {
-                provinceSelect.value = provinceCode;
+                if (provinceSelect) {
+                    setHiddenSelectionValue(provinceSelect, provinceCode);
+                }
                 await loadCommunes(provinceCode, selectedCommuneCode, selectedVillageCode);
 
-                if (selectedCommuneCode && communeSelect.value !== selectedCommuneCode) {
+                if (selectedCommuneCode && communeSelect && communeSelect.value !== selectedCommuneCode) {
                     throw new Error('Không tải được danh sách xã/phường của tỉnh đã chọn.');
                 }
                 if (selectedVillageCode && villageSelect?.value !== selectedVillageCode) {
@@ -163,26 +173,30 @@ $selectedVillageCode = old($villageName, $villageCode ?? request($villageName, '
                 }
             };
 
-            provinceSelect.addEventListener('change', function() {
-                communeSelect.dataset.selectedCode = '';
-                if (villageSelect) villageSelect.dataset.selectedCode = '';
-                loadCommunes(this.value);
-            });
+            if (provinceSelect) {
+                provinceSelect.addEventListener('change', function() {
+                    if (communeSelect) communeSelect.dataset.selectedCode = '';
+                    if (villageSelect) villageSelect.dataset.selectedCode = '';
+                    loadCommunes(this.value);
+                });
+            }
 
-            communeSelect.addEventListener('change', function() {
-                if (villageSelect) villageSelect.dataset.selectedCode = '';
-                loadVillages(this.value);
-            });
+            if (communeSelect) {
+                communeSelect.addEventListener('change', function() {
+                    if (villageSelect) villageSelect.dataset.selectedCode = '';
+                    loadVillages(this.value);
+                });
+            }
 
-            if (provinceSelect.value) {
-                if (communeSelect.options.length > 1 && communeSelect.value) {
+            if (provinceSelect && provinceSelect.value) {
+                if (communeSelect && communeSelect.options.length > 1 && communeSelect.value) {
                     picker.dispatchEvent(new CustomEvent('location:communes-loaded', {
                         detail: {
                             provinceCode: provinceSelect.value,
                             communeCode: communeSelect.value
                         }
                     }));
-                } else {
+                } else if (communeSelect) {
                     loadCommunes(provinceSelect.value, communeSelect.dataset.selectedCode, villageSelect?.dataset.selectedCode || '');
                 }
             }

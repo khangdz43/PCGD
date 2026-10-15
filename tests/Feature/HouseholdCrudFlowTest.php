@@ -403,7 +403,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->deleteJson(route('households.import.destroy', $deleted))
             ->assertOk();
-        $this->assertSoftDeleted('import_logs', ['id' => $deleted->id]);
+        $this->assertDatabaseMissing('import_logs', ['id' => $deleted->id]);
     }
 
     public function test_import_submission_stores_the_file_and_queues_processing(): void

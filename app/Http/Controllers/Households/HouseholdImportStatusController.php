@@ -67,6 +67,10 @@ class HouseholdImportStatusController extends Controller
                 ? min(100, (int) floor($importLog->processed_rows * 100 / $importLog->total_rows))
                 : 0);
 
+        if ($importLog->status === 'FAILED') {
+            $progress = min(90, $progress);
+        }
+
         return [
             'status' => $importLog->status,
             'progress' => min(100, $progress),

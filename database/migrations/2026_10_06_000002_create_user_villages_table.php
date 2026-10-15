@@ -2,7 +2,6 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -16,17 +15,6 @@ return new class extends Migration
             $table->primary(['user_id', 'village_code']);
             $table->index('village_code');
         });
-
-        DB::table('users')
-            ->whereNotNull('village_code')
-            ->select(['id', 'village_code'])
-            ->orderBy('id')
-            ->each(function (object $user): void {
-                DB::table('user_villages')->insertOrIgnore([
-                    'user_id' => $user->id,
-                    'village_code' => $user->village_code,
-                ]);
-            });
     }
 
     public function down(): void

@@ -12,9 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            if (! Schema::hasColumn('users', 'username')) {
-                $table->string('username')->unique()->nullable()->after('name');
-            }
+            $table->foreign('province_code')
+                ->references('code')
+                ->on('provinces')
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
+
+            $table->foreign('commune_code')
+                ->references('code')
+                ->on('communes')
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
         });
     }
 
@@ -24,9 +32,8 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            if (Schema::hasColumn('users', 'username')) {
-                $table->dropColumn('username');
-            }
+            $table->dropForeign(['province_code']);
+            $table->dropForeign(['commune_code']);
         });
     }
 };

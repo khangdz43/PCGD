@@ -10,34 +10,26 @@ return new class extends Migration
     {
         Schema::create('schools', function (Blueprint $table) {
             $table->id();
-
-            // Mã trường
             $table->string('code', 50)->unique()->comment('Mã trường học (Duy nhất)');
-            $table->string('name', 255)->comment('Tên trường học');
-
-            // Cấp học: mầm non , tiểu học ...
+            $table->string('name', 255)->nullable()->comment('Tên trường học');
             $table->string('level', 50)->nullable()->comment('Cấp học');
-
-            // tỉnh xã của trường
             $table->string('province_code', 20)->nullable()->comment('Mã Tỉnh/Thành phố');
-            $table->string('communes_code', 20)->nullable()->comment('Mã Xã/Phường');
-
-          
+            $table->string('commune_code', 20)->nullable()->comment('Mã Xã/Phường');
             $table->timestamps();
 
-            // Khóa ngoại 
             $table->foreign('province_code')
                 ->references('code')
                 ->on('provinces')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
-            $table->foreign('communes_code')
+            $table->foreign('commune_code')
                 ->references('code')
                 ->on('communes')
-                ->nullOnDelete();
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
 
-            // Indexes
-            $table->index(['province_code', 'communes_code'], 'idx_school_location');
+            $table->index(['province_code', 'commune_code'], 'idx_school_location');
         });
     }
 

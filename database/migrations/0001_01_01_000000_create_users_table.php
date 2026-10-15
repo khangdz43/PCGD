@@ -14,11 +14,17 @@ return new class extends Migration
         Schema::create('users', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
+            $table->string('username')->unique()->nullable()->comment('Tên đăng nhập');
             $table->string('password');
+            $table->string('phone', 20)->nullable()->comment('Số điện thoại');
+            $table->boolean('is_active')->default(true)->comment('Trạng thái tài khoản đang hoạt động');
+            $table->string('province_code', 20)->nullable();
+            $table->string('commune_code', 20)->nullable();
+            $table->string('scope_level', 20)->nullable();
             $table->rememberToken();
             $table->timestamps();
+
+            $table->index(['province_code', 'commune_code'], 'idx_users_location');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

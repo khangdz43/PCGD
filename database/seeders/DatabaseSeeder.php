@@ -15,12 +15,20 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-
         $this->call([
+            ProvinceSeeder::class,
+            CommuneSeeder::class,
+            EthnicitySeeder::class,
             RolePermissionSeeder::class,
-            // ProvinceSeeder::class,
-            // CommuneSeeder::class,
-            // EthnicitySeeder::class,
         ]);
+
+        $shouldSeedTestAccounts = app()->environment(['local', 'testing'])
+            && is_string(env('PCGD_TEST_ACCOUNT_PASSWORD'))
+            && filled(env('PCGD_TEST_ACCOUNT_PASSWORD'))
+            && \App\Models\Household::query()->exists();
+
+        if ($shouldSeedTestAccounts) {
+            $this->call(AccessControlTestAccountsSeeder::class);
+        }
     }
 }

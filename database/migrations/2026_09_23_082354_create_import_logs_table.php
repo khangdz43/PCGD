@@ -6,30 +6,31 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-   
     public function up(): void
     {
         Schema::create('import_logs', function (Blueprint $table) {
             $table->id();
             $table->string('file_name', 255);
-            $table->string('uploaded_by', 100)->nullable();
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('file_path')->nullable();
+            $table->string('error_file_path')->nullable();
+            $table->json('context')->nullable();
             $table->integer('total_rows')->default(0);
+            $table->unsignedInteger('processed_rows')->default(0);
             $table->integer('success_rows')->default(0);
             $table->integer('error_rows')->default(0);
-            // comment trong mysql
             $table->string('status', 50)->nullable()->comment('PENDING, PROCESSING, SUCCESS, FAILED, ROLLED_BACK');
-            $table->json('error_details')->nullable(); // trả ra json thay vì text vì 
-            // lỗi có ở nhiều dòng mà text thì khó nhìn lắm để json để hthi tất những dòng lỗi
             $table->timestamp('created_at')->useCurrent();
+            $table->timestamp('notification_read_at')->nullable();
+
+            $table->foreign('user_id')
+                ->references('id')
+                ->on('users')
+                ->nullOnDelete()
+                ->cascadeOnUpdate();
         });
     }
 
-
-
-
-
-
-  
     public function down(): void
     {
         Schema::dropIfExists('import_logs');

@@ -45,13 +45,13 @@
                                 $progress = $import->status === 'SUCCESS'
                                     ? 100
                                     : ($import->total_rows > 0
-                                        ? min(90, (int) floor($import->processed_rows * 90 / $import->total_rows))
+                                        ? min(100, (int) floor($import->processed_rows * 100 / $import->total_rows))
                                         : 0);
                                 $statusLabel = match ($import->status) {
                                     'PENDING' => 'Đang chờ '.($queuePositions[$import->id] ?? '—').'/'.$queueTotal,
                                     'PROCESSING' => 'Đang xử lý',
                                     'SUCCESS' => 'Xử lý thành công',
-                                    'FAILED' => 'Xử lý thất bại',
+                                    'FAILED' => 'Xử lý Excel',
                                     'ROLLED_BACK' => 'Đã xóa phiếu nhập',
                                     default => 'Không xác định',
                                 };
@@ -209,7 +209,7 @@
                     PENDING: ['Đang chờ xử lý', 'text-bg-secondary'],
                     PROCESSING: ['Đang xử lý', 'text-bg-primary'],
                     SUCCESS: ['Xử lý thành công', 'text-bg-success'],
-                    FAILED: ['Xử lý thất bại', 'text-bg-danger'],
+                    FAILED: ['Xử lý Excel', 'text-bg-danger'],
                     ROLLED_BACK: ['Đã xóa phiếu nhập', 'text-bg-secondary'],
                 };
                 const [label, badgeClass] = labels[status.status] || ['Không xác định', 'text-bg-light'];
@@ -251,11 +251,33 @@
                     rows.forEach((row) => {
                         const status = payload.statuses?.[row.dataset.importId];
                         if (!status) return;
+                        const previousStatus = row.dataset.status;
                         updateRow(row, status);
                         completedImport ||= !['PENDING', 'PROCESSING'].includes(status.status);
+
+                        if (!['PENDING', 'PROCESSING'].includes(status.status) && row.dataset.finalNotificationSent !== 'true') {
+                            row.dataset.finalNotificationSent = 'true';
+                            const fileName = row.querySelector('td:nth-child(2)')?.textContent.trim() || 'File Excel';
+                            const isSuccess = status.status === 'SUCCESS';
+                            const message = isSuccess
+                                ? `File "${fileName}" đã nhập thành công.`
+                                : `File "${fileName}" nhập thất bại.`;
+                            window.showAppNotification(
+                                isSuccess ? 'success' : 'error',
+                                message,
+                                isSuccess ? 'Nhập dữ liệu thành công' : 'Nhập dữ liệu thất bại',
+                                { href: '{{ route('households.import-history', [], false) }}', label: 'Xem' },
+                            );
+                        }
+
+                        if (previousStatus && !['PENDING', 'PROCESSING'].includes(previousStatus) && row.dataset.finalNotificationSent === 'true') {
+                            row.dataset.finalNotificationSent = 'true';
+                        }
                     });
                     if (completedImport) {
-                        window.dispatchEvent(new Event('household-import-completed'));
+                        window.setTimeout(() => {
+                            window.dispatchEvent(new Event('household-import-completed'));
+                        }, 0);
                     }
                     scheduleStatusCheck();
                 } catch (error) {

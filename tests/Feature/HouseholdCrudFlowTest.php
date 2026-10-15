@@ -258,7 +258,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseCount('persons', 2);
     }
 
-    public function test_import_status_shows_capped_processing_progress_and_full_success(): void
+    public function test_import_status_shows_processing_progress_and_full_success(): void
     {
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $processing = $this->createImportLog($user, [
@@ -272,7 +272,7 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertOk()
             ->assertExactJson([
                 'status' => 'PROCESSING',
-                'progress' => 81,
+                'progress' => 90,
                 'processed_rows' => 9,
                 'total_rows' => 10,
                 'success_rows' => 0,
@@ -318,7 +318,7 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertOk()
             ->assertJsonCount(3, 'statuses')
             ->assertJsonPath('statuses.'.$processing->id.'.status', 'PROCESSING')
-            ->assertJsonPath('statuses.'.$processing->id.'.progress', 81)
+            ->assertJsonPath('statuses.'.$processing->id.'.progress', 90)
             ->assertJsonPath('statuses.'.$completed->id.'.status', 'SUCCESS')
             ->assertJsonPath('statuses.'.$completed->id.'.progress', 100)
             ->assertJsonMissingPath('statuses.'.$foreign->id)
@@ -368,7 +368,7 @@ class HouseholdCrudFlowTest extends TestCase
             'status' => 'FAILED',
             'file_path' => 'household-imports/failed/source.xlsx',
         ]);
-        $rolledBack = $this->createImportLog($user, ['status' => 'ROLLED_BACK']);
+        $deleted = $this->createImportLog($user, ['status' => 'DELETED']);
         $this->createImportLog($user, ['status' => 'PROCESSING']);
 
         Storage::disk('local')->put($successful->file_path, 'original');
@@ -401,9 +401,9 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseMissing('import_logs', ['id' => $failed->id]);
         Storage::disk('local')->assertMissing($failed->file_path);
 
-        $this->deleteJson(route('households.import.destroy', $rolledBack))
+        $this->deleteJson(route('households.import.destroy', $deleted))
             ->assertOk();
-        $this->assertDatabaseMissing('import_logs', ['id' => $rolledBack->id]);
+        $this->assertSoftDeleted('import_logs', ['id' => $deleted->id]);
     }
 
     public function test_import_submission_stores_the_file_and_queues_processing(): void

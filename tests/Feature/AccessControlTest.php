@@ -2203,7 +2203,7 @@ class AccessControlTest extends TestCase
         $this->get('/households/imports')
             ->assertOk()
             ->assertSee('import.xls')
-            ->assertSee('Xử lý thất bại')
+            ->assertSee('Xử lý Excel')
             ->assertSee('Tải file lỗi')
             ->assertDontSee('Xem chi tiết lỗi')
             ->assertDontSee('Ngày sinh không được ở tương lai.')

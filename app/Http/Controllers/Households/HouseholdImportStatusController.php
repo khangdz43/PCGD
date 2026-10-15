@@ -64,7 +64,7 @@ class HouseholdImportStatusController extends Controller
         $progress = $importLog->status === 'SUCCESS'
             ? 100
             : ($importLog->total_rows > 0
-                ? min(90, (int) floor($importLog->processed_rows * 90 / $importLog->total_rows))
+                ? min(100, (int) floor($importLog->processed_rows * 100 / $importLog->total_rows))
                 : 0);
 
         return [

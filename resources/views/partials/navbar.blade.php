@@ -13,10 +13,10 @@
                     </a>
                 </li>
 
-                {{-- Dropdown Danh mục: Active khi Route hiện tại thuộc nhóm 'villages.*' HOẶC 'schools.*' --}}
-                @canany(['manage-villages', 'manage-schools'])
+                {{-- Dropdown Danh mục: Active khi Route hiện tại thuộc nhóm danh mục --}}
+                @canany(['manage-villages', 'manage-schools', 'manage-access-control'])
                     @php
-                    $isCategoryActive = request()->routeIs('villages.*') || request()->routeIs('schools.*');
+                    $isCategoryActive = request()->routeIs('villages.*') || request()->routeIs('schools.*') || request()->routeIs('admin.roles.*');
                     @endphp
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {{ $isCategoryActive ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown">
@@ -34,6 +34,13 @@
                                 <li>
                                     <a class="dropdown-item {{ request()->routeIs('schools.*') ? 'active' : '' }}" href="{{ route('schools.index', [], false) }}">
                                         Danh sách Trường học
+                                    </a>
+                                </li>
+                            @endcan
+                            @can('manage-access-control')
+                                <li>
+                                    <a class="dropdown-item {{ request()->routeIs('admin.roles.*') ? 'active' : '' }}" href="{{ route('admin.roles.index', [], false) }}">
+                                        Nhóm người dùng
                                     </a>
                                 </li>
                             @endcan
@@ -64,11 +71,8 @@
                             <i class="fa-solid fa-shield-halved me-1"></i> Quản trị
                         </a>
                         <ul class="dropdown-menu">
-                            @can('manage-access-control')
-                                <li><a class="dropdown-item" href="{{ route('admin.roles.index') }}">Nhóm người dùng</a></li>
-                            @endcan
                             @can('manage-user-accounts')
-                                <li><a class="dropdown-item" href="{{ route('admin.users.index') }}">Quản lý tài khoản</a></li>
+                                <li><a class="dropdown-item {{ request()->routeIs('admin.users.*') ? 'active' : '' }}" href="{{ route('admin.users.index', [], false) }}">Quản lý tài khoản</a></li>
                             @endcan
                         </ul>
                     </li>

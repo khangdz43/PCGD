@@ -23,6 +23,7 @@ class UserRoleController extends Controller
         $provinces = $this->users->provincesForFilter($actor);
         $filter = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
+            'role_id' => ['nullable', 'integer', Rule::exists('roles', 'id')],
             'province_code' => ['nullable', 'string', Rule::in($provinces->pluck('code')->all())],
             'commune_code' => [
                 'nullable',
@@ -40,9 +41,16 @@ class UserRoleController extends Controller
             ],
         ]);
 
+        $roleOptions = Role::query()
+            ->whereIn('id', $this->users->availableRoles($actor, DelegatedAccess::manageableAccountLevels($actor))->modelKeys())
+            ->orderBy('scope_level')
+            ->orderBy('name')
+            ->get(['id', 'name', 'scope_level']);
+
         return view('admin.access-control.users.index', [
             ...$this->users->indexData($actor, $filter, $provinces),
             'actor' => $actor,
+            'roleOptions' => $roleOptions,
         ]);
     }
 

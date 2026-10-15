@@ -160,6 +160,39 @@ class AccessControlTest extends TestCase
         DB::disableQueryLog();
     }
 
+    public function test_account_index_can_filter_by_group_role(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $groupA = Role::create([
+            'name' => 'Nhóm A',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $groupB = Role::create([
+            'name' => 'Nhóm B',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+
+        $userA = User::factory()->create(['name' => 'Tài khoản thuộc nhóm A', 'is_active' => true]);
+        $userB = User::factory()->create(['name' => 'Tài khoản thuộc nhóm B', 'is_active' => true]);
+        $userA->roles()->attach($groupA);
+        $userB->roles()->attach($groupB);
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index', ['role_id' => $groupA->id]))
+            ->assertOk()
+            ->assertSee('Tài khoản thuộc nhóm A')
+            ->assertDontSee('Tài khoản thuộc nhóm B');
+    }
+
     public function test_admin_menu_destination_opens_the_first_available_management_page(): void
     {
         $systemAdminRole = Role::create([
@@ -1166,9 +1199,10 @@ class AccessControlTest extends TestCase
         $this->actingAs($admin)->get('/admin/roles')
             ->assertOk()
             ->assertSee('2 thành viên')
-            ->assertSee(route('admin.roles.members', $group))
-            ->assertSee('data-role-members-toggle', false)
-            ->assertSee('aria-expanded="false"', false)
+            ->assertDontSee(route('admin.roles.members', $group))
+            ->assertDontSee('data-role-members-toggle')
+            ->assertDontSee('aria-expanded="false"')
+            ->assertDontSee('role-members-panel')
             ->assertDontSee('class="scope-body open"', false)
             ->assertDontSee('>Quyền</th>', false)
             ->assertDontSee('permissions_count');
@@ -1221,6 +1255,32 @@ class AccessControlTest extends TestCase
             ->assertSee('aria-expanded="false"', false)
             ->assertSee('id="role-permissions-extra-' . $group->id . '" hidden', false)
             ->assertSee('Quyền kiểm thử 4');
+    }
+
+    public function test_role_index_hides_member_expansion_controls(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $group = Role::create([
+            'name' => 'Nhóm quản trị tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $member = User::factory()->create(['is_active' => true]);
+        $member->roles()->attach($group);
+
+        $this->actingAs($admin)
+            ->get(route('admin.roles.index'))
+            ->assertOk()
+            ->assertDontSee('data-role-members-toggle')
+            ->assertDontSee('Hiện danh sách thành viên bên dưới')
+            ->assertDontSee('role-members-panel');
     }
 
     public function test_local_account_cannot_view_members_of_another_accounts_group(): void

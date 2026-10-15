@@ -106,13 +106,14 @@
 
     /* ===== User Card ===== */
     .user-card {
-        display: flex;
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) minmax(0, 1.6fr) minmax(0, 1.2fr) auto;
         align-items: center;
-        gap: .55rem;
-        padding: .45rem .6rem;
+        gap: .75rem;
+        padding: .5rem .7rem;
         border: 1px solid #e5e9ef;
-        border-radius: .4rem;
-        margin-bottom: .3rem;
+        border-radius: .5rem;
+        margin-bottom: .35rem;
         background: #fff;
         transition: background-color .15s ease, border-color .15s ease;
     }
@@ -161,7 +162,6 @@
     }
 
     .user-info {
-        flex: 1;
         min-width: 0;
     }
 
@@ -187,7 +187,23 @@
         align-items: center;
         gap: .5rem;
         flex-wrap: wrap;
-        flex-shrink: 0;
+        min-width: 0;
+    }
+
+    .user-role-column {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: .25rem;
+    }
+
+    .user-role-label {
+        font-size: .68rem;
+        font-weight: 700;
+        color: #64748b;
+        letter-spacing: .02em;
+        text-transform: uppercase;
     }
 
     .user-role-badge {
@@ -224,6 +240,7 @@
 
     .user-actions {
         display: flex;
+        justify-content: flex-end;
         gap: .35rem;
         flex-shrink: 0;
     }
@@ -714,6 +731,17 @@
     <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-2" id="user-location-filter">
         <label class="visually-hidden" for="user-search">Tìm theo tên hoặc tên đăng nhập</label>
         <input id="user-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Tìm tên hoặc tên đăng nhập">
+
+        <label class="visually-hidden" for="user-role-filter">Lọc theo nhóm người dùng</label>
+        <select id="user-role-filter" name="role_id" class="form-select form-select-sm">
+            <option value="">Tất cả nhóm</option>
+            @foreach($roleOptions ?? collect() as $roleOption)
+                <option value="{{ $roleOption->id }}" @selected((string) ($roleId ?? request('role_id')) === (string) $roleOption->id)>
+                    {{ $roleOption->name }}
+                </option>
+            @endforeach
+        </select>
+
         @include('partials.location-picker', [
             'pickerId' => 'user-list-location',
             'provinces' => $provinces,
@@ -723,9 +751,6 @@
             'showVillage' => true,
             'inline' => true,
         ])
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-user-filter @if(!$isFiltering) hidden @endif>
-            <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Xóa lọc
-        </button>
         <a class="btn btn-sm btn-primary" href="{{ route('admin.users.create') }}">
             <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i>Tạo tài khoản
         </a>
@@ -1358,6 +1383,12 @@
             }
 
             filterForm.addEventListener('change', (event) => {
+                if (event.target.matches('[name="role_id"]')) {
+                    event.preventDefault();
+                    filterForm.requestSubmit();
+                    return;
+                }
+
                 if (event.target.matches('[data-province], [data-commune], [data-village]')) {
                     const url = selectedFiltersUrl();
                     refreshResults(url);

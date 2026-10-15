@@ -49,19 +49,24 @@
             </div>
         @endif
     </div>
-    <div class="user-meta">
+    <div class="user-role-column">
+        <div class="user-role-label">Nhóm người dùng</div>
         @if($user->roles->isNotEmpty())
-            @foreach($user->roles as $role)
-                <span class="user-role-badge">
-                    <i class="fa-solid fa-shield-halved me-1"></i>{{ $role->name }}
-                </span>
-            @endforeach
+            <div class="user-meta">
+                @foreach($user->roles as $role)
+                    <span class="user-role-badge">
+                        <i class="fa-solid fa-shield-halved me-1"></i>{{ $role->name }}
+                    </span>
+                @endforeach
+            </div>
         @else
-                <span class="user-role-badge user-role-empty">
+            <span class="user-role-badge user-role-empty">
                 <i class="fa-solid fa-circle-exclamation me-1"></i>Chưa gán nhóm
             </span>
         @endif
-            <span class="badge user-status {{ $user->is_active ? 'user-status-active' : 'user-status-inactive' }}">
+    </div>
+    <div class="user-meta">
+        <span class="badge user-status {{ $user->is_active ? 'user-status-active' : 'user-status-inactive' }}">
             <i class="fa-solid {{ $user->is_active ? 'fa-circle-check' : 'fa-ban' }} me-1"></i>{{ $user->is_active ? 'Hoạt động' : 'Đã khóa' }}
         </span>
     </div>

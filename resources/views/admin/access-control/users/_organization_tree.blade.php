@@ -8,9 +8,6 @@
     <div class="card-header bg-white">
         <div class="d-flex align-items-center justify-content-between gap-2">
             <div class="fw-semibold"><i class="fa-solid fa-sitemap me-2 text-secondary" aria-hidden="true"></i>Cây đơn vị</div>
-            <button class="btn btn-sm btn-link p-0 text-decoration-none" type="button" data-clear-user-filter @if(!$isFiltering) hidden @endif>
-                Bỏ chọn
-            </button>
         </div>
         <div class="small text-muted mt-1">Chọn địa bàn để lọc tài khoản.</div>
     </div>

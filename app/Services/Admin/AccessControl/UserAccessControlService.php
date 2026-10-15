@@ -99,8 +99,13 @@ class UserAccessControlService
             });
         }
 
+        if (filled($filter['role_id'] ?? null)) {
+            $query->whereHas('roles', fn (Builder $roles) => $roles->where('roles.id', (int) $filter['role_id']));
+        }
+
         $search = trim((string) ($filter['q'] ?? ''));
-        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode) || $search !== '';
+        $roleId = $filter['role_id'] ?? null;
+        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode) || filled($roleId) || $search !== '';
         $query->orderByRaw(
             'CASE
                 WHEN EXISTS (
@@ -225,6 +230,7 @@ class UserAccessControlService
             'unitProvinceCounts',
             'unitRootType',
             'unitRootCount',
+            'roleId',
         );
     }
 

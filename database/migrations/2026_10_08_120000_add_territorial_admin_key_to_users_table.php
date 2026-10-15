@@ -8,26 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            if (Schema::hasColumn('users', 'territorial_admin_key')) {
-                return;
-            }
-
-            $table->string('territorial_admin_key')
-                ->nullable()
-                ->storedAs("CASE WHEN is_active = 1 AND scope_level = 'province' THEN CONCAT('province:', province_code) WHEN is_active = 1 AND scope_level = 'commune' THEN CONCAT('commune:', commune_code) ELSE NULL END")
-                ->unique();
-        });
+        // Ràng buộc này không được ứng dụng sử dụng; kiểm tra trùng được thực hiện ở nghiệp vụ.
     }
 
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            if (! Schema::hasColumn('users', 'territorial_admin_key')) {
-                return;
-            }
+        if (! Schema::hasColumn('users', 'territorial_admin_key')) {
+            return;
+        }
 
-            $table->dropUnique(['territorial_admin_key']);
+        Schema::table('users', function (Blueprint $table) {
+            if (collect(Schema::getIndexes('users'))->pluck('name')->contains('users_territorial_admin_key_unique')) {
+                $table->dropUnique('users_territorial_admin_key_unique');
+            }
             $table->dropColumn('territorial_admin_key');
         });
     }

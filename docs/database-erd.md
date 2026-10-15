@@ -1,13 +1,19 @@
-# PCGD Database ERD
+# Sơ đồ cơ sở dữ liệu PCGD
+
+Sơ đồ Mermaid dưới đây mô tả các bảng nghiệp vụ, phân quyền và các bảng hạ tầng Laravel đang được dự án sử dụng.
 
 ```mermaid
 erDiagram
     users {
         bigint id PK
         varchar name
-        varchar email UK
-        timestamp email_verified_at
+        varchar username UK
         varchar password
+        boolean is_active
+        varchar scope_level
+        varchar province_code FK
+        varchar commune_code FK
+        bigint created_by
         varchar remember_token
         timestamp created_at
         timestamp updated_at
@@ -21,16 +27,16 @@ erDiagram
 
     sessions {
         varchar id PK
-        bigint user_id FK
+        bigint user_id
         varchar ip_address
         text user_agent
-        text payload
+        longtext payload
         int last_activity
     }
 
     cache {
         varchar key PK
-        text value
+        mediumtext value
         int expiration
     }
 
@@ -43,7 +49,7 @@ erDiagram
     jobs {
         bigint id PK
         varchar queue
-        text payload
+        longtext payload
         tinyint attempts
         int reserved_at
         int available_at
@@ -56,8 +62,8 @@ erDiagram
         int total_jobs
         int pending_jobs
         int failed_jobs
-        text failed_job_ids
-        text options
+        longtext failed_job_ids
+        mediumtext options
         int cancelled_at
         int created_at
         int finished_at
@@ -68,20 +74,68 @@ erDiagram
         varchar uuid UK
         text connection
         text queue
-        text payload
-        text exception
+        longtext payload
+        longtext exception
         timestamp failed_at
+    }
+
+    migrations {
+        bigint id PK
+        varchar migration
+        int batch
+    }
+
+    roles {
+        bigint id PK
+        varchar name
+        varchar guard_name
+        varchar scope_level
+        varchar description
+        bigint created_by FK
+        varchar province_code FK
+        varchar commune_code FK
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    permissions {
+        bigint id PK
+        varchar name
+        varchar guard_name
+        varchar description
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    role_has_permissions {
+        bigint role_id PK, FK
+        bigint permission_id PK, FK
+    }
+
+    model_has_roles {
+        bigint role_id PK, FK
+        varchar model_type PK
+        bigint model_id PK
+        bigint assigned_by FK
+    }
+
+    user_villages {
+        bigint user_id PK, FK
+        varchar village_code PK, FK
     }
 
     import_logs {
         bigint id PK
         varchar file_name
-        varchar uploaded_by
+        bigint user_id FK
+        varchar file_path
+        varchar error_file_path
+        json context
         int total_rows
+        int processed_rows
         int success_rows
         int error_rows
         varchar status
-        json error_details
         timestamp created_at
     }
 
@@ -207,19 +261,32 @@ erDiagram
         timestamp updated_at
     }
 
-    import_logs ||--o{ households : imports
-    import_logs ||--o{ persons : imports
-    import_logs ||--o{ person_educations : imports
+    users ||--o{ users : creates
+    users ||--o{ roles : creates
+    users ||--o{ model_has_roles : assigns
+    users ||--o{ model_has_roles : receives
+    users ||--o{ import_logs : uploads
+    users ||--o{ user_villages : assigned
+
+    roles ||--o{ role_has_permissions : grants
+    permissions ||--o{ role_has_permissions : included
+    roles ||--o{ model_has_roles : assigned
 
     provinces ||--o{ communes : contains
     communes ||--o{ villages : contains
     provinces o|--o{ schools : locates
     communes o|--o{ schools : locates
+    provinces o|--o{ users : scopes
+    communes o|--o{ users : scopes
+    villages ||--o{ user_villages : assigned
+
+    import_logs o|--o{ households : imports
+    import_logs o|--o{ persons : imports
+    import_logs o|--o{ person_educations : imports
 
     provinces o|--o{ households : locates
     communes o|--o{ households : locates
     villages o|--o{ households : locates
-
     households ||--o{ persons : has
     ethnicities o|--o{ persons : classifies
     persons ||--o{ person_educations : studies
@@ -227,15 +294,19 @@ erDiagram
     persons ||--o| person_disabilities : records
 ```
 
-## Database rules not visible as relationships
+## Ràng buộc và lưu ý
 
-- `households` has a unique constraint on `(school_year, household_code)`.
-- `person_educations` has a unique constraint on `(person_id, school_year)`.
-- Database triggers `persons_one_head_before_insert` and `persons_one_head_before_update` enforce at most one person with `relationship_with_head = 'Chủ hộ'` per household.
-- Deleting a household cascades to its persons; deleting a person cascades to education and disability records.
-- `import_logs` are nullable parents for imported household, person, and education rows; deleting an import log sets those foreign keys to `NULL`.
-- `sessions.user_id` is indexed but is not defined as a foreign key in the Laravel migration.
-
-```
-
-```
+- `households` có unique constraint trên cặp `(school_year, household_code)`.
+- `person_educations` có unique constraint trên cặp `(person_id, school_year)`.
+- `roles` có unique constraint trên `(created_by, name, guard_name)`.
+- `permissions` có unique constraint trên `(name, guard_name)`.
+- `role_has_permissions` là bảng nối nhiều-nhiều giữa `roles` và `permissions`.
+- `model_has_roles` là bảng gán role polymorphic: `model_id` kết hợp với `model_type` xác định model nhận role; `assigned_by` lưu người cấp.
+- `user_villages` là bảng nối nhiều-nhiều giữa tài khoản và thôn/xóm.
+- Trigger `persons_one_head_before_insert` và `persons_one_head_before_update` đảm bảo mỗi hộ tối đa một nhân khẩu có `relationship_with_head = 'Chủ hộ'`.
+- Xóa hộ sẽ xóa nhân khẩu liên quan; xóa nhân khẩu sẽ xóa dữ liệu học tập và khuyết tật.
+- Xóa `import_logs` đặt `import_log_id` của các bản ghi nhập liên quan thành `NULL`.
+- `sessions.user_id` được đánh index nhưng không có foreign key trong migration Laravel.
+- `model_has_roles.model_id` và `model_type` không có foreign key vì đây là quan hệ polymorphic.
+- Bảng `model_has_permissions` không còn được sử dụng; migration ngày `2026-10-12` đã xóa bảng này.
+- Trường phân quyền `users.created_by` được ứng dụng và kiểm thử sử dụng. Hãy đối chiếu cột này với schema đang chạy nếu môi trường chưa áp dụng migration tạo cột.

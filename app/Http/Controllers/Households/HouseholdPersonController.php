@@ -3,30 +3,26 @@
 namespace App\Http\Controllers\Households;
 
 use App\Http\Controllers\Controller;
-use App\Models\Ethnicity;
 use App\Models\Household;
 use App\Models\Person;
-use App\Models\PersonDisability;
 use App\Models\PersonEducation;
-use App\Models\Province;
 use App\Models\Role;
-use App\Models\School;
-use App\Models\User;
+use App\Services\Households\HouseholdPersonService;
 use App\Support\DataAccessScope;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class HouseholdPersonController extends Controller
 {
+    public function __construct(private readonly HouseholdPersonService $people) {}
+
     public function create(Request $request, Household $household)
     {
         $this->assertHouseholdAccess($request, $household);
         // is_head 1 thì là true
         $isHouseholdHead = $request->boolean('is_head');
-        $headPersonExists = $household->persons()->where('relationship_with_head', 'Chủ hộ')->exists();
-        $headPerson = $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
+        $headPerson = $this->people->headFor($household);
+        $headPersonExists = $headPerson !== null;
 
         // excep
         if ($isHouseholdHead && $headPersonExists) {
@@ -42,17 +38,9 @@ class HouseholdPersonController extends Controller
                 ->with('warning', 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.');
         }
 
-        $person = new Person;
-        $person->gender = 'NAM';
-        if ($isHouseholdHead) {
-            $person->first_name = $household->head_first_name;
-            $person->last_name = $household->head_last_name;
-            $person->relationship_with_head = 'Chủ hộ';
-        } elseif ($headPerson) {
-            $person->ethnicity_code = $headPerson->ethnicity_code;
-        }
+        $person = $this->people->newPerson($household, $isHouseholdHead, $headPerson);
         // mặc định tên của chủ hộ khi thêm vào bảng person
-        $formData = $this->formData($person, $isHouseholdHead, $household->school_year);
+        $formData = $this->people->formData($person, $isHouseholdHead, $request->user(), $household->school_year);
 
         // lúc thêm thành viên mới có các thông tin của chủ hộ , person (Nam) , formdataa (năm)
         return view('households.members.create', array_merge(compact('household', 'person', 'isHouseholdHead'), $formData));
@@ -62,8 +50,8 @@ class HouseholdPersonController extends Controller
     {
         $this->assertHouseholdAccess($request, $household);
         $isHouseholdHead = $request->boolean('is_head');
-        $headPersonExists = $household->persons()->where('relationship_with_head', 'Chủ hộ')->exists();
-        $headPerson = $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
+        $headPerson = $this->people->headFor($household);
+        $headPersonExists = $headPerson !== null;
 
         // xu li excep
         if (! $isHouseholdHead && ! $headPersonExists) {
@@ -76,26 +64,12 @@ class HouseholdPersonController extends Controller
         }
 
         $data = $request->validate($this->rules($request, $isHouseholdHead));
-        $relationshipAgeError = $this->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
+        $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return back()->withErrors(['relationship_with_head' => $relationshipAgeError])->withInput();
         }
 
-        if ($isHouseholdHead) {
-            $data['last_name'] = $household->head_last_name;
-            $data['first_name'] = $household->head_first_name;
-        }
-
-        // tách data thành 3 mảng riêng biệt
-        [$personData, $educationData, $disabilityData] = $this->splitFormData($data);
-        $personData['relationship_with_head'] = $isHouseholdHead ? 'Chủ hộ' : $personData['relationship_with_head'];
-
-        // thêm vào 3 bảng
-        DB::transaction(function () use ($household, $personData, $educationData, $disabilityData) {
-            $person = $household->persons()->create($personData);
-            $person->educations()->create($educationData);
-            $person->disability()->create($disabilityData);
-        });
+        $this->people->create($household, $data, $isHouseholdHead);
 
         if (! $request->user()->can('view-households')) {
             return redirect()->to(route('households.members.create', [
@@ -114,14 +88,7 @@ class HouseholdPersonController extends Controller
     public function show(Household $household, int $personId)
     {
         $this->assertHouseholdAccess(request(), $household);
-        $household->load('province', 'commune', 'village');
-        $personQuery = $household->persons()->with([
-            'ethnicity',
-            'educations',
-            'educations.school',
-            'disability',
-        ]);
-        $person = $this->scopePersonQuery($personQuery, request())->findOrFail($personId);
+        $person = $this->people->findWithDetails($household, $personId);
 
         return view('households.members.show', compact('household', 'person'));
     }
@@ -129,9 +96,9 @@ class HouseholdPersonController extends Controller
     public function edit(Household $household, int $personId)
     {
         $this->assertHouseholdAccess(request(), $household);
-        $person = $this->scopePersonQuery($household->persons(), request())->findOrFail($personId);
+        $person = $this->people->find($household, $personId);
         $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
-        $formData = $this->formData($person, $isHouseholdHead, $household->school_year);
+        $formData = $this->people->formData($person, $isHouseholdHead, request()->user(), $household->school_year);
 
         return view('households.members.edit', array_merge(compact('household', 'person', 'isHouseholdHead'), $formData));
     }
@@ -140,45 +107,19 @@ class HouseholdPersonController extends Controller
     {
         $this->assertHouseholdAccess($request, $household);
         // người trong hộ này
-        $person = $this->scopePersonQuery($household->persons(), $request)->findOrFail($personId);
+        $person = $this->people->find($household, $personId);
         $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
-        $headPerson = $isHouseholdHead
-            ? null
-            : $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
+        $headPerson = $isHouseholdHead ? null : $this->people->headFor($household);
         // tìm năm học mới nhất vì trong bảng education sẽ có nhiều năm (varchar )
-        $educationQuery = $person->educations();
-        $education = $educationQuery->orderByDesc('school_year')->first();
+        $education = $this->people->latestEducation($person);
         // validate
         $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education));
-        $relationshipAgeError = $this->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
+        $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return back()->withErrors(['relationship_with_head' => $relationshipAgeError])->withInput();
         }
 
-        if ($isHouseholdHead) {
-            // nếu education tồn tại thì lấy năm ra , còn null thì lấy năm của chủ hộ còn k lấy năm hiện tại ở form sửa
-            $data['education']['school_year'] = $education?->school_year ?: ($household->school_year ?: $this->currentSchoolYear());
-        }
-        [$personData, $educationData, $disabilityData] = $this->splitFormData($data);
-
-        if ($isHouseholdHead) {
-            $personData['relationship_with_head'] = 'Chủ hộ';
-            DB::transaction(function () use ($person, $household, $personData, $education, $educationData, $disabilityData) {
-                $person->update($personData);
-                // nếu chủ hộ sửa thì phải đồng bộ
-                $household->update([
-                    'head_first_name' => $personData['first_name'],
-                    'head_last_name' => $personData['last_name'],
-                ]);
-                $this->saveEducationAndDisability($person, $education, $educationData, $disabilityData);
-            });
-        } else {
-            // thành viên thường thì k cần
-            DB::transaction(function () use ($person, $personData, $education, $educationData, $disabilityData) {
-                $person->update($personData);
-                $this->saveEducationAndDisability($person, $education, $educationData, $disabilityData);
-            });
-        }
+        $this->people->update($household, $person, $data, $isHouseholdHead, $education);
 
         return redirect()->to(route('households.show', $household, false))->with('success', 'Đã cập nhật thành viên.');
     }
@@ -186,12 +127,9 @@ class HouseholdPersonController extends Controller
     public function destroy(Request $request, Household $household, int $personId)
     {
         $this->assertHouseholdAccess($request, $household);
-        $person = $this->scopePersonQuery($household->persons(), $request)->findOrFail($personId);
-
-        if (
-            $person->relationship_with_head === 'Chủ hộ'
-            && $household->persons()->where('relationship_with_head', '!=', 'Chủ hộ')->exists()
-        ) {
+        $person = $this->people->find($household, $personId);
+        $isHouseholdHead = $this->people->delete($person, $household);
+        if ($isHouseholdHead === null) {
             if ($request->expectsJson()) {
                 return response()->json([
                     'message' => 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.',
@@ -202,8 +140,6 @@ class HouseholdPersonController extends Controller
                 ->with('warning', 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.');
         }
 
-        $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
-        $person->delete();
         $message = $isHouseholdHead
             ? 'Đã xóa hồ sơ chủ hộ. Cần nhập lại chủ hộ trước khi thêm thành viên.'
             : 'Đã xóa thành viên khỏi hộ.';
@@ -226,32 +162,18 @@ class HouseholdPersonController extends Controller
             'person_ids.*' => ['integer', 'distinct', 'exists:persons,id'],
         ]);
         // lấy các id person mà client tick trong list ids
-        $personsQuery = Person::whereIn('id', $data['person_ids'])
-            ->whereHas('household', fn ($query) => DataAccessScope::households($query, $request->user()));
-        $persons = $personsQuery->get();
-        abort_unless($persons->count() === count($data['person_ids']), 404);
-        foreach ($persons as $person) {
-            if (
-                // check xem người này có phải chủ hộ không
-                $person->relationship_with_head === 'Chủ hộ'
-                // chủ hộ còn tghanfh viên trong gia đình
-                && Person::where('household_id', $person->household_id)
-                    ->where('relationship_with_head', '!=', 'Chủ hộ')
-                    ->exists()
-            ) {
-                if ($request->expectsJson()) {
-                    return response()->json([
-                        'message' => 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.',
-                    ], 422);
-                }
-
-                return back()->with('warning', 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.');
+        $persons = $this->people->findManyForDeletion($request->user(), $data['person_ids']);
+        if ($this->people->hasNonHeadMembersForSelectedHeads($persons)) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.',
+                ], 422);
             }
+
+            return back()->with('warning', 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.');
         }
         // xóa các thằng hợp lệ
-        DB::transaction(function () use ($persons) {
-            Person::whereIn('id', $persons->modelKeys())->delete();
-        });
+        $this->people->deleteMany($persons);
 
         $message = "Đã xóa {$persons->count()} thành viên đã chọn.";
 
@@ -286,7 +208,7 @@ class HouseholdPersonController extends Controller
             : ['required', 'string', 'max:100', Rule::notIn(['Chủ hộ'])];
 
         // chỉ cho phép những cái có
-        $schoolYearRules = ['required', Rule::in($this->schoolYears())];
+        $schoolYearRules = ['required', Rule::in($this->people->schoolYears())];
         if ($person?->exists) {
             // 1 person chỉ được có 1 education trong 1 năm
             $uniqueSchoolYear = Rule::unique('person_educations', 'school_year')->where('person_id', $person->id);
@@ -357,7 +279,7 @@ class HouseholdPersonController extends Controller
             'education.learning_capacity' => 'nullable|string|max:50',
         ];
 
-        foreach ($this->disabilityBooleanFields() as $field) {
+        foreach ($this->people->disabilityBooleanFields() as $field) {
             // toàn bộ fieild ở disbility lấy ở method trên cho null và boolean
             $rules["disability.{$field}"] = 'nullable|boolean';
         }
@@ -373,129 +295,5 @@ class HouseholdPersonController extends Controller
     private function assertHouseholdAccess(Request $request, Household $household): void
     {
         abort_unless(DataAccessScope::canAccessHousehold($request->user(), $household), 404);
-    }
-
-    private function scopePersonQuery(HasMany $query, Request $request): HasMany
-    {
-        return $query;
-    }
-
-    private function relationshipAgeError(?string $relationship, string $birthDate, ?Person $headPerson): ?string
-    {
-        if (! $headPerson?->dob || $relationship === null) {
-            return null;
-        }
-
-        $headBirthDate = substr((string) $headPerson->getRawOriginal('dob'), 0, 10);
-        $isYoungerRelationship = in_array($relationship, ['Con', 'Em', 'Cháu'], true);
-        $isOlderRelationship = in_array($relationship, ['Cha', 'Mẹ', 'Anh', 'Chị', 'Ông', 'Bà', 'Bác', 'Cô', 'Chú', 'Dì', 'Cậu'], true);
-
-        if ($isYoungerRelationship && $birthDate <= $headBirthDate) {
-            return "Người có quan hệ {$relationship} phải nhỏ tuổi hơn chủ hộ.";
-        }
-
-        if ($isOlderRelationship && $birthDate >= $headBirthDate) {
-            return "Người có quan hệ {$relationship} phải lớn tuổi hơn chủ hộ.";
-        }
-
-        return null;
-    }
-
-    private function formData(Person $person, bool $isHouseholdHead, ?string $householdSchoolYear = null): array
-    {
-        /** @var User $user */
-        $user = request()->user();
-        $educationQuery = $person->educations()->with('school');
-        $education = $person->exists
-            ? $educationQuery->orderByDesc('school_year')->first()
-            : null;
-        // nếu education null
-        $education ??= new PersonEducation(['school_year' => $householdSchoolYear ?: $this->currentSchoolYear()]);
-
-        $disability = $person->exists ? $person->disability()->first() : null;
-        $disability ??= new PersonDisability;
-
-        $provinceQuery = Province::query()->orderBy('name');
-        $schoolQuery = School::query()->orderBy('name');
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $provinceQuery->where('code', $user->province_code);
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
-                $schoolQuery->where('commune_code', $user->commune_code);
-            } else {
-                $schoolQuery->where('province_code', $user->province_code);
-            }
-        }
-
-        return [
-            'education' => $education,
-            'disability' => $disability,
-            'ethnicities' => Ethnicity::orderBy('name')->get(['code', 'name']),
-            'provinces' => $provinceQuery->get(['code', 'name']),
-            'schools' => $schoolQuery->get(['code', 'name', 'level', 'province_code', 'commune_code']),
-        ];
-    }
-
-    private function splitFormData(array $data): array
-    {
-        $personData = $data;
-        // bỏ bọn data k thuộc mảng person
-        unset($personData['education'], $personData['disability'], $personData['school_province_code'], $personData['school_commune_code']);
-
-        $educationData = $data['education'];
-        $educationData['is_complementary'] = (bool) ($educationData['is_complementary'] ?? false);
-
-        $disabilityData = $data['disability'] ?? [];
-        foreach ($this->disabilityBooleanFields() as $field) {
-            $disabilityData[$field] = (bool) ($disabilityData[$field] ?? false);
-        }
-
-        return [$personData, $educationData, $disabilityData];
-    }
-
-    private function saveEducationAndDisability(Person $person, ?PersonEducation $education, array $educationData, array $disabilityData): void
-    {
-        // education không null và tồn tại
-        if ($education?->exists) {
-            $education->update($educationData);
-        } else {
-            // th ng dùng vào thêm
-            $person->educations()->create($educationData);
-        }
-
-        $person->disability()->updateOrCreate([], $disabilityData);
-    }
-
-    private function disabilityBooleanFields(): array
-    {
-        return [
-            'mobility_disability',
-            'hearing_speech_disability',
-            'visual_disability',
-            'mental_disability',
-            'intellectual_disability',
-            'learning_disability',
-            'autism',
-            'other_disability',
-            'has_disability_cert',
-            'can_study',
-        ];
-    }
-
-    private function currentSchoolYear(): string
-    {
-        $year = now()->year;
-        $startYear = now()->month >= 8 ? $year : $year - 1;
-
-        return $startYear.'-'.($startYear + 1);
-    }
-
-    private function schoolYears(): array
-    {
-        $lastSchoolYear = now()->month >= 8 ? now()->year : now()->year - 1;
-
-        return array_map(
-            fn (int $year): string => "{$year}-".($year + 1),
-            range(2020, $lastSchoolYear)
-        );
     }
 }

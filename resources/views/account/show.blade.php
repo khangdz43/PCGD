@@ -6,7 +6,9 @@
     <div class="container">
         <div class="mb-4">
             <h1 class="h3 mb-1">Thông tin tài khoản</h1>
-            <p class="text-muted mb-0">Thông tin nhóm quyền, quyền được cấp và phạm vi điều tra của bạn.</p>
+            <p class="text-muted mb-0">
+                Thông tin nhóm quyền, quyền được cấp và phạm vi điều tra của bạn.
+            </p>
         </div>
 
         <div class="row g-4">
@@ -84,7 +86,6 @@
                     </div>
                 </section>
             </div>
-
             <div class="col-12">
                 <section class="card shadow-sm">
                     <div class="card-header bg-white">

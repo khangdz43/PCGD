@@ -19,7 +19,7 @@
     <div class="mb-3">
         <label for="description" class="form-label">Mô tả</label>
         <textarea id="description" class="form-control @error('description') is-invalid @enderror" name="description" maxlength="255" rows="2">{{ old('description', $role->description) }}</textarea>
-        <div class="form-text">Ví dụ: Phòng nhập liệu — được xem, tạo và cập nhật phiếu điều tra.</div>
+        <div class="form-text">Ví dụ: Admin có thể thao tác mọi quyền theo scope</div>
         @error('description')<div class="invalid-feedback">{{ $message }}</div>@enderror
     </div>
 
@@ -37,6 +37,7 @@
     <fieldset
         class="mb-4"
         data-default-scope="{{ $role->name === \App\Models\Role::SYSTEM_ADMIN ? 'global' : ($scopeLevel ?: 'global') }}"
+        data-permission-prerequisites="{{ json_encode(\App\Support\AccessPermission::prerequisites()) }}"
     >
         @if ($role->name !== \App\Models\Role::SYSTEM_ADMIN)
             <div class="mb-3">
@@ -44,7 +45,7 @@
                 <select id="scope_level" class="form-select @error('scope_level') is-invalid @enderror" name="scope_level" required>
                     @foreach ($scopeLevels as $level)
                         <option value="{{ $level }}" @selected($scopeLevel === $level)>
-                            {{ ['province' => 'Tỉnh', 'commune' => 'Xã', 'village' => 'Thôn / xóm'][$level] ?? $level }}
+                            {{ ['global' => 'Trung ương', 'province' => 'Tỉnh', 'commune' => 'Xã', 'village' => 'Thôn / xóm'][$level] ?? $level }}
                         </option>
                     @endforeach
                 </select>
@@ -60,9 +61,21 @@
             @endif
         </p>
         @php
+            $permissionDefinitions = \App\Support\AccessPermission::definitions();
             $selected = collect(old('permissions', $role->exists ? $role->permissions->modelKeys() : []))
                 ->map(fn ($id) => (int) $id)
                 ->all();
+            $selectedPermissionNames = $permissions
+                ->whereIn('id', $selected)
+                ->pluck('name');
+            if ($selectedPermissionNames->contains(\App\Support\AccessPermission::MANAGE_USER_ACCOUNTS)) {
+                $groupManagementPermissionId = $permissions
+                    ->firstWhere('name', \App\Support\AccessPermission::MANAGE_ACCESS_CONTROL)
+                    ?->id;
+                if ($groupManagementPermissionId !== null) {
+                    $selected[] = (int) $groupManagementPermissionId;
+                }
+            }
             $householdPermissions = collect(\App\Support\AccessPermission::householdPermissions());
             $selectedHouseholdPermissionIds = $permissions
                 ->whereIn('name', $householdPermissions)
@@ -98,7 +111,7 @@
                             <tr class="table-secondary">
                                 <th colspan="2" scope="rowgroup">Quản trị về nhân khẩu và phiếu</th>
                             </tr>
-                            <tr @class(['d-none' => $scopeLevel === 'village']) data-group-control data-scopes="{{ $role->name === \App\Models\Role::SYSTEM_ADMIN ? 'global' : 'commune' }}">
+                            <tr @class(['d-none' => $scopeLevel === 'village']) data-group-control data-scopes="{{ $role->name === \App\Models\Role::SYSTEM_ADMIN ? 'global' : implode(',', array_intersect($scopeLevels, ['global', 'commune'])) }}">
                                 <td class="text-center">
                                     <input
                                         id="permission-group-households"
@@ -138,7 +151,7 @@
                                     </td>
                                     <td>
                                         <label class="form-label mb-0 fw-semibold" for="permission-{{ $permission->id }}">
-                                            {{ $permission->description ?: 'Chưa có mô tả' }}
+                                            {{ $permissionDefinitions[$permission->name] ?? $permission->description ?: 'Chưa có mô tả' }}
                                         </label>
                                     </td>
                                 </tr>
@@ -174,7 +187,7 @@
                                     </td>
                                     <td>
                                         <label class="form-label mb-0 fw-semibold" for="permission-{{ $permission->id }}">
-                                            {{ $permission->description ?: 'Chưa có mô tả' }}
+                                            {{ $permissionDefinitions[$permission->name] ?? $permission->description ?: 'Chưa có mô tả' }}
                                         </label>
                                     </td>
                                 </tr>
@@ -199,8 +212,37 @@
         const checkboxes = [...document.querySelectorAll('.permission-checkbox')];
         const scopeLevel = document.getElementById('scope_level');
         const defaultScope = document.querySelector('[data-default-scope]')?.dataset.defaultScope || 'global';
+        const permissionPrerequisites = JSON.parse(
+            document.querySelector('[data-default-scope]')?.dataset.permissionPrerequisites || '{}'
+        );
         const rows = [...document.querySelectorAll('[data-permission-row]')];
         const groups = [...document.querySelectorAll('[data-permission-group]')];
+
+        function enablePrerequisites(permissionName) {
+            (permissionPrerequisites[permissionName] || []).forEach((prerequisiteName) => {
+                const prerequisite = checkboxes.find(
+                    (checkbox) => checkbox.dataset.permissionName === prerequisiteName
+                );
+                if (prerequisite && !prerequisite.disabled && !prerequisite.checked) {
+                    prerequisite.checked = true;
+                    enablePrerequisites(prerequisiteName);
+                }
+            });
+        }
+
+        function disableDependents(permissionName) {
+            Object.entries(permissionPrerequisites).forEach(([dependentName, prerequisites]) => {
+                if (!prerequisites.includes(permissionName)) return;
+
+                const dependent = checkboxes.find(
+                    (checkbox) => checkbox.dataset.permissionName === dependentName
+                );
+                if (dependent?.checked) {
+                    dependent.checked = false;
+                    disableDependents(dependentName);
+                }
+            });
+        }
 
         function filterPermissions() {
             const level = scopeLevel?.value || defaultScope;
@@ -258,7 +300,16 @@
         });
 
         checkboxes.forEach((checkbox) => {
+            if (checkbox.checked) {
+                enablePrerequisites(checkbox.dataset.permissionName);
+            }
+
             checkbox.addEventListener('change', () => {
+                if (checkbox.checked) {
+                    enablePrerequisites(checkbox.dataset.permissionName);
+                } else {
+                    disableDependents(checkbox.dataset.permissionName);
+                }
                 if (checkbox.closest('[data-household-permission]')) {
                     updateHouseholdMaster();
                 }

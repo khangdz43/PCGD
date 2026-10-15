@@ -35,7 +35,10 @@
                             <th scope="col">Thao tác</th>
                         </tr>
                     </thead>
-                    <tbody>
+                    <tbody
+                        data-import-statuses
+                        data-statuses-url="{{ route('households.import.statuses', [], false) }}"
+                    >
                         @foreach ($imports as $import)
                             @php
                                 $isProcessing = in_array($import->status, ['PENDING', 'PROCESSING'], true);
@@ -45,7 +48,7 @@
                                         ? min(90, (int) floor($import->processed_rows * 90 / $import->total_rows))
                                         : 0);
                                 $statusLabel = match ($import->status) {
-                                    'PENDING' => 'Đang chờ xử lý',
+                                    'PENDING' => 'Đang chờ '.($queuePositions[$import->id] ?? '—').'/'.$queueTotal,
                                     'PROCESSING' => 'Đang xử lý',
                                     'SUCCESS' => 'Xử lý thành công',
                                     'FAILED' => 'Xử lý thất bại',
@@ -63,7 +66,7 @@
                             @endphp
                             <tr
                                 data-import-row
-                                data-status-url="{{ route('households.import.status', $import, false) }}"
+                                data-import-id="{{ $import->id }}"
                                 data-status="{{ $import->status }}"
                                 @if (request('import_id') == $import->id) class="table-primary" @endif
                             >
@@ -86,8 +89,13 @@
                                     @endif
                                 </td>
                                 <td class="text-nowrap">
-                                    @if (! $isProcessing && $import->file_path && $import->status !== 'FAILED')
-                                        <a class="btn btn-sm btn-outline-primary mb-1" href="{{ route('households.import.download', $import, false) }}">
+                                    @if ($import->file_path)
+                                        <a
+                                            data-original-download
+                                            class="btn btn-sm btn-outline-primary mb-1"
+                                            href="{{ route('households.import.download', $import, false) }}"
+                                            download="{{ $import->file_name }}"
+                                        >
                                             <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải file gốc
                                         </a>
                                     @endif
@@ -96,19 +104,23 @@
                                             data-error-download
                                             class="btn btn-sm btn-outline-danger mb-1 {{ $import->status === 'FAILED' ? '' : 'd-none' }}"
                                             href="{{ route('households.import.download-errors', $import, false) }}"
+                                            download="{{ pathinfo($import->file_name, PATHINFO_FILENAME) }}-loi{{ pathinfo($import->file_name, PATHINFO_EXTENSION) ? '.'.pathinfo($import->file_name, PATHINFO_EXTENSION) : '' }}"
                                         >
                                             <i class="fa-solid fa-download me-1" aria-hidden="true"></i> Tải file lỗi
                                         </a>
                                     @endif
-                                    @if ($import->status === 'SUCCESS' && $import->success_rows > 0)
-                                        <form class="d-inline" data-delete-imported-records action="{{ route('households.import.destroy', $import, false) }}" method="POST">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button class="btn btn-sm btn-outline-danger mb-1" type="submit">
-                                                <i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Xóa phiếu đã nhập
-                                            </button>
-                                        </form>
-                                    @endif
+                                    <form class="d-inline" data-delete-import-history action="{{ route('households.import.destroy', $import, false) }}" method="POST">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button
+                                            class="btn btn-sm btn-outline-danger mb-1"
+                                            type="submit"
+                                            @disabled($isProcessing)
+                                            title="{{ $isProcessing ? 'Chờ file xử lý xong để xóa lịch sử' : 'Chỉ xóa lịch sử và file tải lên, không xóa dữ liệu đã nhập' }}"
+                                        >
+                                            <i class="fa-solid fa-trash me-1" aria-hidden="true"></i> Xóa lịch sử
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
                         @endforeach
@@ -126,15 +138,23 @@
 @push('scripts')
 <script>
     (() => {
-        document.querySelectorAll('[data-delete-imported-records]').forEach((form) => {
-            form.addEventListener('submit', async (event) => {
+        if (!window.householdImportHistoryDeleteHandlerInitialized) {
+            window.householdImportHistoryDeleteHandlerInitialized = true;
+            document.addEventListener('submit', async (event) => {
+                const form = event.target instanceof HTMLFormElement
+                    ? event.target.closest('[data-delete-import-history]')
+                    : null;
+                if (!form) return;
+
                 event.preventDefault();
-                if (!await window.appConfirm('Xóa toàn bộ phiếu, nhân khẩu và dữ liệu giáo dục đã nhập từ file này? Thao tác không thể hoàn tác; lịch sử và file tải lên vẫn được giữ.', {
-                    title: 'Xác nhận xóa phiếu đã nhập',
-                    confirmText: 'Xóa phiếu',
+                if (form.dataset.processing === 'true') return;
+                if (!await window.appConfirm('Xóa lịch sử và các file tải lên của lần nhập này?', {
+                    title: 'Xác nhận xóa lịch sử tải lên',
+                    confirmText: 'Xóa lịch sử',
                 })) return;
 
                 const button = form.querySelector('button');
+                form.dataset.processing = 'true';
                 button.disabled = true;
 
                 try {
@@ -147,69 +167,114 @@
                         credentials: 'same-origin',
                     });
                     const result = await response.json();
-                    if (!response.ok) throw new Error(result.message || 'Không thể xóa phiếu đã nhập.');
+                    if (!response.ok) throw new Error(result.message || 'Không thể xóa lịch sử tải lên.');
 
-                    const row = form.closest('[data-import-row]');
-                    row.dataset.status = result.status;
-                    row.querySelector('[data-status-label]').textContent = 'Đã xóa phiếu nhập';
-                    row.querySelector('[data-status-label]').className = 'badge text-bg-secondary';
-                    row.querySelector('[data-result-counts]').textContent = `${result.deleted_households} phiếu và ${result.deleted_persons} nhân khẩu đã xóa`;
-                    form.remove();
+                    form.closest('[data-import-row]').remove();
                     window.showAppNotification('success', result.message);
                 } catch (error) {
+                    form.dataset.processing = 'false';
                     button.disabled = false;
-                    window.showAppNotification('error', error.message || 'Không thể xóa phiếu đã nhập.');
+                    window.showAppNotification('error', error.message || 'Không thể xóa lịch sử tải lên.');
                 }
             });
-        });
+        }
 
-        document.querySelectorAll('[data-import-row][data-status-url]').forEach((row) => {
-            if (row.dataset.status === 'SUCCESS' || row.dataset.status === 'FAILED' || row.dataset.status === 'ROLLED_BACK') return;
+        const statusTable = document.querySelector('[data-import-statuses]');
+        if (statusTable && statusTable.dataset.initialized !== 'true') {
+            statusTable.dataset.initialized = 'true';
+            let statusTimer;
+            let isCheckingStatuses = false;
 
-            const statusLabel = row.querySelector('[data-status-label]');
-            const progressTrack = row.querySelector('[role="progressbar"]');
-            const progressBar = row.querySelector('[data-progress-bar]');
-            const progressLabel = row.querySelector('[data-progress-label]');
-            const resultCounts = row.querySelector('[data-result-counts]');
-            const errorDownload = row.querySelector('[data-error-download]');
+            const activeRows = () => Array.from(statusTable.querySelectorAll('[data-import-row]'))
+                .filter((row) => ['PENDING', 'PROCESSING'].includes(row.dataset.status));
 
-            const timer = window.setInterval(async () => {
+            const scheduleStatusCheck = (delay = 5000) => {
+                window.clearTimeout(statusTimer);
+                if (activeRows().length > 0 && document.visibilityState === 'visible') {
+                    statusTimer = window.setTimeout(checkStatuses, delay);
+                }
+            };
+
+            const updateRow = (row, status) => {
+                const statusLabel = row.querySelector('[data-status-label]');
+                const progressTrack = row.querySelector('[role="progressbar"]');
+                const progressBar = row.querySelector('[data-progress-bar]');
+                const progressLabel = row.querySelector('[data-progress-label]');
+                const resultCounts = row.querySelector('[data-result-counts]');
+                const errorDownload = row.querySelector('[data-error-download]');
+                const originalDownload = row.querySelector('[data-original-download]');
+                const deleteButton = row.querySelector('[data-delete-import-history] button');
+                const percent = Math.max(0, Math.min(100, status.progress));
+                const labels = {
+                    PENDING: ['Đang chờ xử lý', 'text-bg-secondary'],
+                    PROCESSING: ['Đang xử lý', 'text-bg-primary'],
+                    SUCCESS: ['Xử lý thành công', 'text-bg-success'],
+                    FAILED: ['Xử lý thất bại', 'text-bg-danger'],
+                    ROLLED_BACK: ['Đã xóa phiếu nhập', 'text-bg-secondary'],
+                };
+                const [label, badgeClass] = labels[status.status] || ['Không xác định', 'text-bg-light'];
+
+                row.dataset.status = status.status;
+                progressBar.style.width = `${percent}%`;
+                progressTrack.setAttribute('aria-valuenow', String(percent));
+                progressLabel.textContent = `${percent}% · ${status.processed_rows}/${status.total_rows} dòng`;
+                resultCounts.textContent = `${status.success_rows} thành công · ${status.error_rows} lỗi`;
+                statusLabel.textContent = status.status === 'PENDING' && status.queue_position !== null
+                    ? `Đang chờ ${status.queue_position}/${status.queue_total}`
+                    : label;
+                statusLabel.className = `badge ${badgeClass}`;
+                errorDownload?.classList.toggle('d-none', !status.has_error_file);
+                originalDownload?.classList.remove('d-none');
+                if (deleteButton) deleteButton.disabled = ['PENDING', 'PROCESSING'].includes(status.status);
+                if (!['PENDING', 'PROCESSING'].includes(status.status)) {
+                    progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                }
+            };
+
+            async function checkStatuses() {
+                if (isCheckingStatuses || document.visibilityState !== 'visible') return;
+                const rows = activeRows();
+                if (rows.length === 0) return;
+
+                isCheckingStatuses = true;
                 try {
-                    const response = await fetch(row.dataset.statusUrl, {
+                    const query = new URLSearchParams();
+                    rows.forEach((row) => query.append('ids[]', row.dataset.importId));
+                    const response = await fetch(`${statusTable.dataset.statusesUrl}?${query}`, {
                         headers: { Accept: 'application/json' },
                         credentials: 'same-origin',
                     });
                     if (!response.ok) throw new Error('Không lấy được trạng thái import.');
 
-                    const status = await response.json();
-                    const percent = Math.max(0, Math.min(100, status.progress));
-                    progressBar.style.width = `${percent}%`;
-                    progressTrack.setAttribute('aria-valuenow', String(percent));
-                    progressLabel.textContent = `${percent}% · ${status.processed_rows}/${status.total_rows} dòng`;
-                    resultCounts.textContent = `${status.success_rows} thành công · ${status.error_rows} lỗi`;
-
-                    const labels = {
-                        PENDING: ['Đang chờ xử lý', 'text-bg-secondary'],
-                        PROCESSING: ['Đang xử lý', 'text-bg-primary'],
-                        SUCCESS: ['Xử lý thành công', 'text-bg-success'],
-                        FAILED: ['Xử lý thất bại', 'text-bg-danger'],
-                        ROLLED_BACK: ['Đã xóa phiếu nhập', 'text-bg-secondary'],
-                    };
-                    const [label, badgeClass] = labels[status.status] || ['Không xác định', 'text-bg-light'];
-                    statusLabel.textContent = label;
-                    statusLabel.className = `badge ${badgeClass}`;
-
-                    if (status.status === 'SUCCESS' || status.status === 'FAILED' || status.status === 'ROLLED_BACK') {
-                        window.clearInterval(timer);
-                        progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                    const payload = await response.json();
+                    let completedImport = false;
+                    rows.forEach((row) => {
+                        const status = payload.statuses?.[row.dataset.importId];
+                        if (!status) return;
+                        updateRow(row, status);
+                        completedImport ||= !['PENDING', 'PROCESSING'].includes(status.status);
+                    });
+                    if (completedImport) {
+                        window.dispatchEvent(new Event('household-import-completed'));
                     }
-                    errorDownload.classList.toggle('d-none', !status.has_error_file);
+                    scheduleStatusCheck();
                 } catch (error) {
-                    window.clearInterval(timer);
                     console.error(error);
+                    scheduleStatusCheck(15000);
+                } finally {
+                    isCheckingStatuses = false;
                 }
-            }, 1500);
-        });
+            }
+
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible') {
+                    checkStatuses();
+                } else {
+                    window.clearTimeout(statusTimer);
+                }
+            });
+            checkStatuses();
+        }
     })();
 </script>
 @endpush

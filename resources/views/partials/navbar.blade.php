@@ -60,7 +60,7 @@
 
                 @canany(['manage-access-control', 'manage-user-accounts'])
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle {{ request()->routeIs('admin.*') ? 'active' : '' }}" href="{{ route('admin.index', [], false) }}" role="button" data-bs-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle {{ request()->routeIs('admin.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="fa-solid fa-shield-halved me-1"></i> Quản trị
                         </a>
                         <ul class="dropdown-menu">

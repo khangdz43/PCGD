@@ -33,7 +33,7 @@
                         <td class="fw-semibold">{{ $member->name }}</td>
                         <td>{{ $member->username }}</td>
                         <td>
-                            <div>{{ ['province' => 'Tỉnh', 'commune' => 'Xã', 'village' => 'Thôn / xóm'][$member->scope_level] ?? 'Chưa xác định' }}</div>
+                            <div>{{ ['global' => 'Trung ương', 'province' => 'Tỉnh', 'commune' => 'Xã', 'village' => 'Thôn / xóm'][$member->scope_level] ?? 'Chưa xác định' }}</div>
                             <small class="text-muted">
                                 {{ $member->province?->name ?? '—' }}
                                 @if ($member->commune)

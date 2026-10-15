@@ -5,39 +5,40 @@ namespace App\Support;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
-
+// rule
 final class DelegatedAccess
 {
+    // ông cao quản lí ông dưới nó 1 cấp
     private const CHILD_LEVELS = [
         'global' => ['province'],
         'province' => ['commune'],
         'commune' => ['village'],
         'village' => [],
     ];
-
+    // check quyền quản lí tk cấp nào của user hiện tịa
     public static function manageableAccountLevels(User $actor): array
     {
+        // ko đúng ném 403
         abort_unless(
             $actor->hasRole(Role::SYSTEM_ADMIN) || $actor->canManageSubordinateUsers(),
             403
         );
-
+        
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return self::CHILD_LEVELS['global'];
+            return ['global', ...self::CHILD_LEVELS['global']];
         }
 
         return self::managedLevels($actor);
     }
-
+    // tạo nhóm người dùng role
     public static function manageableRoleLevels(User $actor): array
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return ['province'];
+            return ['global', 'province'];
         }
-
         return self::managedLevels($actor);
     }
-
+    // check có admin của tỉnh xã đó chưa vì 1 tỉnh xả có 1 thôi
     public static function hasActiveTerritorialAdmin(
         string $scopeLevel,
         array $scope,
@@ -79,7 +80,7 @@ final class DelegatedAccess
             })
             ->exists();
     }
-
+    // mã địa bàn đã có chủ tịch xã tỉnh
     public static function occupiedTerritorialCodes(string $scopeLevel, ?int $ignoreUserId = null): array
     {
         if (! in_array($scopeLevel, ['province', 'commune'], true)) {
@@ -100,7 +101,7 @@ final class DelegatedAccess
 
         return $query->pluck($column)->unique()->values()->all();
     }
-
+    // check user có được phép phân vùng lãnh thổ k
     public static function scopeIsAllowed(
         User $actor,
         string $targetLevel,
@@ -112,6 +113,12 @@ final class DelegatedAccess
         }
 
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            if ($targetLevel === 'global') {
+                return ($scope['province_code'] ?? null) === null
+                    && ($scope['commune_code'] ?? null) === null
+                    && $villageCodes === [];
+            }
+
             return filled($scope['province_code'] ?? null)
                 && match ($targetLevel) {
                     'province' => ($scope['commune_code'] ?? null) === null && $villageCodes === [],
@@ -119,6 +126,13 @@ final class DelegatedAccess
                     'village' => filled($scope['commune_code'] ?? null) && $villageCodes !== [],
                     default => false,
                 };
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
+            return $targetLevel === 'province'
+                && filled($scope['province_code'] ?? null)
+                && ($scope['commune_code'] ?? null) === null
+                && $villageCodes === [];
         }
 
         if ($actor->province_code === null || $scope['province_code'] !== $actor->province_code) {
@@ -151,7 +165,7 @@ final class DelegatedAccess
 
         return true;
     }
-
+    // check role cụ thể có thuộc về scope mà user hiện tại qunar lí ko
     public static function roleBelongsToActorArea(User $actor, Role $role): bool
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
@@ -172,10 +186,14 @@ final class DelegatedAccess
         return $role->commune_code === null
             || $role->commune_code === $actor->commune_code;
     }
-
+    //return vùng ảnh hưởng khi user tạo 1 role
     public static function roleAreaFor(User $actor): array
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            return ['province_code' => null, 'commune_code' => null];
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
             return ['province_code' => null, 'commune_code' => null];
         }
 
@@ -186,7 +204,7 @@ final class DelegatedAccess
                 : null,
         ];
     }
-
+// check user này có trong vùng quản li của mình 
     public static function userIsInActorArea(User $actor, User $target, string $targetLevel): bool
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
@@ -197,6 +215,13 @@ final class DelegatedAccess
                     'village' => $target->commune_code !== null && $target->managedVillageCodes() !== [],
                     default => false,
                 };
+        }
+
+        if ($actor->roleScopeLevel() === 'global') {
+                return $targetLevel === 'province'
+                    && $target->province_code !== null
+                    && $target->commune_code === null
+                    && $target->managedVillageCodes() === [];
         }
 
         if ($actor->province_code === null || $target->province_code !== $actor->province_code) {
@@ -224,17 +249,19 @@ final class DelegatedAccess
             && ($actor->roleScopeLevel() !== 'village'
                 || array_diff($target->managedVillageCodes(), $actor->managedVillageCodes()) === []);
     }
-
+    // return cấp cs thể quản lí của user htai
     private static function managedLevels(User $actor): array
     {
         $level = $actor->roleScopeLevel();
+        // level ko được null và tồn tại trong mảng
         abort_unless($level !== null && array_key_exists($level, self::CHILD_LEVELS), 403);
-
+        // cấp có quyền qli ngang hàng 
         $sameLevel = in_array($level, ['province', 'commune'], true) ? [$level] : [];
-
+        // trải phangr như flatmap trong java
         return [...$sameLevel, ...self::CHILD_LEVELS[$level]];
     }
 
+    //  check level scope , nếu null thì phải có role nó hợp với cái level nào , đề phòng data lỗi gì 
     private static function constrainToTerritorialLevel(Builder $builder, string $scopeLevel): void
     {
         $builder->where('scope_level', $scopeLevel)

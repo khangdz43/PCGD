@@ -173,7 +173,6 @@ class AccessControlTestAccountsSeeder extends Seeder
                 $user->scope_level = $definition['scope'];
                 $user->save();
                 $user->roles()->sync([$role->id => ['assigned_by' => null]]);
-                $user->directPermissions()->sync([]);
                 $user->villages()->sync($definition['scope'] === 'village' ? [$village->code] : []);
             }
         });

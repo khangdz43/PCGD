@@ -3,59 +3,35 @@
 namespace App\Http\Controllers\Admin\AccessControl;
 
 use App\Http\Controllers\Controller;
-use App\Models\Commune;
-use App\Models\Province;
 use App\Models\Role;
 use App\Models\User;
-use App\Models\Village;
-use App\Support\AccessPermission;
+use App\Services\Admin\AccessControl\UserAccessControlService;
 use App\Support\DelegatedAccess;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\View\View;
 
 class UserRoleController extends Controller
 {
+    public function __construct(private UserAccessControlService $users) {}
+
     public function index(Request $request): View
     {
         $actor = $request->user();
-        $provincesQuery = Province::query()->orderBy('name');
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $provincesQuery->where('code', $actor->province_code);
-        }
-        $provinces = $provincesQuery->get(['code', 'name']);
-        $showOrganizationTree = $actor->hasRole(Role::SYSTEM_ADMIN)
-            && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS);
-        $unitProvinces = collect();
-        $unitProvinceCounts = collect();
-
-        if ($showOrganizationTree) {
-            $unitProvinces = Province::query()->orderBy('name')->get(['code', 'name']);
-
-            $locatedAccounts = User::query()
-                ->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('roles.name', Role::SYSTEM_ADMIN));
-
-            $unitProvinceCounts = (clone $locatedAccounts)
-                ->select('province_code')
-                ->selectRaw('COUNT(*) AS account_count')
-                ->whereNotNull('province_code')
-                ->groupBy('province_code')
-                ->pluck('account_count', 'province_code');
-
-        }
-
+        $provinces = $this->users->provincesForFilter($actor);
         $filter = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
             'province_code' => ['nullable', 'string', Rule::in($provinces->pluck('code')->all())],
             'commune_code' => [
                 'nullable',
                 'string',
                 'required_with:village_code',
-                Rule::exists('communes', 'code')->where('province_code', $request->input('province_code') ?? $actor->province_code ?? ''),
+                Rule::exists('communes', 'code')->where(
+                    'province_code',
+                    $request->input('province_code') ?? $actor->province_code ?? ''
+                ),
             ],
             'village_code' => [
                 'nullable',
@@ -64,164 +40,25 @@ class UserRoleController extends Controller
             ],
         ]);
 
-        $provinceCode = $filter['province_code'] ?? $actor->province_code;
-        $communeCode = $filter['commune_code'] ?? null;
-        $villageCode = $filter['village_code'] ?? null;
-        $query = $this->manageableUsers($actor)
-            ->with(['roles.permissions', 'villages', 'commune', 'province']);
-
-        if (filled($provinceCode)) {
-            $query->where('province_code', $provinceCode);
-        }
-        if (filled($communeCode)) {
-            $query->where('commune_code', $communeCode);
-        }
-        if (filled($villageCode)) {
-            $query->whereHas('villages', fn (Builder $villages) => $villages->where('villages.code', $villageCode));
-        }
-
-        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode);
-
-        $query->orderByRaw(
-            'CASE
-                WHEN EXISTS (
-                    SELECT 1
-                    FROM model_has_roles AS account_model_roles
-                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
-                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
-                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
-                    WHERE account_model_roles.model_id = users.id
-                        AND account_model_roles.model_type = ?
-                        AND account_roles.scope_level = ?
-                        AND account_permissions.name IN (?, ?)
-                ) THEN 0
-                WHEN EXISTS (
-                    SELECT 1
-                    FROM model_has_roles AS account_model_roles
-                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
-                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
-                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
-                    WHERE account_model_roles.model_id = users.id
-                        AND account_model_roles.model_type = ?
-                        AND account_roles.scope_level = ?
-                        AND account_permissions.name IN (?, ?)
-                ) THEN 1
-                ELSE 2
-            END',
-            [
-                User::class,
-                'province',
-                AccessPermission::MANAGE_USER_ACCOUNTS,
-                AccessPermission::MANAGE_ACCESS_CONTROL,
-                User::class,
-                'commune',
-                AccessPermission::MANAGE_USER_ACCOUNTS,
-                AccessPermission::MANAGE_ACCESS_CONTROL,
-            ],
-        )->orderBy('name');
-
-        $allUsers = $showOrganizationTree
-            ? $query->paginate(30)->withQueryString()
-            : $query->get();
-        $totalUserCount = $showOrganizationTree ? $allUsers->total() : $allUsers->count();
-
-        // Xây dựng cấu trúc phân cấp: Tỉnh → Xã → Thôn → Users
-        $hierarchy = [];
-        $noLocationUsers = collect();
-
-        foreach ($showOrganizationTree ? collect() : $allUsers as $user) {
-            $provinceName = $user->province?->name;
-            $provinceCode = $user->province_code;
-            $communeName = $user->commune?->name;
-            $communeCode = $user->commune_code;
-            $villages = $user->villages;
-
-            if (!$provinceName) {
-                $noLocationUsers->push($user);
-                continue;
-            }
-
-            if (!isset($hierarchy[$provinceCode])) {
-                $hierarchy[$provinceCode] = [
-                    'name' => $provinceName,
-                    'code' => $provinceCode,
-                    'communes' => [],
-                    'direct_users' => collect(),
-                ];
-            }
-
-            if ($communeName && $communeCode) {
-                if (!isset($hierarchy[$provinceCode]['communes'][$communeCode])) {
-                    $hierarchy[$provinceCode]['communes'][$communeCode] = [
-                        'name' => $communeName,
-                        'code' => $communeCode,
-                        'villages' => [],
-                        'direct_users' => collect(),
-                    ];
-                }
-
-                if ($villages->isNotEmpty()) {
-                    foreach ($villages as $village) {
-                        $vCode = $village->code;
-                        if (!isset($hierarchy[$provinceCode]['communes'][$communeCode]['villages'][$vCode])) {
-                            $hierarchy[$provinceCode]['communes'][$communeCode]['villages'][$vCode] = [
-                                'name' => $village->name,
-                                'code' => $vCode,
-                                'users' => collect(),
-                            ];
-                        }
-                        $hierarchy[$provinceCode]['communes'][$communeCode]['villages'][$vCode]['users']->push($user);
-                    }
-                } else {
-                    $hierarchy[$provinceCode]['communes'][$communeCode]['direct_users']->push($user);
-                }
-            } else {
-                $hierarchy[$provinceCode]['direct_users']->push($user);
-            }
-        }
-
-        // Sắp xếp theo tên
-        uasort($hierarchy, fn ($a, $b) => strcmp($a['name'], $b['name']));
-        foreach ($hierarchy as &$province) {
-            uasort($province['communes'], fn ($a, $b) => strcmp($a['name'], $b['name']));
-        }
-
-        return view('admin.access-control.users.index', compact(
-            'hierarchy',
-            'noLocationUsers',
-            'allUsers',
-            'totalUserCount',
-            'actor',
-            'provinces',
-            'provinceCode',
-            'communeCode',
-            'villageCode',
-            'isFiltering',
-            'showOrganizationTree',
-            'unitProvinces',
-            'unitProvinceCounts',
-        ));
+        return view('admin.access-control.users.index', [
+            ...$this->users->indexData($actor, $filter, $provinces),
+            'actor' => $actor,
+        ]);
     }
 
     public function create(Request $request): View
     {
         $actor = $request->user();
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
-        $roles = $this->availableRoles($actor, $accountLevels);
-        $roles->each(fn (Role $role) => $role->setAttribute(
-            'assignable_scope_levels',
-            $this->assignableScopeLevels($role, $accountLevels, $actor)
-        ));
-        $accountScopeLevel = old('scope_level', $accountLevels[0] ?? 'province');
 
         return view('admin.access-control.users.create', [
             'user' => new User(['is_active' => true]),
             'actor' => $actor,
-            'roles' => $roles,
+            'roles' => $this->users->rolesForForm($actor, $accountLevels),
             'accountLevels' => $accountLevels,
-            'accountScopeLevel' => $accountScopeLevel,
-            'provinces' => $this->manageableProvinces($actor),
-            'selectedLocations' => $this->selectedLocations(),
+            'accountScopeLevel' => old('scope_level', 'province'),
+            'provinces' => $this->users->manageableProvinces($actor),
+            'selectedLocations' => $this->users->selectedLocations(),
         ]);
     }
 
@@ -230,23 +67,11 @@ class UserRoleController extends Controller
         $actor = $request->user();
         $data = $request->validate($this->rules($actor));
         $role = Role::findOrFail($data['role_id']);
-        $scopeLevel = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
-            : $data['scope_level'];
-        $this->validateRoleForScope($role, $scopeLevel, $actor);
+        $scopeLevel = $data['scope_level'] ?? 'province';
+        $this->users->validateRoleForScope($role, $scopeLevel, $actor);
         $scope = $request->validate($this->scopeRules($scopeLevel));
-        $this->authorizeManagedScope($actor, $scopeLevel, $scope);
-        $this->assertTerritorialAdminIsUnique($actor, $scopeLevel, $scope);
-
-        DB::transaction(function () use ($data, $scope, $scopeLevel, $role, $actor): void {
-            $user = new User;
-            $this->fillUser($user, $data, $scope, $scopeLevel);
-            $user->created_by = $actor->id;
-            $user->save();
-            $user->roles()->sync([$role->id => ['assigned_by' => $actor->id]]);
-            $user->directPermissions()->sync([]);
-            $user->villages()->sync($scope['village_codes'] ?? []);
-        });
+        $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
+        $this->users->create($actor, $data, $scope, $scopeLevel, $role);
 
         return to_route('admin.users.index')->with('success', 'Đã tạo tài khoản và gán quyền truy cập.');
     }
@@ -254,46 +79,32 @@ class UserRoleController extends Controller
     public function edit(Request $request, User $user): View
     {
         $actor = $request->user();
-        abort_unless($this->canManageUser($actor, $user), 403);
+        abort_unless($this->users->canManageUser($actor, $user), 403);
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
-        $roles = $this->availableRoles($actor, $accountLevels);
-        $roles->each(fn (Role $role) => $role->setAttribute(
-            'assignable_scope_levels',
-            $this->assignableScopeLevels($role, $accountLevels, $actor)
-        ));
 
         return view('admin.access-control.users.edit', [
             'user' => $user->load(['roles', 'villages']),
             'actor' => $actor,
-            'roles' => $roles,
+            'roles' => $this->users->rolesForForm($actor, $accountLevels),
             'accountLevels' => $accountLevels,
             'accountScopeLevel' => old('scope_level', $user->scope_level),
-            'provinces' => $this->manageableProvinces($actor, $user),
-            'selectedLocations' => $this->selectedLocations($user),
+            'provinces' => $this->users->manageableProvinces($actor, $user),
+            'selectedLocations' => $this->users->selectedLocations($user),
         ]);
     }
 
     public function update(Request $request, User $user): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($this->canManageUser($actor, $user), 403);
+        abort_unless($this->users->canManageUser($actor, $user), 403);
 
         $data = $request->validate($this->rules($actor, $user));
         $role = Role::findOrFail($data['role_id']);
-        $scopeLevel = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
-            : $data['scope_level'];
-        $this->validateRoleForScope($role, $scopeLevel, $actor);
+        $scopeLevel = $data['scope_level'] ?? 'province';
+        $this->users->validateRoleForScope($role, $scopeLevel, $actor);
         $scope = $request->validate($this->scopeRules($scopeLevel));
-        $this->authorizeManagedScope($actor, $scopeLevel, $scope);
-
-        DB::transaction(function () use ($data, $scope, $scopeLevel, $role, $user, $actor): void {
-            $this->fillUser($user, $data, $scope, $scopeLevel);
-            $user->save();
-            $user->roles()->sync([$role->id => ['assigned_by' => $actor->id]]);
-            $user->directPermissions()->sync([]);
-            $user->villages()->sync($scope['village_codes'] ?? []);
-        });
+        $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
+        $this->users->update($actor, $user, $data, $scope, $scopeLevel, $role);
 
         return to_route('admin.users.index')->with('success', 'Đã cập nhật tài khoản và quyền truy cập.');
     }
@@ -301,7 +112,7 @@ class UserRoleController extends Controller
     public function updateStatus(Request $request, User $user): RedirectResponse
     {
         $actor = $request->user();
-        abort_unless($this->canManageUser($actor, $user), 403);
+        abort_unless($this->users->canChangeUserStatus($actor, $user), 403);
 
         $data = $request->validate([
             'is_active' => ['required', 'boolean'],
@@ -313,8 +124,7 @@ class UserRoleController extends Controller
             ]);
         }
 
-        $user->is_active = (bool) $data['is_active'];
-        $user->save();
+        $this->users->updateStatus($user, (bool) $data['is_active']);
 
         return to_route('admin.users.index')->with(
             'success',
@@ -322,14 +132,25 @@ class UserRoleController extends Controller
         );
     }
 
+    public function resetPassword(Request $request, User $user): RedirectResponse
+    {
+        $actor = $request->user();
+        abort_unless($this->users->canResetUserPassword($actor, $user), 403);
+
+        $this->users->resetPassword($user);
+
+        return to_route('admin.users.index')->with(
+            'success',
+            'Đã đặt lại mật khẩu về '.User::TEMPORARY_PASSWORD.'.'
+        );
+    }
+
     private function rules(User $actor, ?User $user = null): array
     {
-        $scopeLevel = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? 'province'
-            : request()->input('scope_level');
+        $scopeLevel = request()->input('scope_level', 'province');
         $manageableLevels = DelegatedAccess::manageableAccountLevels($actor);
         $roleIds = in_array($scopeLevel, $manageableLevels, true)
-            ? $this->availableRoles($actor, [$scopeLevel])->modelKeys()
+            ? $this->users->availableRoles($actor, [$scopeLevel])->modelKeys()
             : [];
 
         return [
@@ -346,15 +167,22 @@ class UserRoleController extends Controller
                 'integer',
                 Rule::exists('roles', 'id')->where('guard_name', 'web')->whereIn('id', $roleIds),
             ],
-            'scope_level' => $actor->hasRole(Role::SYSTEM_ADMIN)
-                ? ['sometimes', Rule::in(['province'])]
-                : ['required', Rule::in($manageableLevels)],
+            'scope_level' => ['required', Rule::in($manageableLevels)],
             'is_active' => ['sometimes', 'boolean'],
         ];
     }
 
     private function scopeRules(string $scopeLevel): array
     {
+        if ($scopeLevel === 'global') {
+            return [
+                'province_code' => ['prohibited'],
+                'commune_code' => ['prohibited'],
+                'village_codes' => ['prohibited'],
+                'school_code' => ['prohibited'],
+            ];
+        }
+
         $rules = [
             'province_code' => ['required', 'string', Rule::exists('provinces', 'code')],
             'commune_code' => ['prohibited'],
@@ -381,215 +209,5 @@ class UserRoleController extends Controller
         }
 
         return $rules;
-    }
-
-    private function validateRoleForScope(Role $role, string $scopeLevel, User $actor): void
-    {
-        if (! $this->roleCanBeAssignedAtLevel($role, $scopeLevel, $actor)) {
-            throw ValidationException::withMessages([
-                'role_id' => 'Nhóm này không áp dụng cho cấp hoạt động đã chọn.',
-            ]);
-        }
-    }
-
-    private function fillUser(User $user, array $data, array $scope, string $scopeLevel): void
-    {
-        $user->name = $data['name'];
-        $user->username = $data['username'];
-        if (filled($data['password'] ?? null)) {
-            $user->password = $data['password'];
-        }
-        $user->is_active = (bool) ($data['is_active'] ?? true);
-        $user->province_code = $scope['province_code'];
-        $user->commune_code = $scope['commune_code'] ?? null;
-        $user->scope_level = $scopeLevel;
-    }
-
-    private function assertTerritorialAdminIsUnique(
-        User $actor,
-        string $scopeLevel,
-        array $scope
-    ): void
-    {
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return;
-        }
-
-        if (! DelegatedAccess::hasActiveTerritorialAdmin($scopeLevel, $scope)) {
-            return;
-        }
-
-        $field = $scopeLevel === 'province' ? 'province_code' : 'commune_code';
-        $message = $scopeLevel === 'province'
-            ? 'Tỉnh này đã có tài khoản quản trị đang hoạt động. Mỗi tỉnh chỉ có một quản trị viên.'
-            : 'Xã này đã có tài khoản quản trị đang hoạt động. Mỗi xã chỉ có một quản trị viên.';
-
-        throw ValidationException::withMessages([$field => $message]);
-    }
-
-    private function manageableProvinces(User $actor, ?User $user = null)
-    {
-        $query = Province::query()->orderBy('name');
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $actor->province_code);
-        } else {
-            $occupied = DelegatedAccess::occupiedTerritorialCodes('province', $user?->id);
-            if ($occupied !== []) {
-                $query->whereNotIn('code', $occupied);
-            }
-        }
-
-        return $query->get(['code', 'name']);
-    }
-
-    private function selectedLocations(?User $user = null): array
-    {
-        $provinceCode = old('province_code', $user?->province_code);
-        $communeCode = old('commune_code', $user?->commune_code);
-        $villageCodes = old('village_codes', $user?->managedVillageCodes() ?? []);
-        $villageCodes = array_values(array_unique(array_map('strval', (array) $villageCodes)));
-
-        return [
-            'province' => $provinceCode ? Province::where('code', $provinceCode)->value('name') : null,
-            'commune' => $communeCode ? Commune::where('code', $communeCode)->value('name') : null,
-            'villages' => $villageCodes === [] ? [] : Village::whereIn('code', $villageCodes)->pluck('name', 'code')->all(),
-            'province_code' => $provinceCode,
-            'commune_code' => $communeCode,
-            'village_codes' => $villageCodes,
-        ];
-    }
-
-    private function availableRoles(User $actor, array $accountLevels)
-    {
-        $query = Role::query()
-            ->with('permissions')
-            ->where('guard_name', 'web')
-            ->where('name', '!=', Role::SYSTEM_ADMIN);
-
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('created_by', $actor->id);
-        }
-
-        return $query->orderBy('name')->get()
-            ->filter(function (Role $role) use ($actor, $accountLevels): bool {
-                foreach ($accountLevels as $accountLevel) {
-                    if ($this->roleCanBeAssignedAtLevel($role, $accountLevel, $actor)) {
-                        return true;
-                    }
-                }
-
-                return false;
-            })
-            ->values();
-    }
-
-    private function roleCanBeAssignedAtLevel(Role $role, string $accountLevel, User $actor): bool
-    {
-        $roleLevel = $role->scope_level;
-        if ($roleLevel !== $accountLevel) {
-            return false;
-        }
-
-        $permissionNames = $role->permissions->pluck('name')->all();
-        if (array_diff($permissionNames, AccessPermission::permissionsForScope($accountLevel)) !== []) {
-            return false;
-        }
-
-        return $actor->hasRole(Role::SYSTEM_ADMIN) || $role->created_by === $actor->id;
-    }
-
-    private function assignableScopeLevels(Role $role, array $accountLevels, User $actor): array
-    {
-        return array_values(array_filter(
-            $accountLevels,
-            fn (string $accountLevel): bool => $this->roleCanBeAssignedAtLevel($role, $accountLevel, $actor)
-        ));
-    }
-
-    private function manageableUsers(User $actor): Builder
-    {
-        $levels = DelegatedAccess::manageableAccountLevels($actor);
-        if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return User::query()
-                ->whereDoesntHave('roles', fn (Builder $roles) => $roles->where('roles.name', Role::SYSTEM_ADMIN))
-                ->where(function (Builder $query): void {
-                    $query->whereIn('scope_level', ['province', 'commune', 'village'])
-                        ->orWhere(function (Builder $legacy): void {
-                            $legacy->whereNull('scope_level')
-                                ->where(function (Builder $unassigned): void {
-                                    $unassigned->whereDoesntHave('roles')
-                                        ->orWhereHas('roles', fn (Builder $roles) => $roles
-                                            ->whereIn('roles.scope_level', ['province', 'commune', 'village'])
-                                            ->where('roles.name', '!=', Role::SYSTEM_ADMIN));
-                                });
-                        });
-                });
-        }
-
-        // Hiển thị tất cả tài khoản trong địa bàn được quản lý
-        // (không giới hạn chỉ tài khoản do mình tạo)
-        $query = User::query()
-            ->whereIn('scope_level', $levels)
-            ->where('id', '!=', $actor->id);
-
-        $this->constrainToActorArea($query, $actor);
-
-        return $query;
-    }
-
-    private function canManageUser(User $actor, User $target): bool
-    {
-        $targetLevel = $target->roleScopeLevel();
-        if ($targetLevel === null || $targetLevel === 'global') {
-            return $actor->hasRole(Role::SYSTEM_ADMIN);
-        }
-
-        if (! in_array($targetLevel, DelegatedAccess::manageableAccountLevels($actor), true)) {
-            return false;
-        }
-
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            // Chỉ cho phép quản lý tài khoản nằm trong địa bàn mình phụ trách
-            // (không cần phải do chính mình tạo)
-            $assignableRoleIds = $this->availableRoles($actor, [$targetLevel])->modelKeys();
-            if ($target->roles()->whereNotIn('roles.id', $assignableRoleIds)->exists()) {
-                return false;
-            }
-
-            $permissionNames = $actor->permissionNames();
-            if ($target->directPermissions()->whereNotIn('permissions.name', $permissionNames)->exists()) {
-                return false;
-            }
-        }
-
-        return DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
-    }
-
-    private function constrainToActorArea(Builder $query, User $actor): void
-    {
-        if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return;
-        }
-
-        $query->where('province_code', $actor->province_code);
-        if (in_array($actor->roleScopeLevel(), ['commune', 'village'], true)) {
-            $query->where('commune_code', $actor->commune_code);
-        }
-
-        if ($actor->roleScopeLevel() === 'village') {
-            $villageCodes = $actor->managedVillageCodes();
-            $query->where(function (Builder $builder) use ($villageCodes): void {
-                $builder->whereIn('village_code', $villageCodes)
-                    ->orWhereHas('villages', fn (Builder $villages) => $villages->whereIn('villages.code', $villageCodes));
-            });
-        }
-    }
-
-    private function authorizeManagedScope(User $actor, string $scopeLevel, array $scope): void
-    {
-        abort_unless(
-            DelegatedAccess::scopeIsAllowed($actor, $scopeLevel, $scope, $scope['village_codes'] ?? []),
-            403
-        );
     }
 }

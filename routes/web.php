@@ -7,23 +7,30 @@ use App\Http\Controllers\Geography\VillageController;
 use App\Http\Controllers\Households\HouseholdController;
 use App\Http\Controllers\Households\HouseholdImportExportController;
 use App\Http\Controllers\Households\HouseholdImportHistoryController;
+use App\Http\Controllers\Households\HouseholdImportNotificationController;
 use App\Http\Controllers\Households\HouseholdImportStatusController;
 use App\Http\Controllers\Households\HouseholdPersonController;
 use App\Http\Controllers\Profile\AccountController;
 use Illuminate\Support\Facades\Route;
 
 // middle ware trước khi vào controller là chạy cái middleware
+// auth có sẵn 
 Route::middleware(['auth', 'active'])->group(function (): void {
 
     Route::get('/', [ProvinceController::class, 'home'])->name('index');
     Route::get('/account', [AccountController::class, 'show'])->name('account.show');
     Route::put('/account/password', [AccountController::class, 'updatePassword'])->name('account.password.update');
+    Route::get('/households/import-notifications', [HouseholdImportNotificationController::class, 'index'])
+        ->name('households.import-notifications');
+    Route::post('/households/import-notifications/acknowledge', [HouseholdImportNotificationController::class, 'acknowledge'])
+        ->name('households.import-notifications.acknowledge');
     Route::get('/api/provinces/{provinceCode}/communes', [ProvinceController::class, 'getCommunes']);
     Route::get('/api/communes/{communeCode}/villages', [CommuneController::class, 'getVillages']);
     Route::get('/api/provinces/{provinceCode}/schools', [SchoolController::class, 'getByProvince']);
 
     // laravel dùng can:permission-name để gọi Gate:before trong thằng provider
     Route::middleware('can:manage-villages')->group(function (): void {
+        //7 routes , bỏ xem show chi tiết
         Route::resource('villages', VillageController::class)->except('show');
     });
 
@@ -40,10 +47,11 @@ Route::middleware(['auth', 'active'])->group(function (): void {
         Route::get('/households/import', [HouseholdImportExportController::class, 'create'])->name('households.import.create');
         Route::post('/households/import', [HouseholdImportExportController::class, 'import'])->name('households.import.store');
         Route::get('/households/imports', HouseholdImportHistoryController::class)->name('households.import-history');
+        Route::get('/households/imports/statuses', [HouseholdImportStatusController::class, 'batch'])->name('households.import.statuses');
         Route::get('/households/imports/{importLog}/status', HouseholdImportStatusController::class)->name('households.import.status');
         Route::get('/households/imports/{importLog}/download', [HouseholdImportHistoryController::class, 'download'])->name('households.import.download');
         Route::get('/households/imports/{importLog}/download-errors', [HouseholdImportHistoryController::class, 'downloadErrors'])->name('households.import.download-errors');
-        Route::delete('/households/imports/{importLog}', [HouseholdImportHistoryController::class, 'destroyImportedRecords'])->name('households.import.destroy');
+        Route::delete('/households/imports/{importLog}', [HouseholdImportHistoryController::class, 'destroy'])->name('households.import.destroy');
     });
 
     Route::middleware('can:create-households')->group(function (): void {

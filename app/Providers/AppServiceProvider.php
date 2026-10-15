@@ -29,7 +29,7 @@ class AppServiceProvider extends ServiceProvider
             if (array_key_exists($ability, AccessPermission::definitions())) {
                 return $user->hasPermissionTo($ability);
             }
-
+            // can:name trong permission đấy
             if (Permission::where('name', $ability)->where('guard_name', config('auth.defaults.guard', 'web'))->exists()) {
                 return $user->hasPermissionTo($ability);
             }

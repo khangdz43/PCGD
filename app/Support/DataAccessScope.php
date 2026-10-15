@@ -16,6 +16,7 @@ final class DataAccessScope
         }
 
         return match ($user->roleScopeLevel()) {
+            'global' => $query,
             'province' => $user->province_code
                 ? $query->where('province_code', $user->province_code)
                 : $query->whereRaw('1 = 0'),
@@ -36,6 +37,7 @@ final class DataAccessScope
         }
 
         $inLocation = match ($user->roleScopeLevel()) {
+            'global' => true,
             'province' => $user->province_code !== null && $household->province_code === $user->province_code,
             'commune' => $user->commune_code !== null && $household->commune_code === $user->commune_code,
             'village' => in_array($household->village_code, $user->managedVillageCodes(), true),
@@ -52,6 +54,7 @@ final class DataAccessScope
         }
 
         $allowed = match ($user->roleScopeLevel()) {
+            'global' => true,
             'province' => $user->province_code !== null && $data['province_code'] === $user->province_code,
             'commune' => $user->commune_code !== null
                 && $data['province_code'] === $user->province_code

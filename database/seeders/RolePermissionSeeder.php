@@ -26,9 +26,9 @@ class RolePermissionSeeder extends Seeder
             // lấy ra danh sách các quyền
             $permissions = collect(AccessPermission::definitions())
                 ->map(
-                    fn (string $description, string $permission): Permission => Permission::firstOrCreate(
+                    fn (string $description, string $permission): Permission => Permission::updateOrCreate(
                         ['name' => $permission, 'guard_name' => 'web'],
-                        ['description' => $description]
+                        ['description' => $description],
                     ));
 
             // 3. Khởi tạo Role SYSTEM_ADMIN (Toàn quyền)

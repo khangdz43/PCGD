@@ -16,7 +16,6 @@ final class AccessPermission
 
     public const EXPORT_HOUSEHOLDS = 'export-households';
 
-    public const MANAGE_CATALOGS = 'manage-catalogs';
 
     public const MANAGE_VILLAGES = 'manage-villages';
 
@@ -40,15 +39,27 @@ final class AccessPermission
             self::EXPORT_HOUSEHOLDS => 'Xuất dữ liệu phiếu điều tra',
             self::MANAGE_VILLAGES => 'Quản lý danh mục địa bàn (thôn / xóm)',
             self::MANAGE_SCHOOLS => 'Quản lý danh mục trường học (chỉ cấp tỉnh)',
-            self::MANAGE_ACCESS_CONTROL => 'Tạo và chỉnh sửa nhóm quyền trong phạm vi quản lý',
-            self::MANAGE_USER_ACCOUNTS => 'Tạo tài khoản và gán nhóm quyền trong phạm vi quản lý',
+            self::MANAGE_ACCESS_CONTROL => 'Quản lý nhóm người dùng',
+            self::MANAGE_USER_ACCOUNTS => 'Tạo tài khoản và gán nhóm người dùng trong phạm vi quản lý',
             self::VIEW_ORGANIZATION_ACCOUNTS => 'Xem cây đơn vị và thống kê tài khoản trong quản lý người dùng',
         ];
     }
 
+    // các quyền theo phạm vi
     public static function permissionsForScope(string $scopeLevel): array
     {
         return match ($scopeLevel) {
+            'global' => [
+                self::VIEW_HOUSEHOLDS,
+                self::CREATE_HOUSEHOLDS,
+                self::UPDATE_HOUSEHOLDS,
+                self::DELETE_HOUSEHOLDS,
+                self::IMPORT_HOUSEHOLDS,
+                self::EXPORT_HOUSEHOLDS,
+                self::MANAGE_ACCESS_CONTROL,
+                self::MANAGE_USER_ACCOUNTS,
+                self::VIEW_ORGANIZATION_ACCOUNTS,
+            ],
             'province' => [
                 self::MANAGE_SCHOOLS,
                 self::MANAGE_ACCESS_CONTROL,
@@ -76,7 +87,7 @@ final class AccessPermission
             default => [],
         };
     }
-
+    // nhóm quyền về quản trị chủ hộ
     public static function householdPermissions(): array
     {
         return [
@@ -88,10 +99,11 @@ final class AccessPermission
             self::EXPORT_HOUSEHOLDS,
         ];
     }
-
+    // quyền tiên quyết muốn xóa cần xem
     public static function prerequisites(): array
     {
         return [
+            self::MANAGE_USER_ACCOUNTS => [self::MANAGE_ACCESS_CONTROL],
             self::CREATE_HOUSEHOLDS => [self::VIEW_HOUSEHOLDS],
             self::UPDATE_HOUSEHOLDS => [self::VIEW_HOUSEHOLDS],
             self::DELETE_HOUSEHOLDS => [self::VIEW_HOUSEHOLDS],
@@ -99,7 +111,7 @@ final class AccessPermission
             self::EXPORT_HOUSEHOLDS => [self::VIEW_HOUSEHOLDS],
         ];
     }
-
+    // gọi cái hàm tiên quyết để check trong mảng được view ko
     public static function impliedPermissions(string $permission): array
     {
         $implied = [];
@@ -111,6 +123,7 @@ final class AccessPermission
 
         return $implied;
     }
+    // return 1 list quyền mảng đủ có quyền xem
 
     public static function withPrerequisites(array $permissions): array
     {

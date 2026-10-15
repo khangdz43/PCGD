@@ -92,7 +92,11 @@
 
         .app-notifications-wrap.is-toast,
         .app-notifications-wrap:has(.app-notifications-toast) {
-            place-items: start end;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            justify-content: flex-start;
+            gap: .65rem;
             padding: 1rem;
         }
 
@@ -300,6 +304,14 @@
             border-width: .15em;
         }
 
+        .app-navbar .dropdown-menu:not(.show) {
+            display: none;
+        }
+
+        .app-navbar .dropdown-menu.show {
+            display: block;
+        }
+
         .app-inline-note {
             display: flex;
             align-items: flex-start;
@@ -324,6 +336,7 @@
         html {
             min-width: 320px;
             scroll-padding-top: 1rem;
+            scrollbar-gutter: stable;
         }
 
         body {
@@ -634,8 +647,8 @@
 
         @media (max-width: 767.98px) {
             main.py-4 {
-                padding-top: 1rem !important;
-                padding-bottom: 1rem !important;
+                padding-top: .75rem !important;
+                padding-bottom: .75rem !important;
             }
 
             main > .container,
@@ -978,11 +991,61 @@
 
     <!-- Bootstrap 5 JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" data-turbo-eval="false"></script>
+    <script>
+        (() => {
+            if (window.bootstrap?.Dropdown || window.appNavbarFallbackInitialized) return;
+            window.appNavbarFallbackInitialized = true;
+
+            const closeDropdowns = (except = null) => {
+                document.querySelectorAll('.app-navbar .dropdown-menu.show').forEach((menu) => {
+                    if (menu === except) return;
+                    menu.classList.remove('show');
+                    menu.closest('.dropdown')?.querySelector('[data-bs-toggle="dropdown"]')
+                        ?.setAttribute('aria-expanded', 'false');
+                });
+            };
+
+            document.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!(target instanceof Element)) return;
+
+                const dropdownToggle = target.closest('.app-navbar [data-bs-toggle="dropdown"]');
+                if (dropdownToggle) {
+                    event.preventDefault();
+                    const menu = dropdownToggle.closest('.dropdown')?.querySelector(':scope > .dropdown-menu');
+                    if (!menu) return;
+
+                    const opening = !menu.classList.contains('show');
+                    closeDropdowns(menu);
+                    menu.classList.toggle('show', opening);
+                    dropdownToggle.setAttribute('aria-expanded', String(opening));
+                    return;
+                }
+
+                const collapseToggle = target.closest('.app-navbar [data-bs-toggle="collapse"]');
+                if (collapseToggle) {
+                    event.preventDefault();
+                    const selector = collapseToggle.getAttribute('data-bs-target');
+                    const collapse = selector ? document.querySelector(selector) : null;
+                    if (!collapse) return;
+
+                    const expanded = collapse.classList.toggle('show');
+                    collapseToggle.setAttribute('aria-expanded', String(expanded));
+                    return;
+                }
+
+                if (!target.closest('.app-navbar .dropdown')) closeDropdowns();
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeDropdowns();
+            });
+        })();
+    </script>
     @stack('scripts')
     <script>
         (() => {
             let loadingTimer;
-            let activeFetches = 0;
             let isNavigating = false;
 
             const showLoadingAlert = () => {
@@ -994,7 +1057,7 @@
 
             const updateLoadingAlert = () => {
                 const loadingAlert = document.getElementById('app-loading-alert');
-                if (isNavigating || activeFetches > 0) {
+                if (isNavigating) {
                     loadingTimer = window.setTimeout(showLoadingAlert, 180);
                     return;
                 }
@@ -1005,40 +1068,6 @@
             };
 
             if (!window.appLoadingAlertInitialized) {
-                window.showAppLoadingAlert = () => {
-                    activeFetches++;
-                    updateLoadingAlert();
-                };
-                window.hideAppLoadingAlert = () => {
-                    activeFetches = Math.max(0, activeFetches - 1);
-                    updateLoadingAlert();
-                };
-
-                const nativeFetch = window.fetch.bind(window);
-                window.fetch = async (...args) => {
-                    const input = args[0];
-                    const requestOptions = args[1];
-                    const headers = new Headers(
-                        requestOptions?.headers
-                        ?? (input instanceof Request ? input.headers : undefined),
-                    );
-                    const requestUrl = input instanceof Request ? input.url : String(input);
-                    if (
-                        headers.get('X-Sec-Purpose') === 'prefetch'
-                        || headers.get('Sec-Purpose') === 'prefetch'
-                        || /\/households\/imports\/\d+\/status(?:\?|$)/.test(requestUrl)
-                    ) {
-                        return nativeFetch(...args);
-                    }
-
-                    window.showAppLoadingAlert();
-                    try {
-                        return await nativeFetch(...args);
-                    } finally {
-                        window.hideAppLoadingAlert();
-                    }
-                };
-
                 document.addEventListener('turbo:before-visit', () => {
                     isNavigating = true;
                     updateLoadingAlert();
@@ -1108,7 +1137,7 @@
                 window.appNotificationsInitialized = true;
             }
 
-            window.showAppNotification = (type, message, title) => {
+            window.showAppNotification = (type, message, title, action = null) => {
                 const notificationTypes = {
                     success: { title: 'Thao tác thành công', icon: 'fa-circle-check', className: 'success' },
                     info: { title: 'Thông tin', icon: 'fa-circle-info', className: 'info' },
@@ -1116,10 +1145,22 @@
                     error: { title: 'Thao tác chưa thành công', icon: 'fa-circle-exclamation', className: 'danger' },
                 };
                 const typeInfo = notificationTypes[type] || notificationTypes.info;
+                const notificationTitle = title || typeInfo.title;
+                const notificationKey = JSON.stringify([
+                    typeInfo.className,
+                    notificationTitle,
+                    message,
+                    action?.href || '',
+                    action?.label || '',
+                ]);
+                const duplicate = Array.from(document.querySelectorAll('.app-notification'))
+                    .some((item) => item.dataset.notificationKey === notificationKey);
+                if (duplicate) return;
+
                 const container = document.querySelector('.app-notifications-wrap');
                 if (!container) return;
                 container.classList.add('is-visible');
-                if (type === 'success') {
+                if (type === 'success' || action) {
                     container.classList.add('is-toast');
                 }
                 const notification = document.createElement('div');
@@ -1144,12 +1185,20 @@
                 body.className = 'app-notification-message';
                 body.textContent = message;
                 content.append(heading, body);
+                if (action?.href && action?.label) {
+                    const actionLink = document.createElement('a');
+                    actionLink.className = 'btn btn-sm btn-outline-primary mt-2';
+                    actionLink.href = action.href;
+                    actionLink.textContent = action.label;
+                    content.appendChild(actionLink);
+                }
                 closeButton.className = 'app-notification-close';
                 closeButton.type = 'button';
                 closeButton.setAttribute('aria-label', 'Đóng thông báo');
                 closeIcon.className = 'fa-solid fa-xmark';
                 closeIcon.setAttribute('aria-hidden', 'true');
                 closeButton.appendChild(closeIcon);
+                notification.dataset.notificationKey = notificationKey;
                 notification.append(icon, content, closeButton);
                 container.appendChild(notification);
 
@@ -1164,12 +1213,103 @@
                     }, 220);
                 };
                 closeButton.addEventListener('click', dismiss);
-                if (type === 'success' || type === 'info') {
-                    window.setTimeout(dismiss, 6500);
+                if ((type === 'success' || type === 'info') && !action) {
+                    window.setTimeout(dismiss, 4000);
+                }
+                if (action && (type === 'success' || type === 'error')) {
+                    window.setTimeout(dismiss, 6000);
                 }
             };
 
             window.alert = (message) => window.showAppNotification('info', String(message));
+
+            @auth
+                if (!window.householdImportNotificationsInitialized) {
+                    window.householdImportNotificationsInitialized = true;
+                    const notificationUrl = @json(route('households.import-notifications', [], false));
+                    const acknowledgeUrl = @json(route('households.import-notifications.acknowledge', [], false));
+                    const csrfToken = @json(csrf_token());
+                    const displayedIds = new Set();
+                    let checkingNotifications = false;
+
+                    const checkHouseholdImportNotifications = async () => {
+                        if (checkingNotifications || document.visibilityState !== 'visible') return;
+                        checkingNotifications = true;
+
+                        try {
+                            const response = await fetch(notificationUrl, {
+                                headers: { Accept: 'application/json' },
+                                credentials: 'same-origin',
+                            });
+                            if (!response.ok) throw new Error('Không thể kiểm tra kết quả nhập dữ liệu.');
+
+                            const payload = await response.json();
+                            if (document.visibilityState !== 'visible') return;
+                            const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
+                            const ids = [];
+
+                            notifications.forEach((item) => {
+                                ids.push(item.id);
+                                if (displayedIds.has(item.id)) return;
+                                displayedIds.add(item.id);
+                                const failed = item.status === 'FAILED';
+                                window.showAppNotification(
+                                    failed ? 'error' : 'success',
+                                    item.message,
+                                    failed ? 'Nhập dữ liệu thất bại' : 'Nhập dữ liệu thành công',
+                                    { href: item.action_url, label: item.action_label },
+                                );
+                            });
+
+                            if (ids.length > 0) {
+                                const acknowledgeResponse = await fetch(acknowledgeUrl, {
+                                    method: 'POST',
+                                    headers: {
+                                        Accept: 'application/json',
+                                        'Content-Type': 'application/json',
+                                        'X-CSRF-TOKEN': csrfToken,
+                                    },
+                                    body: JSON.stringify({ ids }),
+                                    credentials: 'same-origin',
+                                });
+                                if (!acknowledgeResponse.ok) throw new Error('Không thể ghi nhận thông báo kết quả nhập.');
+                            }
+                        } catch (error) {
+                            console.warn(error);
+                        } finally {
+                            checkingNotifications = false;
+                        }
+                    };
+
+                    let householdImportNotificationTimer = null;
+
+                    const startHouseholdImportNotificationPolling = () => {
+                        if (householdImportNotificationTimer) return;
+                        checkHouseholdImportNotifications();
+                        householdImportNotificationTimer = window.setInterval(checkHouseholdImportNotifications, 10000);
+                    };
+
+                    const stopHouseholdImportNotificationPolling = () => {
+                        if (!householdImportNotificationTimer) return;
+                        window.clearInterval(householdImportNotificationTimer);
+                        householdImportNotificationTimer = null;
+                    };
+
+                    window.checkHouseholdImportNotifications = checkHouseholdImportNotifications;
+                    window.startHouseholdImportNotificationPolling = startHouseholdImportNotificationPolling;
+                    window.stopHouseholdImportNotificationPolling = stopHouseholdImportNotificationPolling;
+                    document.addEventListener('household-import-upload-started', startHouseholdImportNotificationPolling);
+                    document.addEventListener('household-import-completed', () => {
+                        stopHouseholdImportNotificationPolling();
+                        checkHouseholdImportNotifications();
+                    });
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'visible' && householdImportNotificationTimer) {
+                            checkHouseholdImportNotifications();
+                        }
+                    });
+                }
+            @endauth
 
             const confirmDialog = document.getElementById('app-confirm-dialog');
             const confirmMessage = document.getElementById('app-confirm-message');
@@ -1229,7 +1369,7 @@
                 }, true);
                 document.addEventListener('change', (event) => {
                     const select = event.target.closest('[data-pagination-select]');
-                    if (!select || event.defaultPrevented) return;
+                    if (!select || event.defaultPrevented || select.closest('[data-ajax-pagination]')) return;
                     select.form?.requestSubmit();
                 });
                 window.appConfirmFormsInitialized = true;

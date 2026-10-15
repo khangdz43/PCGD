@@ -27,11 +27,11 @@
                         <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
                         <span>
                             @if($user->village)
-                                Phạm vi: Thôn {{ $user->village->name }}
+                                Phạm vi: (Thôn) {{ $user->village->name }}
                             @elseif($user->commune)
-                                Phạm vi: Xã {{ $user->commune->name }}
+                                Phạm vi: (Xã) {{ $user->commune->name }}
                             @elseif($user->province)
-                                Phạm vi: Tỉnh {{ $user->province->name }}
+                                Phạm vi: (Tỉnh) {{ $user->province->name }}
                             @else
                                 Phạm vi: Toàn hệ thống
                             @endif

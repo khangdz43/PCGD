@@ -93,22 +93,17 @@
 
     <fieldset class="mb-3">
 
-        @if ($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
-
-        <p class="form-text">
-            Mỗi tỉnh chỉ có một tài khoản quản trị đang hoạt động.
-            Hãy chọn tỉnh chưa có quản trị viên.
-        </p>
-
-        @else
-
         <legend class="form-label mb-1">
             Phạm vi hoạt động
         </legend>
 
         <p class="form-text">
+            @if ($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
+            Chọn cấp hoạt động và nhóm quyền phù hợp. Tài khoản trung ương chỉ có các quyền được chọn trong nhóm, không có quyền toàn hệ thống.
+            @else
             Có thể tạo tài khoản cùng cấp hoặc cấp dưới trực tiếp.
             Tài khoản chỉ hoạt động trong địa bàn được giao và quyền phụ thuộc vào nhóm được chọn.
+            @endif
         </p>
 
         <div id="scopeLevelField" class="mb-3">
@@ -120,13 +115,15 @@
             <select
                 id="scope_level"
                 class="form-select @error('scope_level') is-invalid @enderror"
-                name="scope_level">
+                name="scope_level"
+                required>
                 @foreach ($accountLevels as $level)
                 <option
                     value="{{ $level }}"
                     @selected($accountScopeLevel===$level)>
                     {{
                                 [
+                                    'global' => 'Trung ương',
                                     'province' => 'Tỉnh / thành phố',
                                     'commune' => 'Xã / phường',
                                     'village' => 'Thôn / xóm'
@@ -143,8 +140,6 @@
             @enderror
 
         </div>
-
-        @endif
 
     </fieldset>
 
@@ -275,7 +270,7 @@
         ĐỊA BÀN ĐƯỢC GIAO
     ========================================================== --}}
 
-    <fieldset class="mb-3">
+    <fieldset class="mb-3" id="territoryFields">
 
         <legend class="fs-6">
             Địa bàn được giao
@@ -285,7 +280,11 @@
 
             @if ($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
 
-            Bạn có thể chọn tỉnh và địa bàn cần giao.
+            Bạn có thể chọn tỉnh và địa bàn cần giao. Với tài khoản trung ương, không gán địa bàn tỉnh.
+
+            @elseif ($actor->roleScopeLevel() === 'global')
+
+            Chọn tỉnh chưa có tài khoản quản trị đang hoạt động.
 
             @elseif ($actor->commune_code)
 
@@ -318,17 +317,26 @@
                 Tỉnh
             </label>
 
-            @if ($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN))
+            @if ($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN)
+                || $actor->roleScopeLevel() === 'global')
 
-            {{-- SYSTEM ADMIN ĐƯỢC CHỌN TỈNH --}}
+            {{-- Tài khoản trung ương được chọn tỉnh trong phạm vi được quản lý. --}}
+
+            @if ($method === 'POST' && $provinces->isEmpty())
+
+            <div class="alert alert-success mb-0" role="status">
+            Đã tạo đầy đủ tài khoản quản trị cho các tỉnh/thành phố.
+            </div>
+
+            @else
 
             <select
-                id="province_code"
+            id="province_code"
                 class="form-select @error('province_code') is-invalid @enderror"
                 name="province_code"
                 required
                 data-except-user="{{ $user->id }}"
-                data-actor-level="system">
+                data-actor-level="{{ $actor->hasRole(\App\Models\Role::SYSTEM_ADMIN) ? 'system' : 'global' }}">
 
                 <option value="">
                     Chọn tỉnh
@@ -348,6 +356,8 @@
                 @endforeach
 
             </select>
+
+            @endif
 
             @else
 
@@ -548,8 +558,11 @@
     ========================================================== --}}
 
     <button
+        id="saveUserButton"
         class="btn btn-primary"
-        type="submit">
+        type="submit"
+        data-requires-province="{{ $actor->hasRole(\App\Models\Role::SYSTEM_ADMIN) && $method === 'POST' && $provinces->isEmpty() ? '1' : '0' }}"
+        @disabled($actor->hasRole(\App\Models\Role::SYSTEM_ADMIN) && $method === 'POST' && $provinces->isEmpty() && $accountScopeLevel !== 'global')>
         Lưu
     </button>
 
@@ -679,6 +692,9 @@
         const scopeLevel =
             document.getElementById('scope_level');
 
+        const saveButton =
+            document.getElementById('saveUserButton');
+
         const province =
             document.getElementById('province_code');
 
@@ -700,6 +716,8 @@
             commune: document.getElementById('communeField'),
 
             village: document.getElementById('villageField'),
+
+            territory: document.getElementById('territoryFields'),
 
         };
 
@@ -1047,6 +1065,10 @@
             preserve = true
         ) {
 
+            if (!province || currentLevel() === 'global') {
+                return;
+            }
+
             /*
              * Nếu actor đã có commune_code
              * thì KHÔNG load lại danh sách xã.
@@ -1177,6 +1199,15 @@
             const level =
                 currentLevel();
 
+            const isGlobal = level === 'global';
+            fields.territory.classList.toggle('d-none', isGlobal);
+            saveButton.disabled =
+                saveButton.dataset.requiresProvince === '1' && !isGlobal;
+            if (province) {
+                province.disabled = isGlobal;
+                province.required = !isGlobal && province.dataset.fixed !== '1';
+            }
+
 
             /* =====================================================
                ROLE FILTER
@@ -1305,7 +1336,9 @@
 
                 updateFields();
 
-                loadCommunes(true);
+                if (currentLevel() !== 'global') {
+                    loadCommunes(true);
+                }
 
             }
         );
@@ -1315,7 +1348,7 @@
            PROVINCE CHANGE
         ========================================================== */
 
-        province.addEventListener(
+        province?.addEventListener(
             'change',
             () => {
 
@@ -1400,4 +1433,3 @@
 </script>
 
 @endpush
-```

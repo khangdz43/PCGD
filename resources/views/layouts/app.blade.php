@@ -1283,8 +1283,10 @@
 
                     let householdImportNotificationTimer = null;
 
+                    const isImportPageActive = () => document.querySelector('[data-import-statuses], #household-import-form');
+
                     const startHouseholdImportNotificationPolling = () => {
-                        if (householdImportNotificationTimer) return;
+                        if (!isImportPageActive() || householdImportNotificationTimer) return;
                         checkHouseholdImportNotifications();
                         householdImportNotificationTimer = window.setInterval(checkHouseholdImportNotifications, 10000);
                     };
@@ -1298,6 +1300,11 @@
                     window.checkHouseholdImportNotifications = checkHouseholdImportNotifications;
                     window.startHouseholdImportNotificationPolling = startHouseholdImportNotificationPolling;
                     window.stopHouseholdImportNotificationPolling = stopHouseholdImportNotificationPolling;
+                    document.addEventListener('turbo:load', () => {
+                        if (isImportPageActive()) {
+                            checkHouseholdImportNotifications();
+                        }
+                    });
                     document.addEventListener('household-import-upload-started', startHouseholdImportNotificationPolling);
                     document.addEventListener('household-import-completed', () => {
                         stopHouseholdImportNotificationPolling();

@@ -28,7 +28,7 @@ class ProcessHouseholdImport implements ShouldQueue
     public function handle(HouseholdImportProcessingService $processingService): void
     {
         $importLog = ImportLog::findOrFail($this->importLogId);
-        if (in_array($importLog->status, ['SUCCESS', 'FAILED', 'ROLLED_BACK'], true)) {
+        if (in_array($importLog->status, ['SUCCESS', 'FAILED', 'DELETED'], true)) {
             return;
         }
 

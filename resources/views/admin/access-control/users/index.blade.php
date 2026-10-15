@@ -107,14 +107,16 @@
     /* ===== User Card ===== */
     .user-card {
         display: grid;
-        grid-template-columns: minmax(0, 2fr) minmax(0, 1.6fr) minmax(0, 1.2fr) auto;
+        grid-template-columns: 3rem minmax(0, 2fr) minmax(0, 1.6fr) minmax(0, 1.1fr) auto;
         align-items: center;
-        gap: .75rem;
-        padding: .5rem .7rem;
+        gap: .8rem;
+        width: 100%;
+        padding: .75rem .8rem;
         border: 1px solid #e5e9ef;
-        border-radius: .5rem;
-        margin-bottom: .35rem;
+        border-radius: .6rem;
+        margin-bottom: .5rem;
         background: #fff;
+        min-height: 4.5rem;
         transition: background-color .15s ease, border-color .15s ease;
     }
 
@@ -163,12 +165,18 @@
 
     .user-info {
         min-width: 0;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        overflow: hidden;
     }
 
     .user-name {
         font-weight: 600;
         color: #273449;
         font-size: .9rem;
+        line-height: 1.35;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -185,17 +193,22 @@
     .user-meta {
         display: flex;
         align-items: center;
+        justify-content: flex-start;
         gap: .5rem;
         flex-wrap: wrap;
         min-width: 0;
+        width: 100%;
     }
 
     .user-role-column {
         min-width: 0;
+        width: 100%;
         display: flex;
         flex-direction: column;
         align-items: flex-start;
+        justify-content: center;
         gap: .25rem;
+        overflow: hidden;
     }
 
     .user-role-label {
@@ -222,8 +235,14 @@
     }
 
     .user-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
         border: 1px solid transparent;
         font-size: .72rem;
+        line-height: 1;
+        padding: .45rem .7rem;
+        border-radius: 999px;
     }
 
     .user-status-active {
@@ -241,8 +260,10 @@
     .user-actions {
         display: flex;
         justify-content: flex-end;
+        align-items: center;
         gap: .35rem;
         flex-shrink: 0;
+        min-width: 5rem;
     }
 
     .user-actions .btn {
@@ -312,25 +333,31 @@
 
     .user-location-filter {
         display: grid;
-        grid-template-columns: minmax(170px, 1.25fr) repeat(3, minmax(120px, 1fr)) auto auto;
+        grid-template-columns: minmax(180px, 1.4fr) minmax(160px, 1.1fr) minmax(150px, 1.1fr) minmax(150px, 1.1fr) minmax(150px, 1.1fr) auto;
         gap: .5rem;
         align-items: center;
     }
 
-    .user-location-filter .location-picker-inline {
+    .user-location-filter > .location-picker-inline {
         display: contents;
     }
 
     .user-location-filter .location-picker-field {
         min-width: 0;
+        display: flex;
+        align-items: stretch;
     }
 
-    .user-location-filter .form-select {
-        min-width: 0;
-    }
-
+    .user-location-filter .form-select,
     .user-location-filter .form-control {
         min-width: 0;
+        width: 100%;
+        height: 2.5rem;
+    }
+
+    .user-location-filter [data-clear-user-filter] {
+        align-self: stretch;
+        white-space: nowrap;
     }
 
     .user-location-filter .location-picker-status:empty {
@@ -384,6 +411,79 @@
         max-height: min(34rem, 65vh);
         overflow-y: auto;
         padding: .5rem;
+        background: #f9fafb;
+    }
+
+    .account-table {
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0 .5rem;
+        table-layout: fixed;
+        margin: 0;
+    }
+
+    .account-table thead th {
+        padding: .65rem .8rem;
+        font-size: .72rem;
+        font-weight: 700;
+        letter-spacing: .03em;
+        text-transform: uppercase;
+        color: #64748b;
+        background: transparent;
+        border: 0;
+    }
+
+    .account-table tbody td {
+        padding: .8rem;
+        vertical-align: top;
+        background: #fff;
+        border-top: 1px solid #e5e9ef;
+        border-bottom: 1px solid #e5e9ef;
+    }
+
+    .account-table tbody td:first-child {
+        border-left: 1px solid #e5e9ef;
+        border-top-left-radius: .6rem;
+        border-bottom-left-radius: .6rem;
+    }
+
+    .account-table tbody td:last-child {
+        border-right: 1px solid #e5e9ef;
+        border-top-right-radius: .6rem;
+        border-bottom-right-radius: .6rem;
+    }
+
+    .account-table tbody .user-row:hover td {
+        background: #f8fafc;
+    }
+
+    .user-row-central td {
+        background: #faf8ff;
+    }
+
+    .user-row-central:hover td {
+        background: #f5f3ff;
+    }
+
+    .user-cell {
+        min-width: 0;
+    }
+
+    .user-cell-name {
+        width: 40%;
+    }
+
+    .user-cell-role {
+        width: 30%;
+    }
+
+    .user-cell-status {
+        width: 15%;
+    }
+
+    .user-cell-actions {
+        width: 15%;
+        text-align: right;
     }
 
     .account-list-body .user-card:last-child {
@@ -519,7 +619,7 @@
 
     @media (max-width: 767.98px) {
         .user-location-filter {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-columns: 1fr;
         }
 
         .user-location-filter .location-picker-field:first-child {
@@ -527,9 +627,9 @@
         }
 
         .user-location-filter .form-control,
+        .user-location-filter .location-picker-field,
         .user-location-filter [data-clear-user-filter],
         .user-location-filter .btn-primary {
-            grid-column: 1 / -1;
             width: 100%;
         }
 
@@ -558,6 +658,7 @@
             align-items: center;
             column-gap: .65rem;
             row-gap: .45rem;
+            width: 100%;
             padding: .7rem;
         }
 
@@ -573,7 +674,7 @@
 
         .user-meta {
             grid-area: meta;
-            width: auto;
+            width: 100%;
             min-width: 0;
             margin-top: 0;
             gap: .35rem;
@@ -728,6 +829,19 @@
     <h1 class="visually-hidden">Quản lý tài khoản</h1>
 
     {{-- Lọc theo địa bàn --}}
+    @php
+        $actorScopeLevel = $actor->roleScopeLevel();
+        $canSelectProvince = $actorScopeLevel === 'global';
+        $canSelectCommune = in_array($actorScopeLevel, ['global', 'province'], true);
+        $canSelectVillage = in_array($actorScopeLevel, ['global', 'province', 'commune'], true);
+    @endphp
+
+    <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
+        <a class="btn btn-sm btn-primary" href="{{ route('admin.users.create') }}">
+            <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i>Tạo tài khoản
+        </a>
+    </div>
+
     <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-2" id="user-location-filter">
         <label class="visually-hidden" for="user-search">Tìm theo tên hoặc tên đăng nhập</label>
         <input id="user-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Tìm tên hoặc tên đăng nhập">
@@ -750,10 +864,13 @@
             'villageCode' => $villageCode,
             'showVillage' => true,
             'inline' => true,
+            'hideProvince' => ! $canSelectProvince,
+            'hideCommune' => ! $canSelectCommune,
+            'hideVillage' => ! $canSelectVillage,
         ])
-        <a class="btn btn-sm btn-primary" href="{{ route('admin.users.create') }}">
-            <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i>Tạo tài khoản
-        </a>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-user-filter @disabled(! $isFiltering)>
+            <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Bỏ lọc
+        </button>
     </form>
 
     <div class="row g-3 user-management-layout">
@@ -776,14 +893,28 @@
                     <span class="badge text-bg-light border">{{ number_format($totalUserCount) }}</span>
                 </div>
                 <div class="account-list-body">
-                    @forelse($allUsers as $user)
-                        @include('admin.access-control.users._user_card', ['user' => $user])
-                    @empty
+                    @if($allUsers->isNotEmpty())
+                        <table class="account-table align-middle">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Tài khoản</th>
+                                    <th scope="col">Nhóm người dùng</th>
+                                    <th scope="col">Trạng thái</th>
+                                    <th scope="col" class="text-end">Thao tác</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach($allUsers as $user)
+                                    @include('admin.access-control.users._user_card', ['user' => $user, 'tableMode' => true])
+                                @endforeach
+                            </tbody>
+                        </table>
+                    @else
                         <div class="text-center text-muted py-5">
                             <i class="fa-regular fa-folder-open fs-3 d-block mb-2" aria-hidden="true"></i>
                             Chưa có tài khoản trong địa bàn đang chọn.
                         </div>
-                    @endforelse
+                    @endif
                 </div>
                 @if($allUsers->hasPages())
                     <div class="card-footer bg-white">
@@ -1064,6 +1195,27 @@
                 province: parseCounts('provinceCounts'),
             };
 
+            const syncClearFilterVisibility = () => {
+                const hasFilters = ['q', 'role_id', 'province_code', 'commune_code', 'village_code']
+                    .some((key) => {
+                        const element = filterForm.elements.namedItem(key);
+                        if (!element) return false;
+                        const value = element.value ?? '';
+                        return String(value).trim() !== '';
+                    });
+
+                const clearButton = filterForm.querySelector('[data-clear-user-filter]');
+                if (clearButton) {
+                    clearButton.disabled = !hasFilters;
+                    clearButton.setAttribute('aria-disabled', String(!hasFilters));
+                }
+                const clearTreeFilter = unitTree?.querySelector('[data-clear-user-filter]');
+                if (clearTreeFilter) {
+                    clearTreeFilter.disabled = !hasFilters;
+                    clearTreeFilter.setAttribute('aria-disabled', String(!hasFilters));
+                }
+            };
+
             const selectedFiltersUrl = () => {
                 const url = new URL(filterForm.action, window.location.href);
                 new FormData(filterForm).forEach((value, key) => {
@@ -1176,12 +1328,7 @@
                     if (version !== requestVersion) return;
 
                     results.innerHTML = updatedResults.innerHTML;
-                    const hasFilters = ['q', 'province_code', 'commune_code', 'village_code']
-                        .some((key) => url.searchParams.has(key));
-                    const clearButton = filterForm.querySelector('[data-clear-user-filter]');
-                    if (clearButton) clearButton.hidden = !hasFilters;
-                    const clearTreeFilter = unitTree?.querySelector('[data-clear-user-filter]');
-                    if (clearTreeFilter) clearTreeFilter.hidden = !hasFilters;
+                    syncClearFilterVisibility();
                     window.history.replaceState({}, '', url);
                     updateActiveUnit(url);
                     if (scrollPosition !== null) {
@@ -1318,6 +1465,8 @@
                 node.dataset.treeLoaded = 'true';
             };
 
+            syncClearFilterVisibility();
+
             if (unitTree && !unitTree.dataset.ajaxReady) {
                 unitTree.dataset.ajaxReady = 'true';
                 unitTree.addEventListener('click', async (event) => {
@@ -1385,11 +1534,13 @@
             filterForm.addEventListener('change', (event) => {
                 if (event.target.matches('[name="role_id"]')) {
                     event.preventDefault();
+                    syncClearFilterVisibility();
                     filterForm.requestSubmit();
                     return;
                 }
 
                 if (event.target.matches('[data-province], [data-commune], [data-village]')) {
+                    syncClearFilterVisibility();
                     const url = selectedFiltersUrl();
                     refreshResults(url);
                     updateActiveUnit(url);
@@ -1412,14 +1563,22 @@
 
                 event.preventDefault();
                 filterForm.querySelector('[name="q"]').value = '';
-                filterForm.querySelector('[data-province]').value = '';
+                const roleSelect = filterForm.querySelector('[name="role_id"]');
+                if (roleSelect) roleSelect.value = '';
+                const provinceSelect = filterForm.querySelector('[data-province]');
+                if (provinceSelect) provinceSelect.value = '';
                 const commune = filterForm.querySelector('[data-commune]');
-                commune.replaceChildren(new Option('-- Chọn Xã/Phường --', ''));
-                commune.disabled = true;
+                if (commune) {
+                    commune.replaceChildren(new Option('-- Chọn Xã/Phường --', ''));
+                    commune.disabled = true;
+                }
 
                 const village = filterForm.querySelector('[data-village]');
-                village.replaceChildren(new Option(village.dataset.placeholder, ''));
-                village.disabled = true;
+                if (village) {
+                    village.replaceChildren(new Option(village.dataset.placeholder, ''));
+                    village.disabled = true;
+                }
+                syncClearFilterVisibility();
                 refreshResults(new URL(filterForm.action, window.location.href));
             });
         }

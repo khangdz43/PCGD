@@ -327,8 +327,15 @@ class UserAccessControlService
 
     public function canResetUserPassword(User $actor, User $target): bool
     {
-        return ! $actor->is($target)
-            && $this->canManageUser($actor, $target);
+        if ($actor->is($target)) {
+            return false;
+        }
+
+        if (! $actor->hasRole(Role::SYSTEM_ADMIN) && ! $actor->canManageSubordinateUsers()) {
+            return false;
+        }
+
+        return $this->canManageUser($actor, $target);
     }
 
     public function resetPassword(User $user): void
@@ -388,12 +395,10 @@ class UserAccessControlService
         ?array $assignableRoleIds
     ): bool {
         $target->loadMissing(['roles', 'villages']);
-        if ($assignableRoleIds !== null && $target->roles->contains(
-            fn (Role $role): bool => ! in_array($role->id, $assignableRoleIds, true)
-        )) {
-            return false;
-        }
 
+        // Khóa / kích hoạt tài khoản là thao tác cấp trạng thái, không phải gán vai trò.
+        // Vì vậy chỉ cần kiểm tra quyền quản lý theo địa bàn và cấp mục tiêu, không
+        // cấm tài khoản cùng cấp vì vai trò của họ không thuộc danh sách role do actor tạo ra.
         $villageCodes = $target->villages->pluck('code')->all();
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
             if ($targetLevel === 'global') {
@@ -421,13 +426,20 @@ class UserAccessControlService
         }
 
         return match ($actor->roleScopeLevel()) {
-            'province' => $targetLevel === 'commune'
-                && $target->commune_code !== null
-                && $villageCodes === [],
-            'commune' => $targetLevel === 'village'
-                && $target->commune_code === $actor->commune_code
-                && $target->commune_code !== null
-                && $villageCodes !== [],
+            'province' => ($targetLevel === 'province'
+                    && $target->commune_code === null
+                    && $villageCodes === [])
+                || ($targetLevel === 'commune'
+                    && $target->commune_code !== null
+                    && $villageCodes === []),
+            'commune' => ($targetLevel === 'commune'
+                    && $target->commune_code === $actor->commune_code
+                    && $target->commune_code !== null
+                    && $villageCodes === [])
+                || ($targetLevel === 'village'
+                    && $target->commune_code === $actor->commune_code
+                    && $target->commune_code !== null
+                    && $villageCodes !== []),
             default => false,
         };
     }
@@ -440,8 +452,8 @@ class UserAccessControlService
 
         return match ($actor->roleScopeLevel()) {
             'global' => ['province'],
-            'province' => ['commune'],
-            'commune' => ['village'],
+            'province' => ['province', 'commune'],
+            'commune' => ['commune', 'village'],
             default => [],
         };
     }

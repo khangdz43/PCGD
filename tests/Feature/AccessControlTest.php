@@ -193,6 +193,28 @@ class AccessControlTest extends TestCase
             ->assertDontSee('Tài khoản thuộc nhóm B');
     }
 
+    public function test_account_index_clear_filter_button_is_disabled_until_a_filter_is_selected(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertSee('data-clear-user-filter disabled', false);
+
+        $this->actingAs($admin)
+            ->get(route('admin.users.index', ['role_id' => 1]))
+            ->assertOk()
+            ->assertSee('data-clear-user-filter', false)
+            ->assertDontSee('data-clear-user-filter disabled', false);
+    }
+
     public function test_admin_menu_destination_opens_the_first_available_management_page(): void
     {
         $systemAdminRole = Role::create([
@@ -534,6 +556,58 @@ class AccessControlTest extends TestCase
         $this->actingAs($target)
             ->get('/')
             ->assertOk();
+    }
+
+    public function test_user_management_actions_are_hidden_for_accounts_without_manage_user_permission(): void
+    {
+        DB::table('provinces')->insert([
+            ['code' => 'P1', 'name' => 'Tỉnh một', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'P2', 'name' => 'Tỉnh hai', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+        DB::table('communes')->insert([
+            ['code' => 'C1', 'name' => 'Xã một', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'C2', 'name' => 'Xã hai', 'province_code' => 'P2', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $manageUserRole = Role::create([
+            'name' => 'Quản trị tỉnh có quyền tài khoản',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $manageUserRole->permissions()->sync([
+            Permission::firstOrCreate(['name' => AccessPermission::MANAGE_USER_ACCOUNTS, 'guard_name' => 'web'])->id,
+            Permission::firstOrCreate(['name' => AccessPermission::VIEW_HOUSEHOLDS, 'guard_name' => 'web'])->id,
+        ]);
+
+        $actor = User::factory()->create([
+            'name' => 'Quản trị tỉnh một',
+            'username' => 'province-user-manager',
+            'province_code' => 'P1',
+            'scope_level' => 'province',
+            'is_active' => true,
+        ]);
+        $actor->roles()->attach($manageUserRole);
+
+        $managedUser = User::factory()->create([
+            'name' => 'Tài khoản ngoài phạm vi',
+            'username' => 'out-of-area-user',
+            'province_code' => 'P2',
+            'scope_level' => 'province',
+            'is_active' => true,
+        ]);
+        $managedUser->roles()->attach(Role::create([
+            'name' => 'Quản trị tỉnh hai',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]));
+
+        $this->actingAs($actor)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertDontSee(route('admin.users.reset-password', $managedUser), false)
+            ->assertDontSee(route('admin.users.status', $managedUser), false)
+            ->assertDontSee('fa-lock')
+            ->assertDontSee('fa-key');
     }
 
     public function test_province_and_commune_managers_can_create_same_level_and_subordinate_groups_and_accounts(): void
@@ -3021,6 +3095,11 @@ class AccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        $manager = User::factory()->create([
+            'province_code' => 'P1',
+            'scope_level' => 'province',
+            'is_active' => true,
+        ]);
         $managerRole = Role::create([
             'name' => 'province-account-manager',
             'scope_level' => 'province',
@@ -3030,11 +3109,6 @@ class AccessControlTest extends TestCase
             'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
             'guard_name' => 'web',
         ]));
-        $manager = User::factory()->create([
-            'province_code' => 'P1',
-            'scope_level' => 'province',
-            'is_active' => true,
-        ]);
         $manager->roles()->attach($managerRole);
         $communeRole = Role::create([
             'name' => 'commune-user',
@@ -3066,7 +3140,7 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertSee('Thu hồi tài khoản')
             ->assertSee(route('admin.users.status', $target))
-            ->assertDontSee(route('admin.users.status', $sameLevelAccount));
+            ->assertSee(route('admin.users.status', $sameLevelAccount));
 
         $this->get(route('admin.users.edit', $target))
             ->assertOk()
@@ -3077,7 +3151,8 @@ class AccessControlTest extends TestCase
             ->assertRedirectToRoute('admin.users.index');
         $this->assertDatabaseHas('users', ['id' => $target->id, 'is_active' => false]);
         $this->patch(route('admin.users.status', $sameLevelAccount), ['is_active' => '0'])
-            ->assertForbidden();
+            ->assertRedirectToRoute('admin.users.index');
+        $this->assertDatabaseHas('users', ['id' => $sameLevelAccount->id, 'is_active' => false]);
     }
 
     public function test_commune_account_manager_can_revoke_village_accounts_only_in_its_commune(): void

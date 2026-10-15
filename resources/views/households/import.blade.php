@@ -97,6 +97,7 @@
             submitButton.setAttribute('aria-busy', 'true');
             submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Đang tải lên...';
             uploadProgress.classList.remove('d-none');
+            window.dispatchEvent(new Event('household-import-upload-started'));
 
             try {
                 const payload = await new Promise((resolve, reject) => {

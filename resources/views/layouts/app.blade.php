@@ -1281,12 +1281,30 @@
                         }
                     };
 
+                    let householdImportNotificationTimer = null;
+
+                    const startHouseholdImportNotificationPolling = () => {
+                        if (householdImportNotificationTimer) return;
+                        checkHouseholdImportNotifications();
+                        householdImportNotificationTimer = window.setInterval(checkHouseholdImportNotifications, 10000);
+                    };
+
+                    const stopHouseholdImportNotificationPolling = () => {
+                        if (!householdImportNotificationTimer) return;
+                        window.clearInterval(householdImportNotificationTimer);
+                        householdImportNotificationTimer = null;
+                    };
+
                     window.checkHouseholdImportNotifications = checkHouseholdImportNotifications;
-                    checkHouseholdImportNotifications();
-                    window.setInterval(checkHouseholdImportNotifications, 10000);
-                    document.addEventListener('household-import-completed', checkHouseholdImportNotifications);
+                    window.startHouseholdImportNotificationPolling = startHouseholdImportNotificationPolling;
+                    window.stopHouseholdImportNotificationPolling = stopHouseholdImportNotificationPolling;
+                    document.addEventListener('household-import-upload-started', startHouseholdImportNotificationPolling);
+                    document.addEventListener('household-import-completed', () => {
+                        stopHouseholdImportNotificationPolling();
+                        checkHouseholdImportNotifications();
+                    });
                     document.addEventListener('visibilitychange', () => {
-                        if (document.visibilityState === 'visible') {
+                        if (document.visibilityState === 'visible' && householdImportNotificationTimer) {
                             checkHouseholdImportNotifications();
                         }
                     });

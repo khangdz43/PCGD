@@ -111,6 +111,8 @@ class AccessControlTest extends TestCase
         Schema::create('persons', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('household_id');
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('person_educations', function (Blueprint $table): void {
@@ -128,6 +130,8 @@ class AccessControlTest extends TestCase
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->string('village_code')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
     }
@@ -234,6 +238,7 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertSee('href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"', false)
             ->assertSee('Tiện ích')
+            ->assertSee(route('utilities.trash.index', [], false))
             ->assertSee('Thùng rác')
             ->assertSee('Gộp thôn')
             ->assertSee('Gộp trường')
@@ -302,13 +307,13 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('remaining_count', 1)
             ->assertJsonPath('is_household_head', false);
-        $this->assertDatabaseMissing('persons', ['id' => $memberId]);
+        $this->assertSoftDeleted('persons', ['id' => $memberId]);
 
         $this->deleteJson(route('households.members.destroy', [$household, $headId]))
             ->assertOk()
             ->assertJsonPath('remaining_count', 0)
             ->assertJsonPath('is_household_head', true);
-        $this->assertDatabaseMissing('persons', ['id' => $headId]);
+        $this->assertSoftDeleted('persons', ['id' => $headId]);
 
         $bulkIds = collect(['Anh', 'Chị'])->map(fn(string $relationship): int => DB::table('persons')->insertGetId([
             'household_id' => $household->id,
@@ -320,7 +325,7 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('deleted_ids', $bulkIds);
         foreach ($bulkIds as $personId) {
-            $this->assertDatabaseMissing('persons', ['id' => $personId]);
+            $this->assertSoftDeleted('persons', ['id' => $personId]);
         }
     }
 

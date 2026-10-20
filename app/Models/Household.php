@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Household extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'household_code',
         'school_year',
@@ -44,5 +47,10 @@ class Household extends Model
     public function importLog(): BelongsTo
     {
         return $this->belongsTo(ImportLog::class);
+    }
+
+    public function deletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
     }
 }

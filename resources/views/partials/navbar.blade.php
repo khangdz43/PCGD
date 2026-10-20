@@ -86,10 +86,9 @@
                         <ul class="dropdown-menu">
                             @can('delete-households')
                                 <li>
-                                    <span class="dropdown-item disabled" aria-disabled="true">
+                                    <a class="dropdown-item {{ request()->routeIs('utilities.trash.*') ? 'active' : '' }}" href="{{ route('utilities.trash.index', [], false) }}">
                                         <i class="fa-solid fa-trash-can me-2" aria-hidden="true"></i>Thùng rác
-                                        <small class="text-muted ms-1">Sắp có</small>
-                                    </span>
+                                    </a>
                                 </li>
                             @endcan
                             @can('manage-villages')

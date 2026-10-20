@@ -138,7 +138,7 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_deleting_a_household_requires_delete_permission_and_removes_the_record(): void
+    public function test_deleting_a_household_requires_permission_and_moves_it_to_trash(): void
     {
         $viewer = $this->userWithPermissions([AccessPermission::VIEW_HOUSEHOLDS]);
         $household = $this->createHousehold();
@@ -153,7 +153,11 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertRedirect(route('households.index'))
             ->assertSessionHas('success');
 
-        $this->assertDatabaseMissing('households', ['id' => $household->id]);
+        $this->assertSoftDeleted('households', ['id' => $household->id]);
+        $this->assertDatabaseHas('households', [
+            'id' => $household->id,
+            'deleted_by' => $deleter->id,
+        ]);
     }
 
     public function test_household_bulk_delete_validates_ids_and_deletes_accessible_households(): void
@@ -174,7 +178,95 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertRedirect(route('households.index', ['school_year' => '2025-2026', 'page' => 2]))
             ->assertSessionHas('success');
 
-        $this->assertDatabaseCount('households', 0);
+        $this->assertDatabaseHas('households', ['id' => $first->id]);
+        $this->assertDatabaseHas('households', ['id' => $second->id]);
+        $this->assertSoftDeleted('households', ['id' => $first->id]);
+        $this->assertSoftDeleted('households', ['id' => $second->id]);
+    }
+
+    public function test_trash_filters_restores_and_permanently_deletes_households_and_members(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
+        $household = $this->createHousehold(['household_code' => 'TRASH-01']);
+        $head = $this->createPerson($household, [
+            'first_name' => 'Chủ',
+            'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $member = $this->createPerson($household, [
+            'first_name' => 'Thành viên cần khôi phục',
+            'relationship_with_head' => 'Con',
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('households.destroy', $household))
+            ->assertRedirect(route('households.index'));
+
+        $this->assertSoftDeleted('households', ['id' => $household->id]);
+        $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
+        $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']))
+            ->assertOk()
+            ->assertSee('TRASH-01')
+            ->assertSee('2 thành viên');
+        $this->get(route('utilities.trash.index', ['type' => 'person']))
+            ->assertOk()
+            ->assertDontSee('Thành viên cần khôi phục');
+
+        $this->patch(route('utilities.trash.households.restore', $household->id))
+            ->assertRedirect();
+        $this->assertDatabaseHas('households', ['id' => $household->id, 'deleted_at' => null, 'deleted_by' => null]);
+        $this->assertSame(2, $household->fresh()->persons()->count());
+
+        $this->deleteJson(route('households.members.destroy', [$household, $member->id]))
+            ->assertOk();
+        $this->assertSoftDeleted('persons', ['id' => $member->id]);
+        $this->get(route('utilities.trash.index', ['type' => 'person', 'q' => 'Thành viên cần khôi phục']))
+            ->assertOk()
+            ->assertSee('Thành viên cần khôi phục');
+
+        $this->patch(route('utilities.trash.persons.restore', $member->id))
+            ->assertRedirect();
+        $this->assertDatabaseHas('persons', ['id' => $member->id, 'deleted_at' => null, 'deleted_by' => null]);
+
+        $this->deleteJson(route('households.members.destroy', [$household, $member->id]))
+            ->assertOk();
+        $this->delete(route('utilities.trash.persons.destroy', $member->id))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('persons', ['id' => $member->id]);
+
+        $this->delete(route('households.destroy', $household))
+            ->assertRedirect(route('households.index'));
+        $this->delete(route('utilities.trash.households.destroy', $household->id))
+            ->assertRedirect();
+        $this->assertDatabaseMissing('households', ['id' => $household->id]);
+        $this->assertDatabaseMissing('persons', ['id' => $head->id]);
+    }
+
+    public function test_trash_requires_delete_permission_and_respects_the_users_area(): void
+    {
+        $viewer = $this->userWithPermissions([AccessPermission::VIEW_HOUSEHOLDS]);
+        $insideAreaUser = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
+        $outsideArea = $this->createHousehold([
+            'household_code' => 'OUTSIDE-TRASH',
+            'province_code' => 'P02',
+            'commune_code' => 'C02',
+            'village_code' => 'V02',
+        ]);
+        DB::table('households')->where('id', $outsideArea->id)->update([
+            'deleted_at' => now(),
+            'deleted_by' => $insideAreaUser->id,
+        ]);
+
+        $this->actingAs($viewer)
+            ->get(route('utilities.trash.index'))
+            ->assertForbidden();
+
+        $this->actingAs($insideAreaUser)
+            ->get(route('utilities.trash.index'))
+            ->assertOk()
+            ->assertDontSee('OUTSIDE-TRASH');
+
+        $this->patch(route('utilities.trash.households.restore', $outsideArea->id))
+            ->assertNotFound();
     }
 
     public function test_member_cannot_be_added_before_the_household_head(): void
@@ -848,6 +940,8 @@ class HouseholdCrudFlowTest extends TestCase
             $table->string('residence_type')->default('THUONG_TRU');
             $table->string('residence_status')->nullable();
             $table->unsignedBigInteger('import_log_id')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('import_logs', function (Blueprint $table): void {
@@ -881,6 +975,8 @@ class HouseholdCrudFlowTest extends TestCase
             $table->string('parent_name')->nullable();
             $table->string('phone')->nullable();
             $table->text('note')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('person_educations', function (Blueprint $table): void {

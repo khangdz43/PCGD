@@ -65,7 +65,8 @@ class DataAccessScopeTest extends TestCase
         $query = DataAccessScope::households(Household::query(), $user);
 
         self::assertSame([], $query->getBindings());
-        self::assertStringNotContainsString('where', strtolower($query->toSql()));
+        self::assertStringContainsString('"households"."deleted_at" is null', strtolower($query->toSql()));
+        self::assertStringNotContainsString('province_code', strtolower($query->toSql()));
     }
 
     public function test_household_access_checks_match_area_and_reject_mismatches(): void

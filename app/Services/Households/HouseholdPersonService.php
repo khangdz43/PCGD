@@ -163,7 +163,7 @@ class HouseholdPersonService
         });
     }
 
-    public function delete(Person $person, Household $household): ?bool
+    public function delete(Person $person, Household $household, User $user): ?bool
     {
         $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
         if (
@@ -173,6 +173,8 @@ class HouseholdPersonService
             return null;
         }
 
+        $person->deleted_by = $user->id;
+        $person->save();
         $person->delete();
 
         return $isHouseholdHead;
@@ -204,10 +206,14 @@ class HouseholdPersonService
         return false;
     }
 
-    public function deleteMany(Collection $persons): void
+    public function deleteMany(Collection $persons, User $user): void
     {
-        DB::transaction(function () use ($persons): void {
-            Person::whereIn('id', $persons->modelKeys())->delete();
+        DB::transaction(function () use ($persons, $user): void {
+            foreach ($persons as $person) {
+                $person->deleted_by = $user->id;
+                $person->save();
+                $person->delete();
+            }
         });
     }
 

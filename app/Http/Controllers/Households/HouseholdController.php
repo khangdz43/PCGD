@@ -91,10 +91,10 @@ class HouseholdController extends Controller
             ->with('success', 'Đã cập nhật phiếu điều tra.');
     }
 
-    public function destroy(Household $household)
+    public function destroy(Request $request, Household $household)
     {
         $this->assertAccess($household);
-        $this->households->delete($household);
+        $this->households->delete($household, $request->user());
 
         return redirect()->to(route('households.index', [], false))->with('success', 'Đã xóa phiếu điều tra.');
     }

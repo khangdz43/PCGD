@@ -193,6 +193,8 @@ erDiagram
         enum residence_type
         varchar residence_status
         bigint import_log_id FK
+        timestamp deleted_at
+        bigint deleted_by FK
         timestamp created_at
         timestamp updated_at
     }
@@ -213,6 +215,8 @@ erDiagram
         varchar parent_name
         varchar phone
         text note
+        timestamp deleted_at
+        bigint deleted_by FK
         timestamp created_at
         timestamp updated_at
     }
@@ -304,7 +308,9 @@ erDiagram
 - `model_has_roles` là bảng gán role polymorphic: `model_id` kết hợp với `model_type` xác định model nhận role; `assigned_by` lưu người cấp.
 - `user_villages` là bảng nối nhiều-nhiều giữa tài khoản và thôn/xóm.
 - Trigger `persons_one_head_before_insert` và `persons_one_head_before_update` đảm bảo mỗi hộ tối đa một nhân khẩu có `relationship_with_head = 'Chủ hộ'`.
-- Xóa hộ sẽ xóa nhân khẩu liên quan; xóa nhân khẩu sẽ xóa dữ liệu học tập và khuyết tật.
+- Phiếu/hộ và nhân khẩu dùng xóa mềm; `deleted_at` lưu thời điểm xóa, `deleted_by` lưu tài khoản thực hiện.
+- Xóa vĩnh viễn hộ sẽ xóa nhân khẩu liên quan; xóa vĩnh viễn nhân khẩu sẽ xóa dữ liệu học tập và khuyết tật.
+- Trigger chủ hộ chỉ xét nhân khẩu chưa bị xóa mềm; khôi phục chủ hộ sẽ bị từ chối nếu hộ đã có chủ hộ khác.
 - Xóa `import_logs` đặt `import_log_id` của các bản ghi nhập liên quan thành `NULL`.
 - `sessions.user_id` được đánh index nhưng không có foreign key trong migration Laravel.
 - `model_has_roles.model_id` và `model_type` không có foreign key vì đây là quan hệ polymorphic.

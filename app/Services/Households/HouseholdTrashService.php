@@ -69,7 +69,16 @@ class HouseholdTrashService
         $personIds = $pageItems->where('item_type', 'person')->pluck('id');
 
         $householdRecords = Household::withTrashed()
-            ->with(['province', 'commune', 'village', 'deletedBy'])
+            ->with([
+                'province',
+                'commune',
+                'village',
+                'deletedBy',
+                'persons' => fn ($persons) => $persons
+                    ->withoutGlobalScope('active_household')
+                    ->withTrashed()
+                    ->select('id', 'household_id', 'first_name', 'last_name', 'dob', 'relationship_with_head'),
+            ])
             ->withCount(['persons' => fn (Builder $persons): Builder => $persons
                 ->withoutGlobalScope('active_household')
                 ->withTrashed()])
@@ -90,6 +99,12 @@ class HouseholdTrashService
             $item->record = $item->item_type === 'household'
                 ? $householdRecords->get($item->id)
                 : $personRecords->get($item->id);
+            $item->headPerson = $item->item_type === 'household'
+                ? $item->record?->persons->firstWhere('relationship_with_head', 'Chủ hộ')
+                    ?? $item->record?->persons->first(fn (Person $person): bool =>
+                        trim($person->last_name.' '.$person->first_name)
+                        === trim($item->record->head_last_name.' '.$item->record->head_first_name))
+                : null;
 
             return $item;
         });

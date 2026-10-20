@@ -187,10 +187,14 @@ class HouseholdCrudFlowTest extends TestCase
     public function test_trash_filters_restores_and_permanently_deletes_households_and_members(): void
     {
         $user = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
-        $household = $this->createHousehold(['household_code' => 'TRASH-01']);
+        $household = $this->createHousehold([
+            'household_code' => 'TRASH-01',
+            'head_first_name' => 'Chủ',
+        ]);
         $head = $this->createPerson($household, [
             'first_name' => 'Chủ',
             'relationship_with_head' => 'Chủ hộ',
+            'dob' => '1982-03-04',
         ]);
         $member = $this->createPerson($household, [
             'first_name' => 'Thành viên cần khôi phục',
@@ -228,6 +232,11 @@ class HouseholdCrudFlowTest extends TestCase
         $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']))
             ->assertOk()
             ->assertSee('TRASH-01')
+            ->assertSee('Họ và tên')
+            ->assertSee('Ngày sinh')
+            ->assertSee('Thời gian xóa')
+            ->assertSee('Nguyễn Chủ')
+            ->assertSee('04/03/1982')
             ->assertSee('2 thành viên')
             ->assertSee('id="select-all-trash-items"', false)
             ->assertSee('name="household_ids[]"', false)
@@ -387,7 +396,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('households.members.store', $household).'?is_head=1', $this->personPayload(null))
+            ->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertRedirect(route('households.show', $household))
             ->assertSessionHas('success');
 
@@ -398,7 +407,7 @@ class HouseholdCrudFlowTest extends TestCase
             'relationship_with_head' => 'Chủ hộ',
         ]);
 
-        $this->post(route('households.members.store', $household).'?is_head=1', $this->personPayload(null))
+        $this->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertRedirect(route('households.show', $household))
             ->assertSessionHas('warning');
 
@@ -520,13 +529,13 @@ class HouseholdCrudFlowTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonCount(3, 'statuses')
-            ->assertJsonPath('statuses.'.$processing->id.'.status', 'PROCESSING')
-            ->assertJsonPath('statuses.'.$processing->id.'.progress', 90)
-            ->assertJsonPath('statuses.'.$completed->id.'.status', 'SUCCESS')
-            ->assertJsonPath('statuses.'.$completed->id.'.progress', 100)
-            ->assertJsonMissingPath('statuses.'.$foreign->id)
-            ->assertJsonPath('statuses.'.$queued->id.'.queue_position', 2)
-            ->assertJsonPath('statuses.'.$queued->id.'.queue_total', 3);
+            ->assertJsonPath('statuses.' . $processing->id . '.status', 'PROCESSING')
+            ->assertJsonPath('statuses.' . $processing->id . '.progress', 90)
+            ->assertJsonPath('statuses.' . $completed->id . '.status', 'SUCCESS')
+            ->assertJsonPath('statuses.' . $completed->id . '.progress', 100)
+            ->assertJsonMissingPath('statuses.' . $foreign->id)
+            ->assertJsonPath('statuses.' . $queued->id . '.queue_position', 2)
+            ->assertJsonPath('statuses.' . $queued->id . '.queue_total', 3);
 
         $this->get(route('households.import-history'))
             ->assertOk()
@@ -615,7 +624,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-');
-        $xlsxPath = $filePath.'.xlsx';
+        $xlsxPath = $filePath . '.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -1134,7 +1143,7 @@ class HouseholdCrudFlowTest extends TestCase
     private function userWithPermissions(array $permissionNames, string $scopeLevel = 'commune'): User
     {
         $role = Role::create([
-            'name' => 'commune-'.uniqid(),
+            'name' => 'commune-' . uniqid(),
             'guard_name' => 'web',
             'scope_level' => $scopeLevel,
         ]);
@@ -1149,7 +1158,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $user = User::create([
             'name' => 'Người dùng thử',
-            'username' => 'test-'.uniqid(),
+            'username' => 'test-' . uniqid(),
             'password' => Hash::make('password'),
         ]);
         $user->forceFill([
@@ -1226,6 +1235,6 @@ class HouseholdCrudFlowTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-".($year + 1);
+        return "{$year}-" . ($year + 1);
     }
 }

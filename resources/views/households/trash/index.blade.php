@@ -87,7 +87,7 @@
     }
 
     .trash-table {
-        min-width: 980px;
+        min-width: 1280px;
     }
 
     .trash-table-scroll {
@@ -136,11 +136,13 @@
     }
 
     .trash-record-title {
+        display: block;
         color: #1e293b;
         font-weight: 700;
     }
 
     .trash-record-subtitle {
+        display: block;
         margin-top: .2rem;
         color: #6c757d;
         font-size: .8rem;

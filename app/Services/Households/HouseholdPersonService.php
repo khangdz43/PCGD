@@ -218,6 +218,8 @@ class HouseholdPersonService
 
         $educationData = $data['education'];
         $educationData['is_complementary'] = (bool) ($educationData['is_complementary'] ?? false);
+        preg_match('/\d+/u', (string) ($educationData['current_class'] ?? ''), $classNumber);
+        $educationData['academic_block'] = $classNumber[0] ?? null;
 
         $disabilityData = $data['disability'] ?? [];
         foreach ($this->disabilityBooleanFields() as $field) {

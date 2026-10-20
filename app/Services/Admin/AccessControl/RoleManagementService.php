@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Support\AccessPermission;
 use App\Support\DelegatedAccess;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +19,13 @@ class RoleManagementService
     {
         $manageableLevels = DelegatedAccess::manageableRoleLevels($actor);
         // Tính số tài khoản được gán cho từng nhóm.
-        $query = Role::withCount('users')
+        $query = Role::withCount([
+            'users as users_count' => function ($users) use ($actor): void {
+                if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
+                    $this->constrainMembersToActorArea($users, $actor);
+                }
+            },
+        ])
             ->with('permissions')
             ->where('guard_name', 'web')
             ->where(function ($builder) use ($actor, $manageableLevels): void {
@@ -65,12 +72,54 @@ class RoleManagementService
             && DelegatedAccess::roleBelongsToActorArea($actor, $role);
     }
 
-    public function membersFor(Role $role): LengthAwarePaginator
+    public function membersFor(User $actor, Role $role): LengthAwarePaginator
     {
-        return $role->users()
-            ->with(['province:code,name', 'commune:code,name', 'villages:code,name'])
+        $query = $role->users()->getQuery();
+        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
+            $this->constrainMembersToActorArea($query, $actor);
+        }
+
+        return $query->with(['province:code,name', 'commune:code,name', 'villages:code,name'])
             ->orderBy('users.name')
             ->paginate(5);
+    }
+
+    private function constrainMembersToActorArea(Builder $query, User $actor): void
+    {
+        $scopeLevel = $actor->roleScopeLevel();
+        if ($scopeLevel === 'global') {
+            return;
+        }
+
+        if ($actor->province_code === null) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        $query->where('users.province_code', $actor->province_code);
+
+        if (in_array($scopeLevel, ['commune', 'village'], true)) {
+            if ($actor->commune_code === null) {
+                $query->whereRaw('1 = 0');
+                return;
+            }
+
+            $query->where('users.commune_code', $actor->commune_code);
+        }
+
+        if ($scopeLevel === 'village') {
+            $villageCodes = $actor->managedVillageCodes();
+            if ($villageCodes === []) {
+                $query->whereRaw('1 = 0');
+                return;
+            }
+
+            $query->where(function (Builder $users) use ($villageCodes): void {
+                $users->whereIn('users.village_code', $villageCodes)
+                    ->orWhereHas('villages', fn (Builder $villages) => $villages
+                        ->whereIn('villages.code', $villageCodes));
+            });
+        }
     }
 
     public function manageablePermissions(User $actor, array $scopeLevels): Collection

@@ -259,7 +259,8 @@
             const isJsonResponse = response.headers.get('content-type')?.includes('application/json');
             const result = isJsonResponse ? await response.json() : {};
             if (!response.ok) {
-                throw new Error(result.message || 'Không thể xóa thôn/xóm. Vui lòng thử lại.');
+                const validationMessage = Object.values(result.errors || {}).flat()[0];
+                throw new Error(validationMessage || result.message || 'Không thể xóa thôn/xóm. Vui lòng thử lại.');
             }
             if (!isJsonResponse) {
                 throw new Error('Máy chủ trả về phản hồi không hợp lệ. Vui lòng thử lại.');

@@ -220,6 +220,24 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseCount('persons', 1);
     }
 
+    public function test_academic_block_is_extracted_from_the_entered_class_name(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['education']['current_class'] = '12A1';
+
+        $this->actingAs($user)
+            ->post(route('households.members.store', $household), $payload)
+            ->assertRedirect(route('households.show', $household));
+
+        $this->assertDatabaseHas('person_educations', [
+            'current_class' => '12A1',
+            'academic_block' => '12',
+        ]);
+    }
+
     public function test_non_head_member_must_be_younger_than_household_head(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
@@ -599,6 +617,47 @@ class HouseholdCrudFlowTest extends TestCase
         ])->assertForbidden();
 
         $this->assertDatabaseMissing('schools', ['code' => 'S02']);
+    }
+
+    public function test_school_cannot_be_deleted_while_person_education_uses_it(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::MANAGE_SCHOOLS], 'province');
+        $schoolId = DB::table('schools')->insertGetId([
+            'code' => 'SCHOOL-IN-USE',
+            'name' => 'Trường đang sử dụng',
+            'level' => 'TH',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $household = $this->createHousehold();
+        $person = $this->createPerson($household);
+        $educationId = DB::table('person_educations')->insertGetId([
+            'person_id' => $person->id,
+            'school_year' => $this->currentSchoolYear(),
+            'school_code' => 'SCHOOL-IN-USE',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('schools.destroy', $schoolId))
+            ->assertSessionHasErrors([
+                'school' => 'Không thể xóa trường học vì đang có hồ sơ nhân khẩu sử dụng trường này.',
+            ]);
+        $this->assertDatabaseHas('schools', ['id' => $schoolId]);
+        $this->assertDatabaseHas('person_educations', [
+            'id' => $educationId,
+            'school_code' => 'SCHOOL-IN-USE',
+        ]);
+
+        DB::table('person_educations')->where('id', $educationId)->delete();
+        $this->actingAs($user)
+            ->delete(route('schools.destroy', $schoolId))
+            ->assertRedirect(route('schools.index'))
+            ->assertSessionHas('success');
+        $this->assertDatabaseMissing('schools', ['id' => $schoolId]);
     }
 
     public function test_geography_and_school_lookups_are_limited_to_the_users_area(): void

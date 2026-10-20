@@ -358,8 +358,26 @@ class AccessControlTest extends TestCase
         ]);
         $user->roles()->attach($role);
 
+        $household = Household::create([
+            'household_code' => 'HK-VILLAGE-DELETE',
+            'school_year' => '2026-2027',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'village_code' => 'V1',
+        ]);
+
         $this->actingAs($user)
             ->deleteJson('/villages/V1')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
+            ]);
+
+        $this->assertDatabaseHas('villages', ['code' => 'V1']);
+        $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
+
+        $household->delete();
+        $this->deleteJson('/villages/V1')
             ->assertOk()
             ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
 
@@ -664,11 +682,9 @@ class AccessControlTest extends TestCase
         $this->actingAs($provinceAdmin)
             ->get(route('admin.users.index'))
             ->assertOk()
-            ->assertSee('id="organization-unit-tree"', false)
-            ->assertSee('data-unit-type="province"', false)
-            ->assertSee('data-unit-code="P1"', false)
-            ->assertDontSee('data-unit-code="P2"', false)
+            ->assertDontSee('id="organization-unit-tree"', false)
             ->assertSee('id="account-tree-results"', false)
+            ->assertSee('user-management-layout without-unit-tree', false)
             ->assertDontSee('Bỏ lọc', false);
 
         $this->actingAs($provinceAdmin)->post('/admin/roles', [
@@ -1306,6 +1322,77 @@ class AccessControlTest extends TestCase
             ->assertDontSee('not-member');
     }
 
+    public function test_local_role_member_counts_include_group_members_within_the_managers_area(): void
+    {
+        $manageGroups = Permission::create([
+            'name' => AccessPermission::MANAGE_ACCESS_CONTROL,
+            'guard_name' => 'web',
+        ]);
+        $managerRole = Role::create([
+            'name' => 'Quản lý nhóm tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $managerRole->permissions()->attach($manageGroups);
+        $manager = User::factory()->create([
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'is_active' => true,
+        ]);
+        $manager->roles()->attach($managerRole);
+
+        $group = Role::create([
+            'name' => 'Nhóm quản trị xã do tỉnh tạo',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+            'created_by' => $manager->id,
+            'province_code' => 'P1',
+        ]);
+        $createdByManager = User::factory()->create([
+            'name' => 'Tài khoản xã do tỉnh tạo',
+            'username' => 'province-created-commune',
+            'created_by' => $manager->id,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
+        ]);
+        $createdByAnotherManager = User::factory()->create([
+            'name' => 'Tài khoản xã do quản trị khác tạo',
+            'username' => 'other-manager-created-commune',
+            'created_by' => User::factory()->create()->id,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C2',
+            'is_active' => true,
+        ]);
+        $outsideProvince = User::factory()->create([
+            'name' => 'Tài khoản ngoài tỉnh',
+            'username' => 'outside-province-commune',
+            'scope_level' => 'commune',
+            'province_code' => 'P2',
+            'commune_code' => 'C3',
+            'is_active' => true,
+        ]);
+        $group->users()->attach([
+            $createdByManager->id,
+            $createdByAnotherManager->id,
+            $outsideProvince->id,
+        ]);
+
+        $this->actingAs($manager)
+            ->get(route('admin.roles.index'))
+            ->assertOk()
+            ->assertSee('2 thành viên');
+
+        $this->get(route('admin.roles.members', $group))
+            ->assertOk()
+            ->assertSee('province-created-commune')
+            ->assertSee('other-manager-created-commune')
+            ->assertDontSee('outside-province-commune')
+            ->assertSee('2 thành viên');
+    }
+
     public function test_role_index_renders_expandable_extra_permissions(): void
     {
         $adminRole = Role::create([
@@ -1904,6 +1991,113 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertSee('id="organization-unit-tree"', false)
             ->assertSee('Số bên cạnh là tài khoản trong đơn vị và các cấp dưới.');
+    }
+
+    public function test_province_account_list_hides_the_tree_and_shows_commune_and_own_province_accounts(): void
+    {
+        $manageAccounts = Permission::create([
+            'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
+            'guard_name' => 'web',
+        ]);
+        $provinceRole = Role::create([
+            'name' => 'Quản lý tài khoản tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $provinceRole->permissions()->attach($manageAccounts);
+        $provinceAdmin = User::factory()->create([
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'is_active' => true,
+        ]);
+        $provinceAdmin->roles()->attach($provinceRole);
+
+        $communeAccountRole = Role::create([
+            'name' => 'Tài khoản cấp xã',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+            'created_by' => $provinceAdmin->id,
+            'province_code' => 'P1',
+        ]);
+        $provinceAccountRole = Role::create([
+            'name' => 'Tài khoản cấp tỉnh khác',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+            'created_by' => $provinceAdmin->id,
+            'province_code' => 'P1',
+        ]);
+        $villageAccountRole = Role::create([
+            'name' => 'Tài khoản cấp thôn',
+            'scope_level' => 'village',
+            'guard_name' => 'web',
+            'created_by' => $provinceAdmin->id,
+            'province_code' => 'P1',
+        ]);
+
+        $communeAccount = User::factory()->create([
+            'name' => 'Quản trị xã được hiển thị',
+            'username' => 'visible-commune-account',
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
+        ]);
+        $communeAccount->roles()->attach($communeAccountRole);
+
+        $provinceAccount = User::factory()->create([
+            'name' => 'Tài khoản tỉnh do mình tạo',
+            'username' => 'visible-own-province-account',
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'created_by' => $provinceAdmin->id,
+            'is_active' => true,
+        ]);
+        $provinceAccount->roles()->attach($provinceAccountRole);
+
+        $otherProvinceAccount = User::factory()->create([
+            'name' => 'Tài khoản tỉnh do người khác tạo',
+            'username' => 'hidden-other-province-account',
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'created_by' => User::factory()->create()->id,
+            'is_active' => true,
+        ]);
+        $otherProvinceAccount->roles()->attach($provinceAccountRole);
+
+        $villageAccount = User::factory()->create([
+            'name' => 'Tài khoản thôn không hiển thị',
+            'username' => 'hidden-village-account',
+            'scope_level' => 'village',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
+        ]);
+        $villageAccount->roles()->attach($villageAccountRole);
+
+        $outsideCommuneAccount = User::factory()->create([
+            'name' => 'Tài khoản xã ngoài tỉnh',
+            'username' => 'hidden-outside-commune-account',
+            'scope_level' => 'commune',
+            'province_code' => 'P2',
+            'commune_code' => 'C2',
+            'is_active' => true,
+        ]);
+        $outsideCommuneAccount->roles()->attach(Role::create([
+            'name' => 'Tài khoản xã ngoài phạm vi',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]));
+
+        $this->actingAs($provinceAdmin)
+            ->get(route('admin.users.index'))
+            ->assertOk()
+            ->assertDontSee('id="organization-unit-tree"', false)
+            ->assertSee('user-management-layout without-unit-tree', false)
+            ->assertSee('visible-commune-account')
+            ->assertSee('visible-own-province-account')
+            ->assertDontSee('hidden-other-province-account')
+            ->assertDontSee('hidden-village-account')
+            ->assertDontSee('hidden-outside-commune-account');
     }
 
     public function test_system_admin_account_tree_paginates_account_cards(): void
@@ -3149,7 +3343,7 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertSee('Thu hồi tài khoản')
             ->assertSee(route('admin.users.status', $target))
-            ->assertSee(route('admin.users.status', $sameLevelAccount));
+            ->assertDontSee(route('admin.users.status', $sameLevelAccount));
 
         $this->get(route('admin.users.edit', $target))
             ->assertOk()

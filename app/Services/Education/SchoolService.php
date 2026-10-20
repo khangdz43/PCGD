@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class SchoolService
 {
@@ -85,6 +86,12 @@ class SchoolService
 
     public function delete(School $school): void
     {
+        if ($school->educations()->exists()) {
+            throw ValidationException::withMessages([
+                'school' => 'Không thể xóa trường học vì đang có hồ sơ nhân khẩu sử dụng trường này.',
+            ]);
+        }
+
         $school->delete();
     }
 

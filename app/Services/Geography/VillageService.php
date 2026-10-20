@@ -10,6 +10,7 @@ use App\Models\Village;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Validation\ValidationException;
 
 class VillageService
 {
@@ -71,6 +72,12 @@ class VillageService
     public function delete(User $user, Village $village): void
     {
         $this->assertCanUseCommune($user, $village->commune_code, $village);
+        if ($village->households()->exists()) {
+            throw ValidationException::withMessages([
+                'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
+            ]);
+        }
+
         $village->delete();
     }
 

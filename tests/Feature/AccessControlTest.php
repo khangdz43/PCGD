@@ -358,8 +358,26 @@ class AccessControlTest extends TestCase
         ]);
         $user->roles()->attach($role);
 
+        $household = Household::create([
+            'household_code' => 'HK-VILLAGE-DELETE',
+            'school_year' => '2026-2027',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'village_code' => 'V1',
+        ]);
+
         $this->actingAs($user)
             ->deleteJson('/villages/V1')
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors([
+                'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
+            ]);
+
+        $this->assertDatabaseHas('villages', ['code' => 'V1']);
+        $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
+
+        $household->delete();
+        $this->deleteJson('/villages/V1')
             ->assertOk()
             ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
 

@@ -584,7 +584,7 @@
                 z-index: 1030;
             }
 
-            .app-navbar > .container {
+            .app-navbar > .container-fluid {
                 position: relative;
             }
 

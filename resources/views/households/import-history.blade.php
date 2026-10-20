@@ -79,7 +79,6 @@
                                     <div class="progress mt-2" style="min-width: 120px; height: .5rem" role="progressbar" aria-label="Tiến độ nhập dữ liệu" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $progress }}">
                                         <div data-progress-bar class="progress-bar {{ $isProcessing ? 'progress-bar-striped progress-bar-animated' : '' }}" style="width: {{ $progress }}%"></div>
                                     </div>
-                                    <small data-progress-label class="text-muted">{{ $progress }}% · {{ $import->processed_rows }}/{{ $import->total_rows }} dòng</small>
                                 </td>
                                 <td>
                                     @if ($import->status === 'ROLLED_BACK')
@@ -199,7 +198,6 @@
                 const statusLabel = row.querySelector('[data-status-label]');
                 const progressTrack = row.querySelector('[role="progressbar"]');
                 const progressBar = row.querySelector('[data-progress-bar]');
-                const progressLabel = row.querySelector('[data-progress-label]');
                 const resultCounts = row.querySelector('[data-result-counts]');
                 const errorDownload = row.querySelector('[data-error-download]');
                 const originalDownload = row.querySelector('[data-original-download]');
@@ -217,7 +215,6 @@
                 row.dataset.status = status.status;
                 progressBar.style.width = `${percent}%`;
                 progressTrack.setAttribute('aria-valuenow', String(percent));
-                progressLabel.textContent = `${percent}% · ${status.processed_rows}/${status.total_rows} dòng`;
                 resultCounts.textContent = `${status.success_rows} thành công · ${status.error_rows} lỗi`;
                 statusLabel.textContent = status.status === 'PENDING' && status.queue_position !== null
                     ? `Đang chờ ${status.queue_position}/${status.queue_total}`
@@ -251,28 +248,8 @@
                     rows.forEach((row) => {
                         const status = payload.statuses?.[row.dataset.importId];
                         if (!status) return;
-                        const previousStatus = row.dataset.status;
                         updateRow(row, status);
                         completedImport ||= !['PENDING', 'PROCESSING'].includes(status.status);
-
-                        if (!['PENDING', 'PROCESSING'].includes(status.status) && row.dataset.finalNotificationSent !== 'true') {
-                            row.dataset.finalNotificationSent = 'true';
-                            const fileName = row.querySelector('td:nth-child(2)')?.textContent.trim() || 'File Excel';
-                            const isSuccess = status.status === 'SUCCESS';
-                            const message = isSuccess
-                                ? `File "${fileName}" đã nhập thành công.`
-                                : `File "${fileName}" nhập thất bại.`;
-                            window.showAppNotification(
-                                isSuccess ? 'success' : 'error',
-                                message,
-                                isSuccess ? 'Nhập dữ liệu thành công' : 'Nhập dữ liệu thất bại',
-                                { href: '{{ route('households.import-history', [], false) }}', label: 'Xem' },
-                            );
-                        }
-
-                        if (previousStatus && !['PENDING', 'PROCESSING'].includes(previousStatus) && row.dataset.finalNotificationSent === 'true') {
-                            row.dataset.finalNotificationSent = 'true';
-                        }
                     });
                     if (completedImport) {
                         window.setTimeout(() => {

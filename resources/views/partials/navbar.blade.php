@@ -1,5 +1,5 @@
 <nav class="app-navbar navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
-    <div class="container">
+    <div class="container-fluid px-3 px-lg-5">
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNavbar" aria-controls="mainNavbar" aria-expanded="false" aria-label="Mở hoặc đóng menu">
             <span class="navbar-toggler-icon"></span>
         </button>

@@ -1,5 +1,5 @@
 <header class="bg-white shadow-sm border-bottom py-2">
-    <div class="container app-header-content d-flex align-items-center justify-content-between">
+    <div class="container-fluid px-3 px-lg-5 app-header-content d-flex align-items-center justify-content-between">
         <div class="app-brand d-flex align-items-center gap-3">
             <div class="app-brand-mark d-flex align-items-center justify-content-center rounded-2 bg-primary text-white fw-bold flex-shrink-0" style="width: 50px; height: 50px;" role="img" aria-label="PCGD">PCGD</div>
             <div>

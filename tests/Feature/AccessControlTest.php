@@ -1324,6 +1324,77 @@ class AccessControlTest extends TestCase
             ->assertDontSee('not-member');
     }
 
+    public function test_local_role_member_counts_include_group_members_within_the_managers_area(): void
+    {
+        $manageGroups = Permission::create([
+            'name' => AccessPermission::MANAGE_ACCESS_CONTROL,
+            'guard_name' => 'web',
+        ]);
+        $managerRole = Role::create([
+            'name' => 'Quản lý nhóm tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $managerRole->permissions()->attach($manageGroups);
+        $manager = User::factory()->create([
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'is_active' => true,
+        ]);
+        $manager->roles()->attach($managerRole);
+
+        $group = Role::create([
+            'name' => 'Nhóm quản trị xã do tỉnh tạo',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+            'created_by' => $manager->id,
+            'province_code' => 'P1',
+        ]);
+        $createdByManager = User::factory()->create([
+            'name' => 'Tài khoản xã do tỉnh tạo',
+            'username' => 'province-created-commune',
+            'created_by' => $manager->id,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
+        ]);
+        $createdByAnotherManager = User::factory()->create([
+            'name' => 'Tài khoản xã do quản trị khác tạo',
+            'username' => 'other-manager-created-commune',
+            'created_by' => User::factory()->create()->id,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C2',
+            'is_active' => true,
+        ]);
+        $outsideProvince = User::factory()->create([
+            'name' => 'Tài khoản ngoài tỉnh',
+            'username' => 'outside-province-commune',
+            'scope_level' => 'commune',
+            'province_code' => 'P2',
+            'commune_code' => 'C3',
+            'is_active' => true,
+        ]);
+        $group->users()->attach([
+            $createdByManager->id,
+            $createdByAnotherManager->id,
+            $outsideProvince->id,
+        ]);
+
+        $this->actingAs($manager)
+            ->get(route('admin.roles.index'))
+            ->assertOk()
+            ->assertSee('2 thành viên');
+
+        $this->get(route('admin.roles.members', $group))
+            ->assertOk()
+            ->assertSee('province-created-commune')
+            ->assertSee('other-manager-created-commune')
+            ->assertDontSee('outside-province-commune')
+            ->assertSee('2 thành viên');
+    }
+
     public function test_role_index_renders_expandable_extra_permissions(): void
     {
         $adminRole = Role::create([

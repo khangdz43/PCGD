@@ -890,8 +890,8 @@
     $actorScopeLevel = $actor->roleScopeLevel();
     $canSelectProvince = $actorScopeLevel === 'global';
     $canSelectCommune = in_array($actorScopeLevel, ['global', 'province'], true);
-    $canSelectVillage = in_array($actorScopeLevel, ['global', 'province', 'commune'], true);
-    $showUnitTree = $showOrganizationTree && $actorScopeLevel !== 'commune';
+    $canSelectVillage = in_array($actorScopeLevel, ['global', 'commune'], true);
+    $showUnitTree = $showOrganizationTree && ! in_array($actorScopeLevel, ['province', 'commune'], true);
 @endphp
 <div @class([
     'user-management-page container-fluid px-3 px-lg-4',

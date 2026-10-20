@@ -81,6 +81,16 @@ class UserAccessControlService
         $query = $this->manageableUsers($actor)
             ->with(['roles.permissions', 'villages', 'commune', 'province']);
 
+        if (! $isSystemAdmin && $actor->roleScopeLevel() === 'province') {
+            $query->where(function (Builder $accounts) use ($actor): void {
+                $accounts->where('users.scope_level', 'commune')
+                    ->orWhere(function (Builder $provinceAccounts) use ($actor): void {
+                        $provinceAccounts->where('users.scope_level', 'province')
+                            ->where('users.created_by', $actor->id);
+                    });
+            });
+        }
+
         if (filled($provinceCode)) {
             $query->where('province_code', $provinceCode);
         }

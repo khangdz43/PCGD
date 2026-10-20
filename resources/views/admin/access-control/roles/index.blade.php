@@ -333,7 +333,7 @@
     'global' => ['label' => 'Trung ương', 'icon' => 'fa-globe', 'desc' => 'Nhóm quyền trung ương được chọn', 'limit' => 4],
     'province' => ['label' => 'Cấp Tỉnh', 'icon' => 'fa-city', 'desc' => 'Quản lý cấp tỉnh / thành phố', 'limit' => 3],
     'commune' => ['label' => 'Cấp Xã', 'icon' => 'fa-building-columns', 'desc' => 'Quản lý cấp xã / phường', 'limit' => 2],
-    'village' => ['label' => 'Cấp Thôn', 'icon' => 'fa-house-chimney', 'desc' => 'Quản lý cấp thôn / bản / xóm', 'limit' => 0],
+    'village' => ['label' => 'Cấp Thôn', 'icon' => 'fa-house-chimney', 'desc' => 'Quản lý cấp thôn / bản / xóm', 'limit' => 3],
     ];
 
     // Normalization Pipeline: Map NULL / empty keys in DB to 'global'

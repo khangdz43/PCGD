@@ -1436,6 +1436,49 @@ class AccessControlTest extends TestCase
             ->assertSee('Quyền kiểm thử 4');
     }
 
+    public function test_role_index_displays_permissions_for_village_roles(): void
+    {
+        $manageAccessPermission = Permission::create([
+            'name' => AccessPermission::MANAGE_ACCESS_CONTROL,
+            'description' => 'Quản lý nhóm người dùng',
+            'guard_name' => 'web',
+        ]);
+        $managerRole = Role::create([
+            'name' => 'Quản trị xã kiểm thử',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $managerRole->permissions()->attach($manageAccessPermission);
+        $communeManager = User::factory()->create([
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
+        ]);
+        $communeManager->roles()->attach($managerRole);
+
+        $villageRole = Role::create([
+            'name' => 'Nhóm quản trị thôn',
+            'scope_level' => 'village',
+            'guard_name' => 'web',
+            'created_by' => $communeManager->id,
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+        ]);
+        $viewHouseholdsPermission = Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'description' => 'Xem phiếu kiểm thử cấp thôn',
+            'guard_name' => 'web',
+        ]);
+        $villageRole->permissions()->attach($viewHouseholdsPermission);
+
+        $this->actingAs($communeManager)
+            ->get(route('admin.roles.index'))
+            ->assertOk()
+            ->assertSee('Xem phiếu điều tra và nhân khẩu')
+            ->assertDontSee('Không có quyền');
+    }
+
     public function test_role_index_hides_member_expansion_controls(): void
     {
         $adminRole = Role::create([

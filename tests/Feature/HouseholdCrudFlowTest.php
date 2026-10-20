@@ -240,6 +240,15 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertDontSee('fa-filter')
             ->assertDontSee('aria-label="Đường dẫn trang"', false)
             ->assertDontSee('<h1 class="h5 mb-0">Thùng rác - Phiếu điều tra</h1>', false);
+        $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']), [
+            'X-Requested-With' => 'XMLHttpRequest',
+            'Accept' => 'text/html',
+        ])
+            ->assertOk()
+            ->assertHeader('X-Trash-Results', '1')
+            ->assertSee('TRASH-01')
+            ->assertSee('id="trash-bulk-form"', false)
+            ->assertDontSee('<!DOCTYPE html>', false);
         $this->get(route('utilities.trash.households.show', $household->id))
             ->assertOk()
             ->assertSee('Chi tiết hộ TRASH-01')

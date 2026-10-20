@@ -11,13 +11,14 @@ use App\Models\Village;
 use App\Services\Households\HouseholdTrashService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\View\View;
 
 class HouseholdTrashController extends Controller
 {
     public function __construct(private readonly HouseholdTrashService $trash) {}
 
-    public function index(Request $request): View
+    public function index(Request $request): View|Response
     {
         /** @var User $user */
         $user = $request->user();
@@ -31,6 +32,12 @@ class HouseholdTrashController extends Controller
             'village_code' => ['nullable', 'string', 'max:20'],
         ]);
         $data = $this->trash->paginate($user, $filters);
+        if ($request->ajax()) {
+            return response()
+                ->view('households.trash._results', $data)
+                ->header('X-Trash-Results', '1');
+        }
+
         $selectedProvinceCode = $filters['province_code']
             ?? ($user->hasRole(Role::SYSTEM_ADMIN) || $user->roleScopeLevel() === 'global'
                 ? null

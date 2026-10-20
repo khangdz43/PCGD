@@ -64,6 +64,8 @@ Route::middleware(['auth', 'active'])->group(function (): void {
 
     Route::middleware('can:delete-households')->group(function (): void {
         Route::get('/utilities/trash', [HouseholdTrashController::class, 'index'])->name('utilities.trash.index');
+        Route::post('/utilities/trash/bulk', [HouseholdTrashController::class, 'bulk'])->name('utilities.trash.bulk');
+        Route::get('/utilities/trash/households/{id}', [HouseholdTrashController::class, 'showHousehold'])->name('utilities.trash.households.show');
         Route::patch('/utilities/trash/households/{id}/restore', [HouseholdTrashController::class, 'restoreHousehold'])->name('utilities.trash.households.restore');
         Route::delete('/utilities/trash/households/{id}', [HouseholdTrashController::class, 'permanentlyDeleteHousehold'])->name('utilities.trash.households.destroy');
         Route::patch('/utilities/trash/persons/{id}/restore', [HouseholdTrashController::class, 'restorePerson'])->name('utilities.trash.persons.restore');

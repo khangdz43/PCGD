@@ -80,6 +80,39 @@ class HouseholdTrashController extends Controller
         ]);
     }
 
+    public function showHousehold(Request $request, int $id): View
+    {
+        $household = $this->trash->householdForDetails($request->user(), $id);
+
+        return view('households.trash.show', compact('household'));
+    }
+
+    public function bulk(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'operation' => ['required', 'in:restore,force_delete'],
+            'household_ids' => ['nullable', 'array'],
+            'household_ids.*' => ['integer', 'distinct'],
+            'person_ids' => ['nullable', 'array'],
+            'person_ids.*' => ['integer', 'distinct'],
+        ]);
+        $householdIds = $data['household_ids'] ?? [];
+        $personIds = $data['person_ids'] ?? [];
+        if ($householdIds === [] && $personIds === []) {
+            return back()->with('warning', 'Hãy chọn ít nhất một mục trong thùng rác.');
+        }
+
+        $count = $data['operation'] === 'restore'
+            ? $this->trash->restoreMany($request->user(), $householdIds, $personIds)
+            : $this->trash->permanentlyDeleteMany($request->user(), $householdIds, $personIds);
+
+        $message = $data['operation'] === 'restore'
+            ? "Đã khôi phục {$count} mục đã chọn."
+            : "Đã xóa vĩnh viễn {$count} mục đã chọn.";
+
+        return back()->with('success', $message);
+    }
+
     public function restoreHousehold(Request $request, int $id): RedirectResponse
     {
         $this->trash->restoreHousehold($request->user(), $id);

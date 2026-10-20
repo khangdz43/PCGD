@@ -21,10 +21,12 @@ class HouseholdTrashService
         DataAccessScope::households($households, $user);
         $this->applyDates($households, $filters);
 
-        $persons = Person::onlyTrashed()
+        $persons = Person::withoutGlobalScope('active_household')
+            ->onlyTrashed()
             ->selectRaw("'person' AS item_type")
             ->addSelect('persons.id', 'persons.deleted_at')
             ->whereHas('household', function (Builder $households) use ($user, $filters): void {
+                $households->withTrashed();
                 DataAccessScope::households($households, $user);
                 $this->applyLocationFilters($households, $filters);
             });
@@ -75,7 +77,11 @@ class HouseholdTrashService
             ->get()
             ->keyBy('id');
         $personRecords = Person::withTrashed()
-            ->with(['household.province', 'household.commune', 'household.village', 'deletedBy'])
+            ->with([
+                'household' => fn ($household) => $household->withTrashed()
+                    ->with(['province', 'commune', 'village']),
+                'deletedBy',
+            ])
             ->whereIn('id', $personIds)
             ->get()
             ->keyBy('id');
@@ -115,17 +121,7 @@ class HouseholdTrashService
     public function restorePerson(User $user, int $id): void
     {
         $person = $this->trashedPersons($user)->findOrFail($id);
-        if (
-            $person->relationship_with_head === 'Chủ hộ'
-            && Person::query()
-                ->where('household_id', $person->household_id)
-                ->where('relationship_with_head', 'Chủ hộ')
-                ->exists()
-        ) {
-            throw ValidationException::withMessages([
-                'trash' => 'Hộ đã có chủ hộ khác. Hãy xử lý chủ hộ hiện tại trước khi khôi phục.',
-            ]);
-        }
+        $this->assertCanRestorePerson($person);
 
         $person->deleted_by = null;
         $person->save();
@@ -137,12 +133,115 @@ class HouseholdTrashService
         $this->trashedPersons($user)->findOrFail($id)->forceDelete();
     }
 
-    private function trashedPersons(User $user): Builder
+    public function restoreMany(User $user, array $householdIds, array $personIds): int
     {
-        return Person::onlyTrashed()->whereHas(
+        $households = $this->trashedHouseholds($user, $householdIds);
+        $persons = $this->trashedPersons($user, $personIds)->get();
+        abort_unless($households->count() === count($householdIds), 404);
+        abort_unless($persons->count() === count($personIds), 404);
+
+        foreach ($persons as $person) {
+            $this->assertCanRestorePerson(
+                $person,
+                $households->modelKeys()
+            );
+        }
+
+        return DB::transaction(function () use ($households, $persons): int {
+            foreach ($households as $household) {
+                $household->deleted_by = null;
+                $household->save();
+                $household->restore();
+            }
+            foreach ($persons as $person) {
+                $person->deleted_by = null;
+                $person->save();
+                $person->restore();
+            }
+
+            return $households->count() + $persons->count();
+        });
+    }
+
+    public function permanentlyDeleteMany(User $user, array $householdIds, array $personIds): int
+    {
+        $households = $this->trashedHouseholds($user, $householdIds);
+        $persons = $this->trashedPersons($user, $personIds)->get();
+        abort_unless($households->count() === count($householdIds), 404);
+        abort_unless($persons->count() === count($personIds), 404);
+
+        return DB::transaction(function () use ($households, $persons): int {
+            foreach ($households as $household) {
+                Person::withoutGlobalScope('active_household')
+                    ->withTrashed()
+                    ->where('household_id', $household->id)
+                    ->forceDelete();
+                $household->forceDelete();
+            }
+            foreach ($persons as $person) {
+                if (! $households->contains('id', $person->household_id)) {
+                    $person->forceDelete();
+                }
+            }
+
+            return $households->count() + $persons->count();
+        });
+    }
+
+    public function householdForDetails(User $user, int $id): Household
+    {
+        return DataAccessScope::households(Household::withTrashed(), $user)
+            ->with([
+                'province',
+                'commune',
+                'village',
+                'persons' => fn ($persons) => $persons->withoutGlobalScope('active_household')
+                    ->withTrashed()
+                    ->with(['ethnicity', 'educations.school', 'disability']),
+            ])
+            ->findOrFail($id);
+    }
+
+    private function trashedPersons(User $user, ?array $ids = null): Builder
+    {
+        $query = Person::withoutGlobalScope('active_household')->onlyTrashed()->whereHas(
             'household',
-            fn (Builder $households) => DataAccessScope::households($households, $user)
+            fn (Builder $households) => DataAccessScope::households($households->withTrashed(), $user)
         );
+        if ($ids !== null) {
+            $query->whereIn('persons.id', $ids);
+        }
+
+        return $query;
+    }
+
+    private function trashedHouseholds(User $user, array $ids): \Illuminate\Database\Eloquent\Collection
+    {
+        return DataAccessScope::households(Household::onlyTrashed(), $user)
+            ->whereIn('id', $ids)
+            ->get();
+    }
+
+    private function assertCanRestorePerson(Person $person, array $restoringHouseholdIds = []): void
+    {
+        $household = Household::withTrashed()->findOrFail($person->household_id);
+        if ($household->trashed() && ! in_array($household->id, $restoringHouseholdIds, true)) {
+            throw ValidationException::withMessages([
+                'trash' => 'Hãy khôi phục phiếu điều tra trước khi khôi phục thành viên trong hộ đó.',
+            ]);
+        }
+
+        if (
+            $person->relationship_with_head === 'Chủ hộ'
+            && Person::query()
+                ->where('household_id', $person->household_id)
+                ->where('relationship_with_head', 'Chủ hộ')
+                ->exists()
+        ) {
+            throw ValidationException::withMessages([
+                'trash' => 'Hộ đã có chủ hộ khác. Hãy xử lý chủ hộ hiện tại trước khi khôi phục.',
+            ]);
+        }
     }
 
     private function applyDates(Builder $query, array $filters): void

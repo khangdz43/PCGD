@@ -59,6 +59,14 @@
                 ];
             }
         }
+    } elseif (request()->routeIs('utilities.trash.*')) {
+        $breadcrumbs[] = [
+            'label' => 'Phiếu điều tra',
+            'url' => route('households.index', [], false),
+        ];
+        $breadcrumbs[] = [
+            'label' => request()->routeIs('utilities.trash.households.show') ? 'Chi tiết hộ trong thùng rác' : 'Thùng rác',
+        ];
     } elseif (request()->routeIs('villages.*')) {
         if (request()->routeIs('villages.index')) {
             $breadcrumbs[] = ['label' => 'Danh sách thôn / xóm'];

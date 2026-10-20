@@ -206,7 +206,26 @@ class HouseholdCrudFlowTest extends TestCase
         $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']))
             ->assertOk()
             ->assertSee('TRASH-01')
-            ->assertSee('2 thành viên');
+            ->assertSee('2 thành viên')
+            ->assertSee('id="select-all-trash-items"', false)
+            ->assertSee('name="household_ids[]"', false)
+            ->assertSee('Khôi phục đã chọn')
+            ->assertSee('Xóa vĩnh viễn đã chọn')
+            ->assertSee('Xem hộ')
+            ->assertSee('id="trash-filter-form"', false)
+            ->assertSee('id="trash-results"', false)
+            ->assertDontSee('fa-regular fa-user')
+            ->assertDontSee('fa-filter')
+            ->assertSee('aria-label="Đường dẫn trang"', false)
+            ->assertSee('Phiếu điều tra')
+            ->assertSee('Thùng rác')
+            ->assertDontSee('<h1 class="h5 mb-0">Thùng rác - Phiếu điều tra</h1>', false);
+        $this->get(route('utilities.trash.households.show', $household->id))
+            ->assertOk()
+            ->assertSee('Chi tiết hộ - Phiếu TRASH-01')
+            ->assertSee('Chủ')
+            ->assertSee('Nguyễn')
+            ->assertSee('Thành viên cần khôi phục');
         $this->get(route('utilities.trash.index', ['type' => 'person']))
             ->assertOk()
             ->assertDontSee('Thành viên cần khôi phục');
@@ -221,7 +240,8 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertSoftDeleted('persons', ['id' => $member->id]);
         $this->get(route('utilities.trash.index', ['type' => 'person', 'q' => 'Thành viên cần khôi phục']))
             ->assertOk()
-            ->assertSee('Thành viên cần khôi phục');
+            ->assertSee('Thành viên cần khôi phục')
+            ->assertSee('name="person_ids[]"', false);
 
         $this->patch(route('utilities.trash.persons.restore', $member->id))
             ->assertRedirect();
@@ -239,6 +259,42 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertRedirect();
         $this->assertDatabaseMissing('households', ['id' => $household->id]);
         $this->assertDatabaseMissing('persons', ['id' => $head->id]);
+    }
+
+    public function test_trash_supports_bulk_restore_and_permanent_deletion_for_mixed_records(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
+        $household = $this->createHousehold(['household_code' => 'BULK-TRASH']);
+        $head = $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $member = $this->createPerson($household, ['relationship_with_head' => 'Con']);
+        $head->deleted_by = $user->id;
+        $head->save();
+        $head->delete();
+        $this->actingAs($user)->delete(route('households.destroy', $household));
+
+        $this->post(route('utilities.trash.bulk'), [
+            'operation' => 'restore',
+            'household_ids' => [$household->id],
+            'person_ids' => [$head->id],
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('households', ['id' => $household->id, 'deleted_at' => null]);
+        $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
+
+        $head = Person::query()->findOrFail($head->id);
+        $head->deleted_by = $user->id;
+        $head->save();
+        $head->delete();
+        $this->delete(route('households.destroy', $household));
+        $this->post(route('utilities.trash.bulk'), [
+            'operation' => 'force_delete',
+            'household_ids' => [$household->id],
+            'person_ids' => [$head->id],
+        ])->assertRedirect();
+
+        $this->assertDatabaseMissing('households', ['id' => $household->id]);
+        $this->assertDatabaseMissing('persons', ['id' => $head->id]);
+        $this->assertDatabaseMissing('persons', ['id' => $member->id]);
     }
 
     public function test_trash_requires_delete_permission_and_respects_the_users_area(): void

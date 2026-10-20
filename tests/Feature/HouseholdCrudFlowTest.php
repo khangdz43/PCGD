@@ -203,6 +203,28 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertSoftDeleted('households', ['id' => $household->id]);
         $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
+        DB::table('person_educations')->insert([
+            'person_id' => $member->id,
+            'school_year' => '2025-2026',
+            'academic_block' => '12',
+            'current_class' => '12A1',
+            'school_code' => 'SCHOOL-TRASH',
+            'graduation_level' => 'THPT',
+            'is_complementary' => false,
+            'graduation_year' => '2025-2026',
+            'vocational_grad_level' => 'Sơ cấp',
+            'vocational_grad_year' => '2024-2025',
+            'finished_class' => '11',
+            'finished_year' => '2024-2025',
+            'dropped_class' => '10',
+            'dropped_year' => '2023-2024',
+            'literacy_current_class' => '3',
+            'literacy_completed_class' => '2',
+            'literacy_relapse_level' => '1',
+            'learning_capacity' => 'Đang học',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']))
             ->assertOk()
             ->assertSee('TRASH-01')
@@ -222,10 +244,16 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertDontSee('<h1 class="h5 mb-0">Thùng rác - Phiếu điều tra</h1>', false);
         $this->get(route('utilities.trash.households.show', $household->id))
             ->assertOk()
-            ->assertSee('Chi tiết hộ - Phiếu TRASH-01')
+            ->assertSee('Chi tiết hộ TRASH-01')
             ->assertSee('Chủ')
             ->assertSee('Nguyễn')
-            ->assertSee('Thành viên cần khôi phục');
+            ->assertSee('Thành viên cần khôi phục')
+            ->assertSee('Danh sách thành viên và thông tin học tập')
+            ->assertSee('2025-2026')
+            ->assertSee('12A1')
+            ->assertSee('Sơ cấp')
+            ->assertSee('Đang học')
+            ->assertSee('Hoàn thành XMC');
         $this->get(route('utilities.trash.index', ['type' => 'person']))
             ->assertOk()
             ->assertDontSee('Thành viên cần khôi phục');

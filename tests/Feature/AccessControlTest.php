@@ -668,7 +668,8 @@ class AccessControlTest extends TestCase
             ->assertSee('data-unit-type="province"', false)
             ->assertSee('data-unit-code="P1"', false)
             ->assertDontSee('data-unit-code="P2"', false)
-            ->assertSee('id="account-tree-results"', false);
+            ->assertSee('id="account-tree-results"', false)
+            ->assertDontSee('Bỏ lọc', false);
 
         $this->actingAs($provinceAdmin)->post('/admin/roles', [
             'name' => 'Nhóm tỉnh hạn chế',
@@ -762,14 +763,20 @@ class AccessControlTest extends TestCase
             'password_confirmation' => 'commune-admin-new-password',
         ])->assertRedirectToRoute('account.show');
 
-        $this->actingAs($communeAdmin)
+        $communeAccountPage = $this->actingAs($communeAdmin)
             ->get(route('admin.users.index'))
             ->assertOk()
-            ->assertSee('id="organization-unit-tree"', false)
-            ->assertSee('data-unit-type="commune"', false)
-            ->assertSee('data-unit-code="C1"', false)
-            ->assertDontSee('data-unit-code="C2"', false)
-            ->assertSee('id="account-tree-results"', false);
+            ->assertDontSee('id="organization-unit-tree"', false)
+            ->assertSee('id="account-tree-results"', false)
+            ->assertSee('user-management-page container-fluid', false)
+            ->assertDontSee('Bỏ lọc', false)
+            ->assertSee('Tạo tài khoản');
+        $communeAccountPageContent = $communeAccountPage->getContent();
+        $filterPosition = strpos($communeAccountPageContent, 'id="user-location-filter"');
+        $createButtonPosition = strrpos($communeAccountPageContent, 'Tạo tài khoản');
+        self::assertNotFalse($filterPosition);
+        self::assertNotFalse($createButtonPosition);
+        self::assertLessThan($createButtonPosition, $filterPosition);
 
         $this->actingAs($communeAdmin)->post('/admin/roles', [
             'name' => 'Nhóm xã vượt quyền',
@@ -1882,6 +1889,8 @@ class AccessControlTest extends TestCase
             ->assertDontSee('Cây đơn vị và thống kê')
             ->assertSee('data-tree-toggle', false)
             ->assertSee('id="account-tree-results"', false)
+            ->assertSee('user-management-layout with-unit-tree', false)
+            ->assertSee('user-create-button', false)
             ->assertDontSee('fa-pen-to-square')
             ->assertDontSee('fa-lock')
             ->assertDontSee('>Lọc địa bàn</button>', false)

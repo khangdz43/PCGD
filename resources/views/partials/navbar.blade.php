@@ -77,6 +77,39 @@
                         </ul>
                     </li>
                 @endcan
+
+                @canany(['delete-households', 'manage-villages', 'manage-schools'])
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle {{ request()->routeIs('utilities.*') ? 'active' : '' }}" href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fa-solid fa-screwdriver-wrench me-1"></i> Tiện ích
+                        </a>
+                        <ul class="dropdown-menu">
+                            @can('delete-households')
+                                <li>
+                                    <a class="dropdown-item {{ request()->routeIs('utilities.trash.*') ? 'active' : '' }}" href="{{ route('utilities.trash.index', [], false) }}">
+                                        <i class="fa-solid fa-trash-can me-2" aria-hidden="true"></i>Thùng rác
+                                    </a>
+                                </li>
+                            @endcan
+                            @can('manage-villages')
+                                <li>
+                                    <span class="dropdown-item disabled" aria-disabled="true">
+                                        <i class="fa-solid fa-code-merge me-2" aria-hidden="true"></i>Gộp thôn
+                                        <small class="text-muted ms-1">Sắp có</small>
+                                    </span>
+                                </li>
+                            @endcan
+                            @can('manage-schools')
+                                <li>
+                                    <span class="dropdown-item disabled" aria-disabled="true">
+                                        <i class="fa-solid fa-code-merge me-2" aria-hidden="true"></i>Gộp trường
+                                        <small class="text-muted ms-1">Sắp có</small>
+                                    </span>
+                                </li>
+                            @endcan
+                        </ul>
+                    </li>
+                @endcan
             </ul>
         </div>
     </div>

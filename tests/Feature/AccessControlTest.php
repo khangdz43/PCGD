@@ -111,6 +111,8 @@ class AccessControlTest extends TestCase
         Schema::create('persons', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('household_id');
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('person_educations', function (Blueprint $table): void {
@@ -128,6 +130,8 @@ class AccessControlTest extends TestCase
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->string('village_code')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
     }
@@ -233,6 +237,13 @@ class AccessControlTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertSee('href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"', false)
+            ->assertSee('Tiện ích')
+            ->assertSee(route('utilities.trash.index', [], false))
+            ->assertSee('Thùng rác')
+            ->assertSee('Gộp thôn')
+            ->assertSee('Gộp trường')
+            ->assertSee('aria-disabled="true"', false)
+            ->assertSee('Sắp có')
             ->assertSee('appNavbarFallbackInitialized', false);
 
         $accountPermission = Permission::create([
@@ -296,13 +307,13 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('remaining_count', 1)
             ->assertJsonPath('is_household_head', false);
-        $this->assertDatabaseMissing('persons', ['id' => $memberId]);
+        $this->assertSoftDeleted('persons', ['id' => $memberId]);
 
         $this->deleteJson(route('households.members.destroy', [$household, $headId]))
             ->assertOk()
             ->assertJsonPath('remaining_count', 0)
             ->assertJsonPath('is_household_head', true);
-        $this->assertDatabaseMissing('persons', ['id' => $headId]);
+        $this->assertSoftDeleted('persons', ['id' => $headId]);
 
         $bulkIds = collect(['Anh', 'Chị'])->map(fn(string $relationship): int => DB::table('persons')->insertGetId([
             'household_id' => $household->id,
@@ -314,7 +325,7 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('deleted_ids', $bulkIds);
         foreach ($bulkIds as $personId) {
-            $this->assertDatabaseMissing('persons', ['id' => $personId]);
+            $this->assertSoftDeleted('persons', ['id' => $personId]);
         }
     }
 
@@ -1423,6 +1434,49 @@ class AccessControlTest extends TestCase
             ->assertSee('aria-expanded="false"', false)
             ->assertSee('id="role-permissions-extra-' . $group->id . '" hidden', false)
             ->assertSee('Quyền kiểm thử 4');
+    }
+
+    public function test_role_index_displays_permissions_for_village_roles(): void
+    {
+        $manageAccessPermission = Permission::create([
+            'name' => AccessPermission::MANAGE_ACCESS_CONTROL,
+            'description' => 'Quản lý nhóm người dùng',
+            'guard_name' => 'web',
+        ]);
+        $managerRole = Role::create([
+            'name' => 'Quản trị xã kiểm thử',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $managerRole->permissions()->attach($manageAccessPermission);
+        $communeManager = User::factory()->create([
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
+        ]);
+        $communeManager->roles()->attach($managerRole);
+
+        $villageRole = Role::create([
+            'name' => 'Nhóm quản trị thôn',
+            'scope_level' => 'village',
+            'guard_name' => 'web',
+            'created_by' => $communeManager->id,
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+        ]);
+        $viewHouseholdsPermission = Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'description' => 'Xem phiếu kiểm thử cấp thôn',
+            'guard_name' => 'web',
+        ]);
+        $villageRole->permissions()->attach($viewHouseholdsPermission);
+
+        $this->actingAs($communeManager)
+            ->get(route('admin.roles.index'))
+            ->assertOk()
+            ->assertSee('Xem phiếu điều tra và nhân khẩu')
+            ->assertDontSee('Không có quyền');
     }
 
     public function test_role_index_hides_member_expansion_controls(): void

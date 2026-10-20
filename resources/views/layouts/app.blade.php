@@ -22,48 +22,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
 
     <style>
-        .app-breadcrumb-wrap {
-            background: #f1f5f9;
-            border-bottom: 1px solid #dbe3ed;
-        }
-
-        .app-breadcrumb {
-            margin: 0;
-            padding: .7rem 1rem;
-            background: #fff;
-            border: 1px solid #dbe3ed;
-            border-left: 4px solid #0d6efd;
-            border-radius: .5rem;
-            box-shadow: 0 .125rem .35rem rgb(15 23 42 / 8%);
-            --bs-breadcrumb-divider: '›';
-        }
-
-        .app-breadcrumb .breadcrumb-item,
-        .app-breadcrumb .breadcrumb-item a {
-            font-size: 1rem;
-        }
-
-        .app-breadcrumb .breadcrumb-item a {
-            display: inline-block;
-            padding: .15rem .25rem;
-            color: #0a58ca;
-            font-weight: 600;
-            text-decoration: none;
-            border-radius: .25rem;
-        }
-
-        .app-breadcrumb .breadcrumb-item a:hover,
-        .app-breadcrumb .breadcrumb-item a:focus-visible {
-            color: #084298;
-            background: #e7f1ff;
-            text-decoration: underline;
-        }
-
-        .app-breadcrumb .breadcrumb-item.active {
-            color: #212529;
-            font-weight: 700;
-        }
-
         .app-notifications {
             display: grid;
             gap: .65rem;
@@ -652,7 +610,7 @@
         }
 
         @media (max-width: 767.98px) {
-            main.py-4 {
+            main.pt-2 {
                 padding-top: .75rem !important;
                 padding-bottom: .75rem !important;
             }
@@ -661,15 +619,6 @@
             main > .container-fluid {
                 padding-right: 1rem;
                 padding-left: 1rem;
-            }
-
-            .app-breadcrumb {
-                padding: .55rem .75rem;
-            }
-
-            .app-breadcrumb .breadcrumb-item,
-            .app-breadcrumb .breadcrumb-item a {
-                font-size: .9rem;
             }
 
             .directory-filter-form {
@@ -987,8 +936,7 @@
     @include('partials.navbar')
 
     {{-- Content --}}
-    <main class="py-4">
-        @include('partials.breadcrumbs')
+    <main class="pt-2 pb-4">
         <div class="app-notifications-wrap">
             @include('partials.notifications')
         </div>

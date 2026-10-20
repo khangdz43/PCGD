@@ -174,6 +174,8 @@ class HouseholdExportServiceTest extends TestCase
             $table->string('address')->nullable();
             $table->string('residence_type')->nullable();
             $table->string('residence_status')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('persons', function (Blueprint $table): void {
@@ -190,6 +192,8 @@ class HouseholdExportServiceTest extends TestCase
             $table->string('parent_name')->nullable();
             $table->string('phone')->nullable();
             $table->text('note')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('person_educations', function (Blueprint $table): void {

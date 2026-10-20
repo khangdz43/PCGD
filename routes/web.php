@@ -10,6 +10,7 @@ use App\Http\Controllers\Households\HouseholdImportHistoryController;
 use App\Http\Controllers\Households\HouseholdImportNotificationController;
 use App\Http\Controllers\Households\HouseholdImportStatusController;
 use App\Http\Controllers\Households\HouseholdPersonController;
+use App\Http\Controllers\Households\HouseholdTrashController;
 use App\Http\Controllers\Profile\AccountController;
 use Illuminate\Support\Facades\Route;
 
@@ -62,6 +63,13 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     });
 
     Route::middleware('can:delete-households')->group(function (): void {
+        Route::get('/utilities/trash', [HouseholdTrashController::class, 'index'])->name('utilities.trash.index');
+        Route::post('/utilities/trash/bulk', [HouseholdTrashController::class, 'bulk'])->name('utilities.trash.bulk');
+        Route::get('/utilities/trash/households/{id}', [HouseholdTrashController::class, 'showHousehold'])->name('utilities.trash.households.show');
+        Route::patch('/utilities/trash/households/{id}/restore', [HouseholdTrashController::class, 'restoreHousehold'])->name('utilities.trash.households.restore');
+        Route::delete('/utilities/trash/households/{id}', [HouseholdTrashController::class, 'permanentlyDeleteHousehold'])->name('utilities.trash.households.destroy');
+        Route::patch('/utilities/trash/persons/{id}/restore', [HouseholdTrashController::class, 'restorePerson'])->name('utilities.trash.persons.restore');
+        Route::delete('/utilities/trash/persons/{id}', [HouseholdTrashController::class, 'permanentlyDeletePerson'])->name('utilities.trash.persons.destroy');
         Route::delete('/households/bulk-destroy', [HouseholdController::class, 'bulkDestroy'])->name('households.bulk-destroy');
         Route::delete('/households/bulk-members-destroy', [HouseholdPersonController::class, 'bulkDestroy'])->name('households.members.bulk-destroy');
         Route::delete('/households/{household}', [HouseholdController::class, 'destroy'])->name('households.destroy');

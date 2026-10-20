@@ -128,7 +128,7 @@ class HouseholdPersonController extends Controller
     {
         $this->assertHouseholdAccess($request, $household);
         $person = $this->people->find($household, $personId);
-        $isHouseholdHead = $this->people->delete($person, $household);
+        $isHouseholdHead = $this->people->delete($person, $household, $request->user());
         if ($isHouseholdHead === null) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -173,7 +173,7 @@ class HouseholdPersonController extends Controller
             return back()->with('warning', 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.');
         }
         // xóa các thằng hợp lệ
-        $this->people->deleteMany($persons);
+        $this->people->deleteMany($persons, $request->user());
 
         $message = "Đã xóa {$persons->count()} thành viên đã chọn.";
 

@@ -163,8 +163,10 @@ class HouseholdService
         });
     }
 
-    public function delete(Household $household): void
+    public function delete(Household $household, User $user): void
     {
+        $household->deleted_by = $user->id;
+        $household->save();
         $household->delete();
     }
 
@@ -175,12 +177,18 @@ class HouseholdService
             ->get();
         abort_unless($accessibleHouseholds->count() === count($ids), 404);
 
-        return Household::whereIn('id', $accessibleHouseholds->modelKeys())->delete();
+        return DB::transaction(function () use ($accessibleHouseholds, $user): int {
+            foreach ($accessibleHouseholds as $household) {
+                $this->delete($household, $user);
+            }
+
+            return $accessibleHouseholds->count();
+        });
     }
 
     public function nextHouseholdCode(?string $schoolYear = null): string
     {
-        $query = Household::query();
+        $query = Household::withTrashed();
         if ($schoolYear !== null) {
             $query->where('school_year', $schoolYear);
         }

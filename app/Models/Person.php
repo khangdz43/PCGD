@@ -6,9 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Person extends Model
 {
+    use SoftDeletes;
+
     protected $table = 'persons';
 
     protected $fillable = [
@@ -33,6 +37,13 @@ class Person extends Model
         'dob' => 'date'
     ];
 
+    protected static function booted(): void
+    {
+        static::addGlobalScope('active_household', function (Builder $query): void {
+            $query->whereHas('household');
+        });
+    }
+
     public function household(): BelongsTo
     {
         return $this->belongsTo(Household::class);
@@ -56,5 +67,10 @@ class Person extends Model
     public function importLog(): BelongsTo
     {
         return $this->belongsTo(ImportLog::class);
+    }
+
+    public function deletedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deleted_by');
     }
 }

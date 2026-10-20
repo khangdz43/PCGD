@@ -321,36 +321,6 @@
 @push('scripts')
 <script>
     (() => {
-        const classInput = document.getElementById('current-class');
-        const academicBlockInput = document.getElementById('academic-block');
-
-        if (classInput && academicBlockInput) {
-
-            function updateAcademicBlock() {
-                const className = classInput.value.trim();
-
-                // Lấy các số ở đầu tên lớp
-                // 7A   -> 7
-                // 7A1  -> 7
-                // 10A  -> 10
-                // 10B1 -> 10
-                // 12C  -> 12
-                const match = className.match(/^(\d+)/);
-
-                if (match) {
-                    academicBlockInput.value = match[1];
-                } else {
-                    academicBlockInput.value = '';
-                }
-            }
-
-            // Người dùng nhập đến đâu -> khối hiện đến đó
-            classInput.addEventListener('input', updateAcademicBlock);
-
-            // Khi mở trang sửa dữ liệu cũ
-            updateAcademicBlock();
-        }
-
         const schoolPicker = document.querySelector('[data-school-picker]');
         const schoolSelect = document.querySelector('[data-school-select]');
         if (!schoolPicker || !schoolSelect) return;

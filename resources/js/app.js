@@ -3,6 +3,23 @@ import { start as startTurbo } from '@hotwired/turbo';
 
 const directoryPaginationRequests = new Map();
 
+function updateAcademicBlock(classInput) {
+    const academicBlockInput = classInput.form?.querySelector('[name="education[academic_block]"]');
+    if (!academicBlockInput) return;
+
+    academicBlockInput.value = classInput.value.match(/\d+/)?.[0] || '';
+}
+
+document.addEventListener('input', (event) => {
+    if (event.target.matches('#current-class')) {
+        updateAcademicBlock(event.target);
+    }
+});
+
+document.addEventListener('turbo:load', () => {
+    document.querySelectorAll('#current-class').forEach(updateAcademicBlock);
+});
+
 async function loadDirectoryPage(results, url) {
     const resultsId = results.id;
     const scrollX = window.scrollX;

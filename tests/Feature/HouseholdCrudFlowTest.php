@@ -220,6 +220,24 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseCount('persons', 1);
     }
 
+    public function test_academic_block_is_extracted_from_the_entered_class_name(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['education']['current_class'] = '12A1';
+
+        $this->actingAs($user)
+            ->post(route('households.members.store', $household), $payload)
+            ->assertRedirect(route('households.show', $household));
+
+        $this->assertDatabaseHas('person_educations', [
+            'current_class' => '12A1',
+            'academic_block' => '12',
+        ]);
+    }
+
     public function test_non_head_member_must_be_younger_than_household_head(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);

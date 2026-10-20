@@ -479,6 +479,12 @@
             min-width: 0;
         }
 
+        main > .container {
+            max-width: none;
+            padding-right: 1.5rem;
+            padding-left: 1.5rem;
+        }
+
         .table-responsive {
             -webkit-overflow-scrolling: touch;
         }

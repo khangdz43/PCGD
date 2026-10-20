@@ -436,6 +436,10 @@ class HouseholdCrudFlowTest extends TestCase
             ]);
 
             $response->assertAccepted()
+                ->assertSessionHas(
+                    'info',
+                    'File đã được tải lên thành công và đang được hệ thống xử lý. Bạn có thể tiếp tục công việc khác; hệ thống sẽ thông báo khi hoàn tất.'
+                )
                 ->assertJsonPath('status_url', route(
                     'households.import.status',
                     ImportLog::query()->first(),
@@ -446,6 +450,9 @@ class HouseholdCrudFlowTest extends TestCase
                     ['import_id' => ImportLog::query()->first()->id],
                     false,
                 ));
+            $this->get(route('households.import-history'))
+                ->assertOk()
+                ->assertSee('đang được hệ thống xử lý');
             $this->assertDatabaseHas('import_logs', [
                 'user_id' => $user->id,
                 'file_name' => 'households.xlsx',

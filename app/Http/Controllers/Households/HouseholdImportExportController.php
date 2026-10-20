@@ -77,6 +77,10 @@ class HouseholdImportExportController extends Controller
         HouseholdImportSubmissionService $submissionService,
     ) {
         $importLog = $submissionService->submit($request->user(), $request->validated());
+        $request->session()->flash(
+            'info',
+            'File đã được tải lên thành công và đang được hệ thống xử lý. Bạn có thể tiếp tục công việc khác; hệ thống sẽ thông báo khi hoàn tất.'
+        );
 
         return response()->json([
             'import_id' => $importLog->id,

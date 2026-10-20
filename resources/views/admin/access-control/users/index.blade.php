@@ -169,7 +169,7 @@
         display: flex;
         flex-direction: column;
         justify-content: center;
-        overflow: hidden;
+        overflow: visible;
     }
 
     .user-name {
@@ -177,17 +177,15 @@
         color: #273449;
         font-size: .9rem;
         line-height: 1.35;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .user-email {
         font-size: .8rem;
         color: #64748b;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        white-space: normal;
+        overflow-wrap: anywhere;
     }
 
     .user-meta {
@@ -360,6 +358,29 @@
         white-space: nowrap;
     }
 
+    .user-filter-toolbar {
+        display: flex;
+        align-items: center;
+        gap: .5rem;
+        margin-bottom: .5rem;
+    }
+
+    .user-filter-toolbar .user-location-filter {
+        flex: 1 1 auto;
+        min-width: 0;
+        margin-bottom: 0 !important;
+    }
+
+    .user-filter-toolbar .user-create-button {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2.5rem;
+        padding: .375rem .75rem;
+        white-space: nowrap;
+    }
+
     .user-location-filter .location-picker-status:empty {
         display: none;
     }
@@ -373,6 +394,10 @@
         grid-template-columns: minmax(270px, 320px) minmax(0, 1fr);
         align-items: start;
         margin: 0;
+    }
+
+    .user-management-layout.without-unit-tree {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .user-management-layout > * {
@@ -414,12 +439,33 @@
         background: #f9fafb;
     }
 
+    .user-management-layout.without-unit-tree .account-list-body {
+        max-height: none;
+        overflow: visible;
+    }
+
     .account-table {
         width: 100%;
         border-collapse: separate;
         border-spacing: 0 .5rem;
         table-layout: fixed;
         margin: 0;
+    }
+
+    .account-table .account-column-name {
+        width: 34%;
+    }
+
+    .account-table .account-column-role {
+        width: 28%;
+    }
+
+    .account-table .account-column-status {
+        width: 20%;
+    }
+
+    .account-table .account-column-actions {
+        width: 18%;
     }
 
     .account-table thead th {
@@ -469,20 +515,23 @@
         min-width: 0;
     }
 
-    .user-cell-name {
-        width: 40%;
+    .account-table thead th:nth-child(2),
+    .account-table .user-cell-role,
+    .account-table thead th:nth-child(3),
+    .account-table .user-cell-status {
+        text-align: center;
     }
 
-    .user-cell-role {
-        width: 30%;
+    .account-table .user-cell-role,
+    .account-table .user-cell-status {
+        vertical-align: middle;
     }
 
-    .user-cell-status {
-        width: 15%;
+    .account-table .user-cell-role .user-meta {
+        justify-content: center;
     }
 
     .user-cell-actions {
-        width: 15%;
         text-align: right;
     }
 
@@ -631,6 +680,18 @@
         .user-location-filter [data-clear-user-filter],
         .user-location-filter .btn-primary {
             width: 100%;
+        }
+
+        .user-filter-toolbar {
+            flex-wrap: wrap;
+        }
+
+        .user-filter-toolbar .user-location-filter {
+            flex-basis: 100%;
+        }
+
+        .user-filter-toolbar .user-create-button {
+            margin-left: auto;
         }
 
         .unit-browser {
@@ -825,61 +886,64 @@
 @endpush
 
 @section('content')
-<div class="container">
+@php
+    $actorScopeLevel = $actor->roleScopeLevel();
+    $canSelectProvince = $actorScopeLevel === 'global';
+    $canSelectCommune = in_array($actorScopeLevel, ['global', 'province'], true);
+    $canSelectVillage = in_array($actorScopeLevel, ['global', 'province', 'commune'], true);
+    $showUnitTree = $showOrganizationTree && $actorScopeLevel !== 'commune';
+@endphp
+<div @class([
+    'user-management-page container-fluid px-3 px-lg-4',
+])>
     <h1 class="visually-hidden">Quản lý tài khoản</h1>
 
     {{-- Lọc theo địa bàn --}}
-    @php
-        $actorScopeLevel = $actor->roleScopeLevel();
-        $canSelectProvince = $actorScopeLevel === 'global';
-        $canSelectCommune = in_array($actorScopeLevel, ['global', 'province'], true);
-        $canSelectVillage = in_array($actorScopeLevel, ['global', 'province', 'commune'], true);
-    @endphp
+    <div class="user-filter-toolbar">
+        <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-2" id="user-location-filter">
+            <label class="visually-hidden" for="user-search">Tìm theo tên hoặc tên đăng nhập</label>
+        <input id="user-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Tìm tên hoặc tên đăng nhập">
 
-    <div class="d-flex justify-content-end align-items-center gap-2 mb-2">
-        <a class="btn btn-sm btn-primary" href="{{ route('admin.users.create') }}">
+            <label class="visually-hidden" for="user-role-filter">Lọc theo nhóm người dùng</label>
+            <select id="user-role-filter" name="role_id" class="form-select form-select-sm">
+                <option value="">Tất cả nhóm</option>
+                @foreach($roleOptions ?? collect() as $roleOption)
+                    <option value="{{ $roleOption->id }}" @selected((string) ($roleId ?? request('role_id')) === (string) $roleOption->id)>
+                        {{ $roleOption->name }}
+                    </option>
+                @endforeach
+        </select>
+
+            @include('partials.location-picker', [
+                'pickerId' => 'user-list-location',
+                'provinces' => $provinces,
+                'provinceCode' => $provinceCode,
+                'communeCode' => $communeCode,
+                'villageCode' => $villageCode,
+                'showVillage' => true,
+                'inline' => true,
+                'hideProvince' => ! $canSelectProvince,
+                'hideCommune' => ! $canSelectCommune,
+                'hideVillage' => ! $canSelectVillage,
+            ])
+            @unless (in_array($actorScopeLevel, ['province', 'commune'], true))
+                <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-user-filter @disabled(! $isFiltering)>
+                    <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Bỏ lọc
+                </button>
+            @endunless
+        </form>
+        <a class="btn btn-sm btn-primary user-create-button" href="{{ route('admin.users.create') }}">
             <i class="fa-solid fa-user-plus me-1" aria-hidden="true"></i>Tạo tài khoản
         </a>
     </div>
 
-    <form method="GET" action="{{ route('admin.users.index') }}" class="user-location-filter bg-white border rounded-2 p-2 mb-2" id="user-location-filter">
-        <label class="visually-hidden" for="user-search">Tìm theo tên hoặc tên đăng nhập</label>
-        <input id="user-search" name="q" type="search" class="form-control form-control-sm" value="{{ request('q') }}" placeholder="Tìm tên hoặc tên đăng nhập">
-
-        <label class="visually-hidden" for="user-role-filter">Lọc theo nhóm người dùng</label>
-        <select id="user-role-filter" name="role_id" class="form-select form-select-sm">
-            <option value="">Tất cả nhóm</option>
-            @foreach($roleOptions ?? collect() as $roleOption)
-                <option value="{{ $roleOption->id }}" @selected((string) ($roleId ?? request('role_id')) === (string) $roleOption->id)>
-                    {{ $roleOption->name }}
-                </option>
-            @endforeach
-        </select>
-
-        @include('partials.location-picker', [
-            'pickerId' => 'user-list-location',
-            'provinces' => $provinces,
-            'provinceCode' => $provinceCode,
-            'communeCode' => $communeCode,
-            'villageCode' => $villageCode,
-            'showVillage' => true,
-            'inline' => true,
-            'hideProvince' => ! $canSelectProvince,
-            'hideCommune' => ! $canSelectCommune,
-            'hideVillage' => ! $canSelectVillage,
-        ])
-        <button class="btn btn-sm btn-outline-secondary" type="button" data-clear-user-filter @disabled(! $isFiltering)>
-            <i class="fa-solid fa-xmark me-1" aria-hidden="true"></i>Bỏ lọc
-        </button>
-    </form>
-
-    <div class="row g-3 user-management-layout">
-        @if ($showOrganizationTree)
+    <div class="row g-3 user-management-layout {{ $showUnitTree ? 'with-unit-tree' : 'without-unit-tree' }}">
+        @if ($showUnitTree)
             <aside class="col-lg-4 col-xl-3" aria-label="Cây đơn vị hành chính">
                 @include('admin.access-control.users._organization_tree')
             </aside>
         @endif
-        <section class="{{ $showOrganizationTree ? 'col-lg-8 col-xl-9' : 'col-12' }}" aria-label="Danh sách tài khoản">
+        <section class="{{ $showUnitTree ? 'col-lg-8 col-xl-9' : 'col-12' }}" aria-label="Danh sách tài khoản">
     <div id="account-tree-results" aria-live="polite" data-ajax-pagination>
         @if ($showOrganizationTree)
             <div class="account-list-panel">
@@ -895,6 +959,12 @@
                 <div class="account-list-body">
                     @if($allUsers->isNotEmpty())
                         <table class="account-table align-middle">
+                            <colgroup>
+                                <col class="account-column-name">
+                                <col class="account-column-role">
+                                <col class="account-column-status">
+                                <col class="account-column-actions">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th scope="col">Tài khoản</th>

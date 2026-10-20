@@ -94,7 +94,7 @@
 
 @if (count($breadcrumbs) > 1)
     <div class="app-breadcrumb-wrap mb-2 py-1">
-        <div class="container">
+        <div class="container-fluid px-3 px-lg-4">
             <nav aria-label="Đường dẫn trang">
                 <ol class="breadcrumb app-breadcrumb">
                     @foreach ($breadcrumbs as $breadcrumb)

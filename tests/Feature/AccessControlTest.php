@@ -233,6 +233,12 @@ class AccessControlTest extends TestCase
             ->get('/')
             ->assertOk()
             ->assertSee('href="#" role="button" data-bs-toggle="dropdown" aria-expanded="false"', false)
+            ->assertSee('Tiện ích')
+            ->assertSee('Thùng rác')
+            ->assertSee('Gộp thôn')
+            ->assertSee('Gộp trường')
+            ->assertSee('aria-disabled="true"', false)
+            ->assertSee('Sắp có')
             ->assertSee('appNavbarFallbackInitialized', false);
 
         $accountPermission = Permission::create([

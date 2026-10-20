@@ -162,7 +162,7 @@
         white-space: nowrap;
     }
 
-    .trash-date {
+    .trash-time {
         color: #334155;
         font-weight: 600;
     }
@@ -344,7 +344,7 @@
                 : `Đã chọn ${selectedCount} mục`;
             if (selectAll) {
                 selectAll.checked = items.length > 0 && selectedCount === items.length;
-                selectAll.indeterminate = selectedCount > 0 && selectedCount < items.length;
+                selectAll.indeterminate = false;
             }
         };
 
@@ -363,7 +363,12 @@
             if (!(event.target instanceof Element)) return;
             const button = event.target.closest('[data-trash-operation]');
             if (!button) return;
-            results.querySelector('#trash-bulk-operation').value = button.dataset.trashOperation;
+            const operation = button.dataset.trashOperation;
+            const bulkForm = results.querySelector('#trash-bulk-form');
+            results.querySelector('#trash-bulk-operation').value = operation;
+            bulkForm.dataset.confirm = bulkForm.dataset[`confirm${operation === 'force_delete' ? 'ForceDelete' : 'Restore'}`];
+            bulkForm.dataset.confirmButton = bulkForm.dataset[`confirmButton${operation === 'force_delete' ? 'ForceDelete' : 'Restore'}`];
+            bulkForm.dataset.confirmVariant = bulkForm.dataset[`confirmVariant${operation === 'force_delete' ? 'ForceDelete' : 'Restore'}`];
         });
         updateSelection();
     })();

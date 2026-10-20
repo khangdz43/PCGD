@@ -7,9 +7,15 @@
     method="POST"
     action="{{ route('utilities.trash.bulk', [], false) }}"
     class="trash-bulk-toolbar household-bulk-actions d-flex flex-wrap align-items-center gap-2 mb-3"
-    data-confirm="Xác nhận thao tác với các mục đã chọn? Nếu chọn xóa vĩnh viễn, dữ liệu sẽ không thể khôi phục."
+    data-confirm="Xác nhận thao tác với các mục đã chọn?"
+    data-confirm-restore="Khôi phục các mục đã chọn?"
+    data-confirm-force-delete="Xóa vĩnh viễn các mục đã chọn? Dữ liệu sẽ không thể khôi phục."
     data-confirm-title="Xác nhận thao tác thùng rác"
-    data-confirm-button="Tiếp tục">
+    data-confirm-button="Tiếp tục"
+    data-confirm-button-restore="Khôi phục"
+    data-confirm-button-force-delete="Xóa vĩnh viễn"
+    data-confirm-variant-restore="primary"
+    data-confirm-variant-force-delete="danger">
     @csrf
     <input type="hidden" name="operation" id="trash-bulk-operation" value="">
     <span class="trash-selection-status small text-muted me-1" data-trash-selection-count>
@@ -85,9 +91,7 @@
                 </td>
                 <td>
                     <span class="trash-record-title">{{ $displayName ?: '—' }}</span>
-                    @if ($recordType === 'person')
-                    <span class="trash-record-subtitle">Thành viên</span>
-                    @endif
+               
                 </td>
                 <td class="text-nowrap">
                     {{ $birthDate?->format('d/m/Y') ?? '—' }}
@@ -98,8 +102,8 @@
                     </div>
                 </td>
                 <td class="text-nowrap">
-                    <span class="trash-date">{{ $record->deleted_at?->format('d/m/Y') }}</span>
                     <span class="trash-time">{{ $record->deleted_at?->format('H:i') }}</span>
+                    <span class="trash-date">{{ $record->deleted_at?->format('d/m/Y') }}</span>
                 </td>
                 <td>
                     <span class="trash-deleted-by">{{ $record->deletedBy?->name ?? '—' }}</span>
@@ -107,19 +111,31 @@
                 <td class="text-end">
                     <div class="trash-row-actions">
                         <a class="btn btn-sm btn-outline-primary" href="{{ route('utilities.trash.households.show', $household->id, false) }}" title="Xem chi tiết hộ">
-                            <i class="fa-solid fa-eye me-sm-1" aria-hidden="true"></i><span class="d-none d-xl-inline">Xem hộ</span>
+                            <i class="fa-solid fa-eye me-sm-1" aria-hidden="true"></i><span class="d-none d-xl-inline">Xem</span>
                         </a>
-                        <form method="POST" action="{{ $item->item_type === 'household' ? route('utilities.trash.households.restore', $record->id, false) : route('utilities.trash.persons.restore', $record->id, false) }}">
+                        <form
+                            method="POST"
+                            action="{{ $item->item_type === 'household' ? route('utilities.trash.households.restore', $record->id, false) : route('utilities.trash.persons.restore', $record->id, false) }}"
+                            data-confirm="Khôi phục mục này?"
+                            data-confirm-title="Xác nhận khôi phục"
+                            data-confirm-button="Khôi phục"
+                            data-confirm-variant="primary">
                             @csrf
                             @method('PATCH')
-                            <button class="btn btn-sm btn-outline-success" type="submit" title="Khôi phục" aria-label="Khôi phục mục này" data-confirm="Khôi phục mục này?">
+                            <button class="btn btn-sm btn-outline-success" type="submit" title="Khôi phục" aria-label="Khôi phục mục này">
                                 <i class="fa-solid fa-rotate-left me-sm-1" aria-hidden="true"></i><span class="d-none d-xl-inline">Khôi phục</span>
                             </button>
                         </form>
-                        <form method="POST" action="{{ $item->item_type === 'household' ? route('utilities.trash.households.destroy', $record->id, false) : route('utilities.trash.persons.destroy', $record->id, false) }}">
+                        <form
+                            method="POST"
+                            action="{{ $item->item_type === 'household' ? route('utilities.trash.households.destroy', $record->id, false) : route('utilities.trash.persons.destroy', $record->id, false) }}"
+                            data-confirm="Xóa vĩnh viễn mục này? Thao tác này không thể hoàn tác."
+                            data-confirm-title="Xác nhận xóa vĩnh viễn"
+                            data-confirm-button="Xóa vĩnh viễn"
+                            data-confirm-variant="danger">
                             @csrf
                             @method('DELETE')
-                            <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa vĩnh viễn" aria-label="Xóa vĩnh viễn mục này" data-confirm="Xóa vĩnh viễn mục này? Thao tác này không thể hoàn tác.">
+                            <button class="btn btn-sm btn-outline-danger" type="submit" title="Xóa vĩnh viễn" aria-label="Xóa vĩnh viễn mục này">
                                 <i class="fa-solid fa-trash-can me-sm-1" aria-hidden="true"></i><span class="d-none d-xl-inline">Xóa vĩnh viễn</span>
                             </button>
                         </form>

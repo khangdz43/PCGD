@@ -43,10 +43,17 @@ class VillageController extends Controller
 
     public function store(Request $request)
     {
+        $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate(array_merge([
-            'code' => 'required|string|max:20|unique:villages,code',
-            'name' => 'required|string|max:255',
-        ], $this->locationRules($request)));
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('villages', 'name')->where('commune_code', $request->input('commune_code')),
+            ],
+        ], $this->locationRules($request)), [
+            'name.unique' => 'Tên thôn/xóm đã tồn tại trong xã này.',
+        ]);
         $this->villages->create($request->user(), $data);
 
         return redirect()->to(route('villages.index', [], false))
@@ -68,9 +75,19 @@ class VillageController extends Controller
         $village = $this->villages->findWithCommune($code);
         $this->villages->assertCanUseCommune($request->user(), $village->commune_code, $village);
 
+        $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate(array_merge([
-            'name' => 'required|string|max:255',
-        ], $this->locationRules($request)));
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('villages', 'name')
+                    ->where('commune_code', $request->input('commune_code'))
+                    ->ignore($village->code, 'code'),
+            ],
+        ], $this->locationRules($request)), [
+            'name.unique' => 'Tên thôn/xóm đã tồn tại trong xã này.',
+        ]);
         $this->villages->update($request->user(), $village, $data);
 
         return redirect()->to(route('villages.index', [], false))

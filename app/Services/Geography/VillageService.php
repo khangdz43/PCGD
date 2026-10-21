@@ -12,6 +12,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class VillageService
@@ -69,17 +70,37 @@ class VillageService
     public function create(User $user, array $data): Village
     {
         $this->assertCanUseCommune($user, $data['commune_code'], null);
-        unset($data['province_code']);
+        $data['name'] = trim($data['name']);
 
-        return Village::create($data);
+        return DB::transaction(function () use ($data): Village {
+            $commune = Commune::query()
+                ->where('code', $data['commune_code'])
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $this->assertUniqueName($data['name'], $commune->code);
+            unset($data['province_code'], $data['code']);
+            $data['code'] = $this->generateCode($commune, $data['name']);
+
+            return Village::create($data);
+        });
     }
 
     public function update(User $user, Village $village, array $data): void
     {
         $this->assertCanUseCommune($user, $village->commune_code, $village);
         $this->assertCanUseCommune($user, $data['commune_code'], $village);
-        unset($data['province_code']);
-        $village->update($data);
+        $data['name'] = trim($data['name']);
+
+        DB::transaction(function () use ($data, $village): void {
+            $commune = Commune::query()
+                ->where('code', $data['commune_code'])
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->assertUniqueName($data['name'], $commune->code, $village->code);
+            unset($data['province_code']);
+            $village->update($data);
+        });
     }
 
     public function delete(User $user, Village $village): void
@@ -182,5 +203,48 @@ class VillageService
             'village' => $query->whereIn('code', $user->managedVillageCodes()),
             default => $query->whereRaw('1 = 0'),
         };
+    }
+
+    private function assertUniqueName(string $name, string $communeCode, ?string $exceptCode = null): void
+    {
+        $query = Village::query()
+            ->where('commune_code', $communeCode)
+            ->where('name', $name);
+
+        if ($exceptCode !== null) {
+            $query->where('code', '!=', $exceptCode);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'name' => 'Tên thôn/xóm đã tồn tại trong xã này.',
+            ]);
+        }
+    }
+
+    private function generateCode(Commune $commune, string $name): string
+    {
+        $locationPrefix = "{$commune->code}_";
+        if (strlen($locationPrefix) >= 20) {
+            $locationPrefix = substr($commune->code, 0, 6)
+                . strtoupper(substr(hash('sha256', $commune->code), 0, 8))
+                . '_';
+        }
+
+        $villageSlug = strtoupper(Str::slug($name, '_')) ?: 'THON';
+
+        for ($suffix = 1; ; $suffix++) {
+            $suffixText = $suffix === 1 ? '' : "_{$suffix}";
+            $prefixLength = min(strlen($locationPrefix), 19 - strlen($suffixText));
+            $candidatePrefix = substr($locationPrefix, 0, max(1, $prefixLength));
+            $availableLength = max(0, 20 - strlen($candidatePrefix) - strlen($suffixText));
+            $code = $candidatePrefix
+                . substr($villageSlug, 0, $availableLength)
+                . $suffixText;
+
+            if (! Village::query()->whereKey($code)->exists()) {
+                return $code;
+            }
+        }
     }
 }

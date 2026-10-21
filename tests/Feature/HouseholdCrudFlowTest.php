@@ -732,8 +732,13 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
 
         $this->actingAs($user)
+            ->get(route('villages.create'))
+            ->assertOk()
+            ->assertSee('Mã được tự tạo theo địa bàn và tên thôn khi lưu.')
+            ->assertDontSee('name="code"', false);
+
+        $this->actingAs($user)
             ->post(route('villages.store'), [
-                'code' => 'V03',
                 'name' => 'Thôn Ba',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
@@ -741,13 +746,15 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertRedirect(route('villages.index'))
             ->assertSessionHas('success');
 
+        $village = DB::table('villages')->where('name', 'Thôn Ba')->first();
+        $this->assertNotNull($village);
         $this->assertDatabaseHas('villages', [
-            'code' => 'V03',
+            'code' => 'C01_THON_BA',
             'name' => 'Thôn Ba',
             'commune_code' => 'C01',
         ]);
 
-        $this->patch(route('villages.update', 'V03'), [
+        $this->patch(route('villages.update', $village->code), [
             'name' => 'Thôn Ba đã sửa',
             'province_code' => 'P01',
             'commune_code' => 'C01',
@@ -755,17 +762,51 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertRedirect(route('villages.index'))
             ->assertSessionHas('success');
 
-        $this->assertDatabaseHas('villages', ['code' => 'V03', 'name' => 'Thôn Ba đã sửa']);
+        $this->assertDatabaseHas('villages', ['code' => 'C01_THON_BA', 'name' => 'Thôn Ba đã sửa']);
 
         $this->post(route('villages.store'), [
-            'code' => 'V04',
             'name' => 'Thôn ngoài vùng',
             'province_code' => 'P02',
             'commune_code' => 'C02',
         ])
             ->assertForbidden();
 
-        $this->assertDatabaseMissing('villages', ['code' => 'V04']);
+        $this->assertDatabaseMissing('villages', ['name' => 'Thôn ngoài vùng']);
+    }
+
+    public function test_village_name_must_be_unique_in_a_commune_and_generated_codes_handle_slug_collisions(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+
+        $this->actingAs($user)
+            ->post(route('villages.store'), [
+                'name' => 'Thôn 1',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+            ])
+            ->assertRedirect(route('villages.index'))
+            ->assertSessionHas('success');
+
+        $this->from(route('villages.create'))->post(route('villages.store'), [
+            'name' => 'Thôn 1',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
+            ->assertRedirect(route('villages.create'))
+            ->assertSessionHasErrors([
+                'name' => 'Tên thôn/xóm đã tồn tại trong xã này.',
+            ]);
+
+        $this->from(route('villages.create'))->post(route('villages.store'), [
+            'name' => 'Thôn-1',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
+            ->assertRedirect(route('villages.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('villages', ['code' => 'C01_THON_1', 'name' => 'Thôn 1']);
+        $this->assertDatabaseHas('villages', ['code' => 'C01_THON_1_2', 'name' => 'Thôn-1']);
     }
 
     public function test_village_merge_is_limited_to_commune_managers_and_their_commune(): void
@@ -1146,6 +1187,7 @@ class HouseholdCrudFlowTest extends TestCase
             $table->string('name');
             $table->string('commune_code');
             $table->timestamps();
+            $table->unique(['commune_code', 'name'], 'uq_villages_commune_name');
         });
         Schema::create('schools', function (Blueprint $table): void {
             $table->id();

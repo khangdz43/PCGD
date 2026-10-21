@@ -9,6 +9,8 @@ use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class SchoolService
@@ -75,13 +77,34 @@ class SchoolService
     {
         $this->assertScope($user, $data);
 
-        return School::create($data);
+        return DB::transaction(function () use ($data): School {
+            Province::query()
+                ->when(
+                    filled($data['province_code'] ?? null),
+                    fn (Builder $query) => $query->where('code', $data['province_code'])
+                )
+                ->lockForUpdate()
+                ->first();
+            $this->assertUniqueNameAndLevel($data);
+            unset($data['code']);
+            $data['code'] = $this->generateCode($data);
+
+            return School::create($data);
+        });
     }
 
     public function update(User $user, School $school, array $data): void
     {
         $this->assertScope($user, $data);
-        $school->update($data);
+
+        DB::transaction(function () use ($data, $school): void {
+            Province::query()
+                ->where('code', $data['province_code'])
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->assertUniqueNameAndLevel($data, $school->id);
+            $school->update($data);
+        });
     }
 
     public function delete(School $school): void
@@ -93,6 +116,56 @@ class SchoolService
         }
 
         $school->delete();
+    }
+
+    private function assertUniqueNameAndLevel(array $data, ?int $exceptId = null): void
+    {
+        $query = School::query()
+            ->where('province_code', $data['province_code'])
+            ->where('name', $data['name']);
+
+        if (filled($data['commune_code'] ?? null)) {
+            $query->where('commune_code', $data['commune_code']);
+        } else {
+            $query->whereNull('commune_code');
+        }
+
+        if (filled($data['level'] ?? null)) {
+            $query->where('level', $data['level']);
+        } else {
+            $query->whereNull('level');
+        }
+
+        if ($exceptId !== null) {
+            $query->whereKeyNot($exceptId);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'name' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+            ]);
+        }
+    }
+
+    private function generateCode(array $data): string
+    {
+        $abbreviation = collect(preg_split('/\s+/u', trim(Str::ascii($data['name']))) ?: [])
+            ->filter(fn (string $word): bool => $word !== '' && strtolower($word) !== 'truong')
+            ->map(fn (string $word): string => strtoupper(substr($word, 0, 1)))
+            ->implode('') ?: 'TR';
+        $prefix = implode('_', array_filter([
+            $data['province_code'] ?? null,
+            $data['commune_code'] ?? null,
+        ], fn (?string $code): bool => filled($code)));
+        $baseCode = "{$prefix}{$abbreviation}";
+
+        for ($suffix = 1; ; $suffix++) {
+            $suffixText = $suffix === 1 ? '' : (string) $suffix;
+            $code = substr($baseCode, 0, 50 - strlen($suffixText)) . $suffixText;
+            if (! School::query()->where('code', $code)->exists()) {
+                return $code;
+            }
+        }
     }
 
     private function constrainLookupToUser(Builder $query, User $user, string $provinceCode): void

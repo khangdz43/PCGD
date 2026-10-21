@@ -10,14 +10,61 @@ function updateAcademicBlock(classInput) {
     academicBlockInput.value = classInput.value.match(/\d+/)?.[0] || '';
 }
 
+function updateSchoolCode(form) {
+    const codeInput = form.querySelector('#code');
+    const nameInput = form.querySelector('#name');
+    const locationPicker = form.querySelector('[data-location-picker]');
+    if (!codeInput || !nameInput) return;
+
+    const words = nameInput.value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[đĐ]/g, 'd')
+        .trim()
+        .split(/\s+/)
+        .filter((word) => word && word.toLowerCase() !== 'truong');
+    const abbreviation = words
+        .map((word) => (word.match(/[a-zA-Z0-9]/) || [''])[0])
+        .join('')
+        .toUpperCase() || 'TR';
+    const provinceCode = locationPicker?.querySelector('[data-province]')?.value || '';
+    const communeCode = locationPicker?.querySelector('[data-commune]')?.value || '';
+    const prefix = [provinceCode, communeCode].filter(Boolean).join('_');
+
+    codeInput.value = `${prefix}${prefix ? '_' : ''}${abbreviation}`.slice(0, 50);
+}
+
+function schoolFormFor(target) {
+    const form = target.closest('form');
+
+    return form?.querySelector('[data-school-code-preview]') && form.querySelector('#name')
+        ? form
+        : null;
+}
+
 document.addEventListener('input', (event) => {
     if (event.target.matches('#current-class')) {
         updateAcademicBlock(event.target);
     }
+
+    const form = schoolFormFor(event.target);
+    if (form && event.target.matches('#name')) updateSchoolCode(form);
 });
 
 document.addEventListener('turbo:load', () => {
     document.querySelectorAll('#current-class').forEach(updateAcademicBlock);
+    document.querySelectorAll('form').forEach((form) => {
+        if (form.querySelector('[data-school-code-preview]') && form.querySelector('#name')) {
+            updateSchoolCode(form);
+        }
+    });
+});
+
+document.addEventListener('change', (event) => {
+    const form = schoolFormFor(event.target);
+    if (form && event.target.matches('[data-province], [data-commune]')) {
+        updateSchoolCode(form);
+    }
 });
 
 async function loadDirectoryPage(results, url) {

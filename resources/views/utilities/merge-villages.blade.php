@@ -13,7 +13,12 @@
             </div>
         </div>
     @else
-        <div class="row g-2 align-items-stretch merge-workspace">
+        <form class="row g-2 align-items-stretch merge-workspace" id="merge-villages-form"
+            method="POST" action="{{ route('utilities.villages.merge.store') }}"
+            data-confirm="Các thôn nguồn sẽ bị xóa khỏi danh mục. Toàn bộ hộ và nhân khẩu được chuyển sang thôn đích. Bạn có chắc chắn muốn tiếp tục?"
+            data-confirm-title="Xác nhận gộp thôn"
+            data-confirm-button="Tiến hành gộp">
+            @csrf
             <div class="col-12 col-xl-7 merge-source-column">
                 <section class="card merge-card shadow-sm">
                     <div class="card-header bg-white">
@@ -47,6 +52,8 @@
                                         data-search="{{ mb_strtolower($village->code . ' ' . $village->name . ' ' . $locationLabel) }}">
                                         <input class="form-check-input merge-source-checkbox" type="checkbox"
                                             value="{{ $village->code }}"
+                                            name="source_codes[]"
+                                            @checked(in_array($village->code, (array) old('source_codes', []), true))
                                             data-name="{{ $village->name }}"
                                             data-commune="{{ $commune->name ?? $communeCode }}"
                                             data-households="{{ $village->households_count }}">
@@ -72,10 +79,10 @@
                     </div>
                     <div class="card-body">
                         <label class="form-label fw-semibold" for="merge-target">Thôn đích <span class="text-danger">*</span></label>
-                        <select class="form-select" id="merge-target">
+                        <select class="form-select" id="merge-target" name="target_code" required>
                             <option value="">-- Chọn thôn nhận dữ liệu --</option>
                             @foreach ($villages as $village)
-                                <option value="{{ $village->code }}" data-name="{{ $village->name }}" data-commune="{{ $village->commune->name ?? $village->commune_code }}">
+                                <option value="{{ $village->code }}" @selected(old('target_code') === $village->code) data-name="{{ $village->name }}" data-commune="{{ $village->commune->name ?? $village->commune_code }}">
                                     {{ $village->name }} · {{ $village->commune->name ?? $village->commune_code }} ({{ $village->code }})
                                 </option>
                             @endforeach
@@ -127,11 +134,11 @@
                             <p class="merge-preview-empty small text-muted mt-2 mb-0" id="merge-preview-empty">Chọn thôn nguồn và thôn đích để xem luồng gộp.</p>
                         </div>
                         <div class="merge-preview-actions">
-                            <button class="btn btn-primary w-100 mt-3" id="merge-submit-button" type="button" disabled>
+                            <button class="btn btn-primary w-100 mt-3" id="merge-submit-button" type="submit" disabled>
                                 <i class="fa-solid fa-code-merge me-1" aria-hidden="true"></i>Tiến hành gộp
                             </button>
                             <p class="small text-muted text-center mt-2 mb-0" id="merge-action-status" role="status" aria-live="polite"></p>
-                        </div>
+                        </form>
                     </div>
                 </section>
             </div>
@@ -645,9 +652,6 @@
         searchInput.addEventListener('input', filterSources);
         sourceCheckboxes.forEach((checkbox) => checkbox.addEventListener('change', refresh));
         targetSelect.addEventListener('change', refresh);
-        mergeButton.addEventListener('click', () => {
-            mergeActionStatus.textContent = 'Chức năng gộp dữ liệu chưa được kết nối. Hiện chưa có phiếu, đối tượng hay thôn nào bị thay đổi.';
-        });
         selectVisibleButton.addEventListener('click', () => {
             document.querySelectorAll('.merge-village-option:not(.d-none) .merge-source-checkbox:not(:disabled)')
                 .forEach((checkbox) => { checkbox.checked = true; });

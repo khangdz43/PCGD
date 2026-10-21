@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Geography;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Geography\MergeVillagesRequest;
 use App\Services\Geography\VillageService;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 
 class VillageMergeController extends Controller
 {
@@ -18,5 +20,24 @@ class VillageMergeController extends Controller
         $villages = $this->villages->availableForMerge($user);
 
         return view('utilities.merge-villages', compact('villages'));
+    }
+
+    public function store(MergeVillagesRequest $request): RedirectResponse
+    {
+        $data = $request->validated();
+        $householdCount = $this->villages->merge(
+            $request->user(),
+            $data['source_codes'],
+            $data['target_code']
+        );
+
+        return to_route('utilities.villages.merge')->with(
+            'success',
+            sprintf(
+                'Đã gộp %d thôn nguồn vào thôn đích và chuyển %s hộ cùng toàn bộ nhân khẩu.',
+                count($data['source_codes']),
+                number_format($householdCount, 0, ',', '.')
+            )
+        );
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services\Geography;
 
 use App\Models\Commune;
+use App\Models\Household;
 use App\Models\Province;
 use App\Models\Role;
 use App\Models\User;
@@ -10,6 +11,7 @@ use App\Models\Village;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class VillageService
@@ -90,6 +92,62 @@ class VillageService
         }
 
         $village->delete();
+    }
+
+    public function merge(User $user, array $sourceCodes, string $targetCode): int
+    {
+        abort_unless($user->roleScopeLevel() === 'commune' && filled($user->commune_code), 403);
+
+        $sourceCodes = array_values(array_unique($sourceCodes));
+        if ($sourceCodes === [] || in_array($targetCode, $sourceCodes, true)) {
+            throw ValidationException::withMessages([
+                'source_codes' => 'Chọn ít nhất một thôn nguồn khác thôn đích.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($user, $sourceCodes, $targetCode): int {
+            $villages = Village::query()
+                ->where('commune_code', $user->commune_code)
+                ->whereIn('code', [...$sourceCodes, $targetCode])
+                ->orderBy('code')
+                ->lockForUpdate()
+                ->get();
+
+            $target = $villages->firstWhere('code', $targetCode);
+            $sources = $villages->whereIn('code', $sourceCodes);
+
+            if ($target === null || $sources->count() !== count($sourceCodes)) {
+                throw ValidationException::withMessages([
+                    'source_codes' => 'Một hoặc nhiều thôn đã thay đổi hoặc không còn thuộc địa bàn quản lý.',
+                ]);
+            }
+
+            $sourceCodes = $sources->modelKeys();
+            $households = Household::withTrashed()->whereIn('village_code', $sourceCodes);
+            $householdCount = $households->count();
+            $households->update(['village_code' => $target->code]);
+
+            $assignedUserIds = DB::table('user_villages')
+                ->whereIn('village_code', $sourceCodes)
+                ->distinct()
+                ->pluck('user_id');
+
+            if ($assignedUserIds->isNotEmpty()) {
+                DB::table('user_villages')->insertOrIgnore(
+                    $assignedUserIds
+                        ->map(fn ($userId): array => [
+                            'user_id' => $userId,
+                            'village_code' => $target->code,
+                        ])
+                        ->all()
+                );
+            }
+
+            DB::table('user_villages')->whereIn('village_code', $sourceCodes)->delete();
+            Village::query()->whereIn('code', $sourceCodes)->delete();
+
+            return $householdCount;
+        });
     }
 
     public function assertCanUseCommune(User $user, string $communeCode, ?Village $existingVillage): void

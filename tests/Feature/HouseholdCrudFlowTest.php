@@ -784,6 +784,8 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertOk()
             ->assertSee('Thôn Một')
             ->assertSee('Thôn Ba')
+            ->assertSee('name="source_codes[]"', false)
+            ->assertSee('name="target_code"', false)
             ->assertDontSee('Thôn Hai')
             ->assertDontSee('Lưu ý:');
 
@@ -798,6 +800,104 @@ class HouseholdCrudFlowTest extends TestCase
         $this->actingAs($systemAdmin)
             ->get(route('utilities.villages.merge'))
             ->assertForbidden();
+    }
+
+    public function test_commune_manager_can_merge_villages_and_preserve_households_and_village_account_access(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn Ba',
+            'commune_code' => 'C01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+        $activeHousehold = $this->createHousehold([
+            'household_code' => '02',
+            'village_code' => 'V03',
+        ]);
+        $person = $this->createPerson($activeHousehold);
+        $deletedHousehold = $this->createHousehold([
+            'household_code' => '03',
+            'village_code' => 'V03',
+        ]);
+        $deletedHousehold->delete();
+
+        DB::table('user_villages')->insert([
+            ['user_id' => $user->id, 'village_code' => 'V03'],
+            ['user_id' => $user->id, 'village_code' => 'V01'],
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('utilities.villages.merge.store'), [
+                'source_codes' => ['V03'],
+                'target_code' => 'V01',
+            ])
+            ->assertRedirect(route('utilities.villages.merge'))
+            ->assertSessionHas('success', 'Đã gộp 1 thôn nguồn vào thôn đích và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
+
+        $this->assertDatabaseHas('villages', ['code' => 'V01']);
+        $this->assertDatabaseMissing('villages', ['code' => 'V03']);
+        $this->assertDatabaseHas('households', [
+            'id' => $activeHousehold->id,
+            'village_code' => 'V01',
+            'deleted_at' => null,
+        ]);
+        $this->assertDatabaseHas('households', [
+            'id' => $deletedHousehold->id,
+            'village_code' => 'V01',
+        ]);
+        $this->assertDatabaseHas('persons', [
+            'id' => $person->id,
+            'household_id' => $activeHousehold->id,
+        ]);
+        $this->assertDatabaseHas('user_villages', [
+            'user_id' => $user->id,
+            'village_code' => 'V01',
+        ]);
+        $this->assertDatabaseMissing('user_villages', [
+            'user_id' => $user->id,
+            'village_code' => 'V03',
+        ]);
+        $this->assertSame(
+            1,
+            DB::table('user_villages')
+                ->where('user_id', $user->id)
+                ->where('village_code', 'V01')
+                ->count()
+        );
+    }
+
+    public function test_village_merge_rejects_the_target_as_a_source_and_villages_outside_the_commune(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn Ba',
+            'commune_code' => 'C01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+
+        $this->actingAs($user)
+            ->from(route('utilities.villages.merge'))
+            ->post(route('utilities.villages.merge.store'), [
+                'source_codes' => ['V01'],
+                'target_code' => 'V01',
+            ])
+            ->assertRedirect(route('utilities.villages.merge'))
+            ->assertSessionHasErrors('source_codes.0');
+
+        $this->post(route('utilities.villages.merge.store'), [
+            'source_codes' => ['V02'],
+            'target_code' => 'V01',
+        ])
+            ->assertRedirect(route('utilities.villages.merge'))
+            ->assertSessionHasErrors('source_codes.0');
+
+        $this->assertDatabaseHas('villages', ['code' => 'V01']);
+        $this->assertDatabaseHas('villages', ['code' => 'V02']);
+        $this->assertDatabaseHas('villages', ['code' => 'V03']);
     }
 
     public function test_province_manager_can_create_and_update_schools_only_in_their_province(): void

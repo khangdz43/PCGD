@@ -768,6 +768,38 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseMissing('villages', ['code' => 'V04']);
     }
 
+    public function test_village_merge_is_limited_to_commune_managers_and_their_commune(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn Ba',
+            'commune_code' => 'C01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $communeManager = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+
+        $this->actingAs($communeManager)
+            ->get(route('utilities.villages.merge'))
+            ->assertOk()
+            ->assertSee('Thôn Một')
+            ->assertSee('Thôn Ba')
+            ->assertDontSee('Thôn Hai')
+            ->assertDontSee('Lưu ý:');
+
+        $systemAdmin = $this->userWithPermissions([], 'global');
+        $systemAdminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'guard_name' => 'web',
+            'scope_level' => 'global',
+        ]);
+        $systemAdmin->roles()->attach($systemAdminRole);
+
+        $this->actingAs($systemAdmin)
+            ->get(route('utilities.villages.merge'))
+            ->assertForbidden();
+    }
+
     public function test_province_manager_can_create_and_update_schools_only_in_their_province(): void
     {
         $user = $this->userWithPermissions([AccessPermission::MANAGE_SCHOOLS], 'province');

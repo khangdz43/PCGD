@@ -38,6 +38,17 @@ class VillageService
         return $query->orderBy('name')->paginate(10)->withQueryString();
     }
 
+    public function availableForMerge(User $user): Collection
+    {
+        $query = Village::with('commune.province')->withCount('households');
+        $this->constrainToUserArea($query, $user);
+
+        return $query
+            ->orderBy('commune_code')
+            ->orderBy('name')
+            ->get();
+    }
+
     public function provincesFor(User $user): Collection
     {
         $query = Province::query()->orderBy('name');

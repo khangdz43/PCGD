@@ -92,12 +92,13 @@
                                 </li>
                             @endcan
                             @can('manage-villages')
-                                <li>
-                                    <span class="dropdown-item disabled" aria-disabled="true">
-                                        <i class="fa-solid fa-code-merge me-2" aria-hidden="true"></i>Gộp thôn
-                                        <small class="text-muted ms-1">Sắp có</small>
-                                    </span>
-                                </li>
+                                @if (auth()->user()->roleScopeLevel() === 'commune')
+                                    <li>
+                                        <a class="dropdown-item {{ request()->routeIs('utilities.villages.*') ? 'active' : '' }}" href="{{ route('utilities.villages.merge', [], false) }}">
+                                            <i class="fa-solid fa-code-merge me-2" aria-hidden="true"></i>Gộp thôn
+                                        </a>
+                                    </li>
+                                @endif
                             @endcan
                             @can('manage-schools')
                                 <li>

@@ -4,6 +4,7 @@ use App\Http\Controllers\Education\SchoolController;
 use App\Http\Controllers\Geography\CommuneController;
 use App\Http\Controllers\Geography\ProvinceController;
 use App\Http\Controllers\Geography\VillageController;
+use App\Http\Controllers\Geography\VillageMergeController;
 use App\Http\Controllers\Households\HouseholdController;
 use App\Http\Controllers\Households\HouseholdImportExportController;
 use App\Http\Controllers\Households\HouseholdImportHistoryController;
@@ -33,6 +34,10 @@ Route::middleware(['auth', 'active'])->group(function (): void {
     Route::middleware('can:manage-villages')->group(function (): void {
         //7 routes , bỏ xem show chi tiết
         Route::resource('villages', VillageController::class)->except('show');
+        Route::get('/utilities/merge-villages', [VillageMergeController::class, 'create'])
+            ->name('utilities.villages.merge');
+        Route::post('/utilities/merge-villages', [VillageMergeController::class, 'store'])
+            ->name('utilities.villages.merge.store');
     });
 
     Route::middleware('can:manage-schools')->group(function (): void {

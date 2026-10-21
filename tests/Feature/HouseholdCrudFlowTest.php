@@ -773,8 +773,16 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::MANAGE_SCHOOLS], 'province');
 
         $this->actingAs($user)
+            ->get(route('schools.create'))
+            ->assertOk()
+            ->assertSee('id="code"', false)
+            ->assertSee('readonly', false)
+            ->assertDontSee('name="code"', false)
+            ->assertSee('Mã sẽ tự hiện khi nhập tên trường; mã chính thức được xác định khi lưu.');
+
+        $this->actingAs($user)
             ->post(route('schools.store'), [
-                'code' => 'S01',
+                'code' => '',
                 'name' => 'Trường Một',
                 'level' => 'TH',
                 'province_code' => 'P01',
@@ -783,8 +791,9 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertRedirect(route('schools.index'))
             ->assertSessionHas('success');
 
-        $school = DB::table('schools')->where('code', 'S01')->first();
+        $school = DB::table('schools')->where('name', 'Trường Một')->first();
         $this->assertNotNull($school);
+        $this->assertSame('P01_C01M', $school->code);
         $this->assertSame('P01', $school->province_code);
 
         $this->put(route('schools.update', $school->id), [
@@ -802,15 +811,59 @@ class HouseholdCrudFlowTest extends TestCase
             'level' => 'THCS',
         ]);
 
+        $this->from(route('schools.create'))
+            ->post(route('schools.store'), [
+                'code' => 'P01_C01M',
+                'name' => 'Trường Một đã sửa',
+                'level' => 'THCS',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+            ])
+            ->assertRedirect(route('schools.create'))
+            ->assertSessionHasErrors([
+                'name' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+            ]);
+
         $this->post(route('schools.store'), [
-            'code' => 'S02',
+            'code' => 'P01_C01M',
+            'name' => 'Trường Một đã sửa',
+            'level' => 'TH',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
+            ->assertRedirect(route('schools.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('schools', [
+            'code' => 'P01_C01MDS',
+            'name' => 'Trường Một đã sửa',
+            'level' => 'TH',
+        ]);
+
+        $this->post(route('schools.store'), [
+            'name' => 'Trường Tự Động',
+            'level' => 'TH',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
+            ->assertRedirect(route('schools.index'))
+            ->assertSessionHas('success');
+
+        $this->assertDatabaseHas('schools', [
+            'code' => 'P01_C01TD',
+            'name' => 'Trường Tự Động',
+            'level' => 'TH',
+        ]);
+
+        $this->post(route('schools.store'), [
+            'code' => 'P02_C02NT',
             'name' => 'Trường ngoài tỉnh',
             'level' => 'TH',
             'province_code' => 'P02',
             'commune_code' => 'C02',
         ])->assertForbidden();
 
-        $this->assertDatabaseMissing('schools', ['code' => 'S02']);
+        $this->assertDatabaseMissing('schools', ['code' => 'S04']);
     }
 
     public function test_school_cannot_be_deleted_while_person_education_uses_it(): void

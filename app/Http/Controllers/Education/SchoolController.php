@@ -42,7 +42,9 @@ class SchoolController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->validate($this->rules($request, true));
+        $data = $request->validate($this->rules($request, true), [
+            'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+        ]);
         $this->schools->create($request->user(), $data);
 
         return redirect()->to(route('schools.index', [], false))
@@ -61,7 +63,9 @@ class SchoolController extends Controller
     {
         $user = $request->user();
         $school = $this->schools->findAccessible($user, $id);
-        $data = $request->validate($this->rules($request));
+        $data = $request->validate($this->rules($request, false, $school), [
+            'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+        ]);
         $this->schools->update($user, $school, $data);
 
         return redirect()->to(route('schools.index', [], false))
@@ -77,10 +81,19 @@ class SchoolController extends Controller
             ->with('success', 'Đã xóa trường học.');
     }
 
-    private function rules(Request $request, bool $creating = false): array
+    private function rules(Request $request, bool $creating = false, ?School $school = null): array
     {
         $rules = [
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('schools', 'name')
+                    ->where('province_code', $request->input('province_code'))
+                    ->where('commune_code', $request->input('commune_code'))
+                    ->where('level', $request->input('level'))
+                    ->ignore($school?->id),
+            ],
             'level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
             'province_code' => 'nullable|exists:provinces,code',
             'commune_code' => [
@@ -92,8 +105,6 @@ class SchoolController extends Controller
         if (! $creating) {
             return $rules;
         }
-
-        $rules['code'] = 'required|string|max:50|unique:schools,code';
 
         return $rules;
     }

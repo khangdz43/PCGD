@@ -80,15 +80,14 @@
 
         <input
             id="code"
-            name="code"
             class="form-control @error('code') is-invalid @enderror"
             value="{{ old('code', $school->code) }}"
             maxlength="50"
-            @if ($method !=='POST' ) readonly @endif
-            required>
+            @if ($method === 'POST') data-school-code-preview @endif
+            readonly>
 
         <div class="form-text">
-            Tự tạo sau khi nhập tên trường và chọn địa bàn; có thể chỉnh sửa.
+            Mã sẽ tự hiện khi nhập tên trường; mã chính thức được xác định khi lưu.
         </div>
 
         @error('code')
@@ -110,96 +109,3 @@
         </a>
     </div>
 </form>
-
-@if ($method === 'POST')
-@push('scripts')
-<script>
-    (() => {
-        const codeInput = document.querySelector('#code');
-        const nameInput = document.querySelector('#name');
-        const locationPicker = document.querySelector(
-            'form [data-location-picker]'
-        );
-
-        if (!codeInput || !nameInput || !locationPicker) return;
-
-        const provinceSelect = locationPicker.querySelector('[data-province]');
-        const communeSelect = locationPicker.querySelector('[data-commune]');
-
-        const initialCode = codeInput.value.trim();
-
-        let lastGeneratedCode = initialCode;
-        let hasCheckedInitialCode = !initialCode;
-        let codeWasEdited = false;
-
-        function makeAbbreviation(name) {
-            return name
-                .normalize('NFD')
-                .replace(/[\u0300-\u036f]/g, '')
-                .replace(/[đĐ]/g, 'd')
-                .trim()
-                .split(/\s+/)
-                .filter(word =>
-                    word &&
-                    word.toLowerCase() !== 'truong'
-                )
-                .map(word =>
-                    (word.match(/[a-zA-Z0-9]/) || [''])[0]
-                )
-                .join('')
-                .toUpperCase();
-        }
-
-        function updateCode() {
-            const provinceCode = provinceSelect.value;
-            const communeCode = communeSelect.value;
-            const abbreviation = makeAbbreviation(nameInput.value);
-
-            if (!provinceCode || !communeCode || !abbreviation) {
-                return;
-            }
-
-            const prefix = `${provinceCode}_${communeCode}`;
-
-            const generatedCode =
-                prefix + abbreviation.slice(0, 50 - prefix.length);
-
-            if (!hasCheckedInitialCode) {
-                codeWasEdited = initialCode !== generatedCode;
-                hasCheckedInitialCode = true;
-
-                if (codeWasEdited) {
-                    return;
-                }
-            }
-
-            if (codeWasEdited) {
-                return;
-            }
-
-            codeInput.value = generatedCode;
-            lastGeneratedCode = generatedCode;
-        }
-
-        codeInput.addEventListener('input', function() {
-            if (codeInput.value !== lastGeneratedCode) {
-                codeWasEdited = true;
-            }
-        })();
-
-        nameInput.addEventListener('input', updateCode);
-
-        provinceSelect.addEventListener('change', updateCode);
-
-        communeSelect.addEventListener('change', updateCode);
-
-        locationPicker.addEventListener(
-            'location:communes-loaded',
-            updateCode
-        );
-
-        updateCode();
-    });
-</script>
-@endpush
-@endif

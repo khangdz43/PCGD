@@ -23,7 +23,7 @@
         $notifications[] = [
             ...$notificationTypes['error'],
             'title' => 'Vui lòng kiểm tra lại thông tin',
-            'message' => 'Chưa thể lưu dữ liệu. Hãy xem các nội dung cần điều chỉnh bên dưới.',
+            'message' => 'Lỗi: ',
             'details' => $errors->all(),
         ];
     }

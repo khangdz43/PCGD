@@ -585,12 +585,20 @@
         const selectedSources = () => sourceCheckboxes.filter((checkbox) => checkbox.checked);
 
         function refresh() {
+            const selectedCodes = new Set(selectedSources().map((checkbox) => checkbox.value));
+            if (selectedCodes.has(targetSelect.value)) {
+                targetSelect.value = '';
+            }
+
+            [...targetSelect.options].forEach((option) => {
+                option.hidden = option.value !== '' && selectedCodes.has(option.value);
+            });
+
             const targetCode = targetSelect.value;
             const targetOption = targetSelect.selectedOptions[0];
 
             sourceCheckboxes.forEach((checkbox) => {
                 const isTarget = checkbox.value === targetCode;
-                if (isTarget && checkbox.checked) checkbox.checked = false;
                 checkbox.disabled = isTarget;
                 checkbox.closest('.merge-village-option').classList.toggle('opacity-50', isTarget);
             });

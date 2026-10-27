@@ -26,16 +26,11 @@ class HouseholdPersonController extends Controller
 
         // excep
         if ($isHouseholdHead && $headPersonExists) {
-            $destination = $request->user()->can('view-households')
-                ? route('households.show', $household, false)
-                : route('index', [], false);
-
-            return redirect()->to($destination)->with('warning', 'Hộ này đã có hồ sơ chủ hộ.');
+            return response()->json(['message' => 'Hộ này đã có hồ sơ chủ hộ.'], 422);
         }
 
         if (! $isHouseholdHead && ! $headPersonExists) {
-            return redirect()->to(route('households.members.create', [$household, 'is_head' => 1], false))
-                ->with('warning', 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.');
+            return response()->json(['message' => 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.'], 422);
         }
 
         $person = $this->people->newPerson($household, $isHouseholdHead, $headPerson);
@@ -43,7 +38,12 @@ class HouseholdPersonController extends Controller
         $formData = $this->people->formData($person, $isHouseholdHead, $request->user(), $household->school_year);
 
         // lúc thêm thành viên mới có các thông tin của chủ hộ , person (Nam) , formdataa (năm)
-        return view('households.members.create', array_merge(compact('household', 'person', 'isHouseholdHead'), $formData));
+        return response()->json([
+            'household' => $household,
+            'person' => $person,
+            'is_household_head' => $isHouseholdHead,
+            ...$formData,
+        ]);
     }
 
     public function store(Request $request, Household $household)
@@ -55,34 +55,29 @@ class HouseholdPersonController extends Controller
 
         // xu li excep
         if (! $isHouseholdHead && ! $headPersonExists) {
-            return redirect()->to(route('households.members.create', [$household, 'is_head' => 1], false))
-                ->with('warning', 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.');
+            return response()->json(['message' => 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.'], 422);
         }
 
         if ($isHouseholdHead && $headPersonExists) {
-            return redirect()->to(route('households.show', $household, false))->with('warning', 'Hộ này đã có hồ sơ chủ hộ.');
+            return response()->json(['message' => 'Hộ này đã có hồ sơ chủ hộ.'], 422);
         }
 
         $data = $request->validate($this->rules($request, $isHouseholdHead));
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
-            return back()->withErrors(['relationship_with_head' => $relationshipAgeError])->withInput();
+            return response()->json([
+                'message' => $relationshipAgeError,
+                'errors' => ['relationship_with_head' => [$relationshipAgeError]],
+            ], 422);
         }
 
         $this->people->create($household, $data, $isHouseholdHead);
 
-        if (! $request->user()->can('view-households')) {
-            return redirect()->to(route('households.members.create', [
-                $household,
-                'is_head' => false,
-            ], false))->with('status', $isHouseholdHead
-                ? 'Đã thêm chủ hộ. Có thể tiếp tục nhập thành viên hoặc về trang chủ để kết thúc.'
-                : 'Đã thêm thành viên. Có thể tiếp tục nhập thành viên hoặc về trang chủ để kết thúc.');
-        }
-
-        return redirect()->to(route('households.show', $household, false))->with('success', $isHouseholdHead
-            ? 'Đã thêm chủ hộ vào danh sách nhân khẩu. Bây giờ có thể thêm các thành viên khác.'
-            : 'Đã thêm thành viên vào hộ.');
+        return response()->json([
+            'message' => $isHouseholdHead
+                ? 'Đã thêm chủ hộ vào danh sách nhân khẩu. Bây giờ có thể thêm các thành viên khác.'
+                : 'Đã thêm thành viên vào hộ.',
+        ], 201);
     }
 
     public function show(Household $household, int $personId)
@@ -90,7 +85,7 @@ class HouseholdPersonController extends Controller
         $this->assertHouseholdAccess(request(), $household);
         $person = $this->people->findWithDetails($household, $personId);
 
-        return view('households.members.show', compact('household', 'person'));
+        return response()->json(['household' => $household, 'person' => $person]);
     }
 
     public function edit(Household $household, int $personId)
@@ -100,7 +95,12 @@ class HouseholdPersonController extends Controller
         $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
         $formData = $this->people->formData($person, $isHouseholdHead, request()->user(), $household->school_year);
 
-        return view('households.members.edit', array_merge(compact('household', 'person', 'isHouseholdHead'), $formData));
+        return response()->json([
+            'household' => $household,
+            'person' => $person,
+            'is_household_head' => $isHouseholdHead,
+            ...$formData,
+        ]);
     }
 
     public function update(Request $request, Household $household, int $personId)
@@ -116,12 +116,15 @@ class HouseholdPersonController extends Controller
         $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education));
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
-            return back()->withErrors(['relationship_with_head' => $relationshipAgeError])->withInput();
+            return response()->json([
+                'message' => $relationshipAgeError,
+                'errors' => ['relationship_with_head' => [$relationshipAgeError]],
+            ], 422);
         }
 
         $this->people->update($household, $person, $data, $isHouseholdHead, $education);
 
-        return redirect()->to(route('households.show', $household, false))->with('success', 'Đã cập nhật thành viên.');
+        return response()->json(['message' => 'Đã cập nhật thành viên.']);
     }
 
     public function destroy(Request $request, Household $household, int $personId)
@@ -136,8 +139,9 @@ class HouseholdPersonController extends Controller
                 ], 422);
             }
 
-            return redirect()->to(route('households.show', $household, false))
-                ->with('warning', 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.');
+            return response()->json([
+                'message' => 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.',
+            ], 422);
         }
 
         $message = $isHouseholdHead
@@ -152,7 +156,7 @@ class HouseholdPersonController extends Controller
             ]);
         }
 
-        return redirect()->to(route('households.show', $household, false))->with('success', $message);
+        return response()->json(['message' => $message]);
     }
 
     public function bulkDestroy(Request $request)
@@ -170,7 +174,9 @@ class HouseholdPersonController extends Controller
                 ], 422);
             }
 
-            return back()->with('warning', 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.');
+            return response()->json([
+                'message' => 'Không thể xóa chủ hộ khi hộ vẫn còn thành viên. Hãy xóa các thành viên khác trước.',
+            ], 422);
         }
         // xóa các thằng hợp lệ
         $this->people->deleteMany($persons, $request->user());
@@ -184,7 +190,10 @@ class HouseholdPersonController extends Controller
             ]);
         }
 
-        return back()->with('success', $message);
+        return response()->json([
+            'message' => $message,
+            'deleted_ids' => $persons->modelKeys(),
+        ]);
     }
 
     private function rules(Request $request, bool $isHouseholdHead = false, ?Person $person = null, ?PersonEducation $education = null): array

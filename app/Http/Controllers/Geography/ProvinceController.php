@@ -14,7 +14,7 @@ class ProvinceController extends Controller
     {
         $provinces = $this->geography->provincesForHome($request->user());
 
-        return view('index', compact('provinces'));
+        return response()->json(['data' => $provinces]);
     }
 
     public function getCommunes(string $provinceCode, Request $request)

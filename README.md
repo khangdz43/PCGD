@@ -8,18 +8,32 @@
 - `app/Http/Controllers/Education`: trường học.
 - `app/Http/Controllers/Households`: hộ gia đình, nhân khẩu và nhập/xuất dữ liệu.
 - `app/Http/Controllers/Admin/AccessControl`: nhóm người dùng/phòng ban và quản lý tài khoản theo địa bàn.
-- `app/Http/Controllers/Auth`: đăng nhập và đăng xuất.
+- `app/Http/Controllers/Api`: session, xác thực và endpoint JSON.
 - `app/Models`: Eloquent models, giữ namespace ổn định `App\Models`.
 - `app/Support`: định nghĩa quyền và giới hạn truy cập dữ liệu theo địa bàn.
 - `app/Http/Requests`: xác thực và authorize dữ liệu đầu vào theo từng nghiệp vụ.
 - `app/Services`: xử lý nghiệp vụ, truy vấn và cập nhật dữ liệu; tổ chức service theo miền.
 - `app/Jobs`: tác vụ nền dài như xử lý nhập Excel; job gọi service, không gọi controller.
-- `routes/web.php`: các luồng nghiệp vụ web đã xác thực.
-- `routes/auth.php`: đăng nhập, đăng xuất.
-- `routes/admin.php`: các màn hình quản trị.
-- `resources/views`: giao diện Blade, tổ chức theo nghiệp vụ.
+- `routes/api.php`: các endpoint JSON phiên bản `/api/v1`; backend không đăng ký route giao diện Blade.
+- `frontend`: ứng dụng Vue 3 + TypeScript riêng, chạy Vite và gọi JSON API.
 
 Controller được nhóm theo miền nghiệp vụ và chỉ điều phối request/response. Validation đặt trong Form Request; nghiệp vụ dùng chung, truy vấn và cập nhật dữ liệu đặt trong service tương ứng. Models giữ tại `App\Models` để các quan hệ và phần tích hợp hiện tại không bị phá vỡ.
+
+## Frontend
+
+Frontend được tổ chức độc lập trong thư mục `frontend`, build và chạy riêng với Laravel. Frontend gọi JSON API qua proxy Vite; backend giữ session đăng nhập, kiểm tra quyền và nghiệp vụ hiện có. Giao diện Blade và các route web đã được gỡ khỏi backend.
+
+```bash
+# Terminal 1: backend API
+php artisan serve --host=127.0.0.1 --port=8000
+
+# Terminal 2: frontend Vue
+cd frontend
+npm install
+npm run dev
+```
+
+Nếu dùng nhập Excel qua queue, chạy thêm `php artisan queue:work` trong terminal riêng. Mở `http://127.0.0.1:5173`. Vite proxy các request `/api` sang Laravel ở cổng `8000`. Các lệnh `npm run typecheck` và `npm run build` chạy trong thư mục `frontend`; `composer dev` chỉ khởi chạy backend API.
 
 ## Cài đặt và tạo quản trị viên đầu tiên
 

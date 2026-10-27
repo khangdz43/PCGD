@@ -9,16 +9,14 @@ use App\Models\Role;
 use App\Models\User;
 use App\Models\Village;
 use App\Services\Households\HouseholdTrashService;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\Response;
-use Illuminate\View\View;
 
 class HouseholdTrashController extends Controller
 {
     public function __construct(private readonly HouseholdTrashService $trash) {}
 
-    public function index(Request $request): View|Response
+    public function index(Request $request): JsonResponse
     {
         /** @var User $user */
         $user = $request->user();
@@ -32,11 +30,6 @@ class HouseholdTrashController extends Controller
             'village_code' => ['nullable', 'string', 'max:20'],
         ]);
         $data = $this->trash->paginate($user, $filters);
-        if ($request->ajax()) {
-            return response()
-                ->view('households.trash._results', $data)
-                ->header('X-Trash-Results', '1');
-        }
 
         $selectedProvinceCode = $filters['province_code']
             ?? ($user->hasRole(Role::SYSTEM_ADMIN) || $user->roleScopeLevel() === 'global'
@@ -75,26 +68,26 @@ class HouseholdTrashController extends Controller
         }
         $villages = $villageQuery->get(['code', 'name']);
 
-        return view('households.trash.index', [
+        return response()->json([
             ...$data,
             'provinces' => $provinces,
             'communes' => $communes,
-            'selectedProvinceCode' => $selectedProvinceCode,
-            'selectedCommuneCode' => $selectedCommune?->code,
-            'initialCommune' => $selectedCommune,
+            'selected_province_code' => $selectedProvinceCode,
+            'selected_commune_code' => $selectedCommune?->code,
+            'initial_commune' => $selectedCommune,
             'villages' => $villages,
             'filters' => $filters,
         ]);
     }
 
-    public function showHousehold(Request $request, int $id): View
+    public function showHousehold(Request $request, int $id): JsonResponse
     {
         $household = $this->trash->householdForDetails($request->user(), $id);
 
-        return view('households.trash.show', compact('household'));
+        return response()->json(['data' => $household]);
     }
 
-    public function bulk(Request $request): RedirectResponse
+    public function bulk(Request $request): JsonResponse
     {
         $data = $request->validate([
             'operation' => ['required', 'in:restore,force_delete'],
@@ -106,7 +99,7 @@ class HouseholdTrashController extends Controller
         $householdIds = $data['household_ids'] ?? [];
         $personIds = $data['person_ids'] ?? [];
         if ($householdIds === [] && $personIds === []) {
-            return back()->with('warning', 'Hãy chọn ít nhất một mục trong thùng rác.');
+            return response()->json(['message' => 'Hãy chọn ít nhất một mục trong thùng rác.'], 422);
         }
 
         $count = $data['operation'] === 'restore'
@@ -117,34 +110,34 @@ class HouseholdTrashController extends Controller
             ? "Đã khôi phục {$count} mục đã chọn."
             : "Đã xóa vĩnh viễn {$count} mục đã chọn.";
 
-        return back()->with('success', $message);
+        return response()->json(['message' => $message, 'affected_count' => $count]);
     }
 
-    public function restoreHousehold(Request $request, int $id): RedirectResponse
+    public function restoreHousehold(Request $request, int $id): JsonResponse
     {
         $this->trash->restoreHousehold($request->user(), $id);
 
-        return back()->with('success', 'Đã khôi phục phiếu điều tra và các dữ liệu trong hộ.');
+        return response()->json(['message' => 'Đã khôi phục phiếu điều tra và các dữ liệu trong hộ.']);
     }
 
-    public function permanentlyDeleteHousehold(Request $request, int $id): RedirectResponse
+    public function permanentlyDeleteHousehold(Request $request, int $id): JsonResponse
     {
         $this->trash->permanentlyDeleteHousehold($request->user(), $id);
 
-        return back()->with('success', 'Đã xóa vĩnh viễn phiếu điều tra và toàn bộ dữ liệu trong hộ.');
+        return response()->json(['message' => 'Đã xóa vĩnh viễn phiếu điều tra và toàn bộ dữ liệu trong hộ.']);
     }
 
-    public function restorePerson(Request $request, int $id): RedirectResponse
+    public function restorePerson(Request $request, int $id): JsonResponse
     {
         $this->trash->restorePerson($request->user(), $id);
 
-        return back()->with('success', 'Đã khôi phục thành viên.');
+        return response()->json(['message' => 'Đã khôi phục thành viên.']);
     }
 
-    public function permanentlyDeletePerson(Request $request, int $id): RedirectResponse
+    public function permanentlyDeletePerson(Request $request, int $id): JsonResponse
     {
         $this->trash->permanentlyDeletePerson($request->user(), $id);
 
-        return back()->with('success', 'Đã xóa vĩnh viễn thành viên và dữ liệu liên quan.');
+        return response()->json(['message' => 'Đã xóa vĩnh viễn thành viên và dữ liệu liên quan.']);
     }
 }

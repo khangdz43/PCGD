@@ -8,97 +8,138 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\RoleManagementService;
 use App\Support\DelegatedAccess;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Illuminate\View\View;
 
 class RoleController extends Controller
 {
     public function __construct(private RoleManagementService $roles) {}
 
-    public function index(Request $request): View
+    public function index(Request $request): JsonResponse
     {
         $actor = $request->user();
         $roles = $this->roles->rolesForIndex($actor);
         $rolesByScope = $roles->groupBy('scope_level');
 
-        return view('admin.access-control.roles.index', compact('roles', 'rolesByScope', 'actor'));
+        return response()->json([
+            'data' => $roles->map(fn (Role $role): array => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'description' => $role->description,
+                'scope_level' => $role->scope_level,
+                'users_count' => $role->users_count,
+                'permissions' => $role->permissions->pluck('name')->values(),
+                'can_manage' => $this->roles->canManageRole($actor, $role),
+            ])->values(),
+        ]);
     }
 
-    public function members(Request $request, Role $role): View
+    public function members(Request $request, Role $role): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->roles->canManageRole($actor, $role), 403);
         $members = $this->roles->membersFor($actor, $role);
 
-        if ($request->expectsJson() || $request->ajax()) {
-            return view('admin.access-control.roles._members', compact('role', 'members'));
-        }
+        $members->through(fn (User $member): array => [
+            'id' => $member->id,
+            'name' => $member->name,
+            'username' => $member->username,
+            'scope_level' => $member->scope_level,
+            'province' => $member->province?->name,
+            'commune' => $member->commune?->name,
+            'villages' => $member->villages->pluck('name')->values(),
+            'is_active' => $member->is_active,
+        ]);
 
-        return view('admin.access-control.roles.members', compact('role', 'members'));
+        return response()->json([
+            'role' => ['id' => $role->id, 'name' => $role->name],
+            ...$members->toArray(),
+        ]);
     }
 
-    public function create(Request $request): View
+    public function create(Request $request): JsonResponse
     {
         $actor = $request->user();
         $scopeLevels = DelegatedAccess::manageableRoleLevels($actor);
         $scopeLevel = old('scope_level', $this->roles->defaultScopeLevel($actor, $scopeLevels));
 
-        return view('admin.access-control.roles.create', [
+        $data = [
             'role' => new Role(['guard_name' => 'web']),
-            'actor' => $actor,
             'scopeLevels' => $scopeLevels,
             'permissions' => $this->roles->manageablePermissions($actor, $scopeLevels),
             'scopeLevel' => $scopeLevel,
+        ];
+
+        return response()->json([
+            'scope_levels' => $data['scopeLevels'],
+            'default_scope_level' => $data['scopeLevel'],
+            'permissions' => $data['permissions']->map(fn (Permission $permission): array => [
+                'id' => $permission->id,
+                'name' => $permission->name,
+                'label' => $permission->description ?: $permission->name,
+            ])->values(),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse
     {
         $actor = $request->user();
         $this->roles->create($actor, $request->validate($this->rules($actor)));
 
-        return to_route('admin.roles.index')->with('success', 'Đã tạo nhóm người dùng.');
+        return response()->json(['message' => 'Đã tạo nhóm người dùng.'], 201);
     }
 
-    public function edit(Request $request, Role $role): View
+    public function edit(Request $request, Role $role): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->roles->canManageRole($actor, $role), 403);
         $scopeLevels = DelegatedAccess::manageableRoleLevels($actor);
 
-        return view('admin.access-control.roles.edit', [
-            'role' => $role->load('permissions')->loadCount('users'),
-            'actor' => $actor,
-            'scopeLevels' => $role->name === Role::SYSTEM_ADMIN ? [] : $scopeLevels,
-            'permissions' => $role->name === Role::SYSTEM_ADMIN
-                ? Permission::where('guard_name', 'web')->orderBy('name')->get()
-                : $this->roles->manageablePermissions($actor, $scopeLevels),
-            'scopeLevel' => old('scope_level', $role->scope_level === 'global'
-                ? $this->roles->defaultScopeLevel($actor, $scopeLevels)
-                : $role->scope_level),
+        $role->load('permissions')->loadCount('users');
+        $permissions = $role->name === Role::SYSTEM_ADMIN
+            ? Permission::where('guard_name', 'web')->orderBy('name')->get()
+            : $this->roles->manageablePermissions($actor, $scopeLevels);
+        $scopeLevel = old('scope_level', $role->scope_level === 'global'
+            ? $this->roles->defaultScopeLevel($actor, $scopeLevels)
+            : $role->scope_level);
+
+        return response()->json([
+            'role' => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'description' => $role->description,
+                'scope_level' => $role->scope_level,
+                'permissions' => $role->permissions->pluck('id')->values(),
+            ],
+            'scope_levels' => $role->name === Role::SYSTEM_ADMIN ? [] : $scopeLevels,
+            'permissions' => $permissions->map(fn (Permission $permission): array => [
+                'id' => $permission->id,
+                'name' => $permission->name,
+                'label' => $permission->description ?: $permission->name,
+            ])->values(),
+            'selected_scope_level' => $scopeLevel,
         ]);
     }
 
-    public function update(Request $request, Role $role): RedirectResponse
+    public function update(Request $request, Role $role): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->roles->canManageRole($actor, $role), 403);
         $this->roles->update($actor, $role, $request->validate($this->rules($actor, $role)));
 
-        return to_route('admin.roles.index')->with('success', 'Đã cập nhật nhóm người dùng.');
+        return response()->json(['message' => 'Đã cập nhật nhóm người dùng.']);
     }
 
-    public function destroy(Request $request, Role $role): RedirectResponse
+    public function destroy(Request $request, Role $role): JsonResponse
     {
         abort_unless($this->roles->canManageRole($request->user(), $role), 403);
         $error = $this->roles->delete($role);
         if ($error !== null) {
-            return back()->withErrors(['role' => $error]);
+            return response()->json(['message' => $error, 'errors' => ['role' => [$error]]], 422);
         }
 
-        return to_route('admin.roles.index')->with('success', 'Đã xóa nhóm người dùng.');
+        return response()->json(['message' => 'Đã xóa nhóm người dùng.']);
     }
 
     private function rules(User $actor, ?Role $role = null): array

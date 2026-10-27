@@ -20,6 +20,13 @@ class EnsureUserIsActive
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Tài khoản đã bị vô hiệu hóa.',
+                    'errors' => ['username' => ['Tài khoản đã bị vô hiệu hóa.']],
+                ], 403);
+            }
+
             return redirect()->route('login')->withErrors([
                 'username' => 'Tài khoản đã bị vô hiệu hóa.',
             ]);

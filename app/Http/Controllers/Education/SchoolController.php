@@ -29,7 +29,10 @@ class SchoolController extends Controller
         $schools = $this->schools->listing($user, $request->only(['q', 'level', 'province_code', 'commune_code']));
         $provinces = $this->schools->provincesFor($user);
 
-        return view('schools.index', compact('schools', 'provinces'));
+        return response()->json([
+            'schools' => $schools,
+            'provinces' => $provinces,
+        ]);
     }
 
     public function create(Request $request)
@@ -37,7 +40,7 @@ class SchoolController extends Controller
         $school = new School;
         $provinces = $this->schools->provincesFor($request->user());
 
-        return view('schools.create', compact('school', 'provinces'));
+        return response()->json(['school' => $school, 'provinces' => $provinces]);
     }
 
     public function store(Request $request)
@@ -47,8 +50,7 @@ class SchoolController extends Controller
         ]);
         $this->schools->create($request->user(), $data);
 
-        return redirect()->to(route('schools.index', [], false))
-            ->with('success', 'Thêm trường học thành công.');
+        return response()->json(['message' => 'Thêm trường học thành công.'], 201);
     }
 
     public function edit(int $id, Request $request)
@@ -56,7 +58,7 @@ class SchoolController extends Controller
         $school = $this->schools->findAccessible($request->user(), $id);
         $provinces = $this->schools->provincesFor($request->user());
 
-        return view('schools.edit', compact('school', 'provinces'));
+        return response()->json(['school' => $school, 'provinces' => $provinces]);
     }
 
     public function update(Request $request, int $id)
@@ -68,8 +70,7 @@ class SchoolController extends Controller
         ]);
         $this->schools->update($user, $school, $data);
 
-        return redirect()->to(route('schools.index', [], false))
-            ->with('success', 'Cập nhật trường học thành công.');
+        return response()->json(['message' => 'Cập nhật trường học thành công.']);
     }
 
     public function destroy(int $id, Request $request)
@@ -77,8 +78,7 @@ class SchoolController extends Controller
         $school = $this->schools->findAccessible($request->user(), $id);
         $this->schools->delete($school);
 
-        return redirect()->to(route('schools.index', [], false))
-            ->with('success', 'Đã xóa trường học.');
+        return response()->json(['message' => 'Đã xóa trường học.']);
     }
 
     private function rules(Request $request, bool $creating = false, ?School $school = null): array

@@ -37,7 +37,11 @@ class HouseholdController extends Controller
         $provinces = $this->households->provincesFor($user);
         $villagePlaceholder = $this->households->villagePlaceholder($user);
 
-        return view('households.index', compact('households', 'provinces', 'villagePlaceholder'));
+        return response()->json([
+            'households' => $households,
+            'provinces' => $provinces,
+            'village_placeholder' => $villagePlaceholder,
+        ]);
     }
 
     public function create(Request $request)
@@ -46,7 +50,11 @@ class HouseholdController extends Controller
         $household = $this->households->newFor($user);
         $provinces = $this->households->provincesFor($user);
 
-        return view('households.create', compact('household', 'provinces'));
+        return response()->json([
+            'household' => $household,
+            'provinces' => $provinces,
+            'school_years' => $this->households->schoolYears(),
+        ]);
     }
 
     public function store(Request $request)
@@ -57,8 +65,10 @@ class HouseholdController extends Controller
         $data = $request->validate($rules);
         $household = $this->households->create($request->user(), $data);
 
-        return redirect()->to(route('households.members.create', [$household, 'is_head' => 1], false))
-            ->with('status', 'Đã lưu thông tin hộ. Tiếp theo, nhập thông tin chủ hộ vào danh sách nhân khẩu.');
+        return response()->json([
+            'message' => 'Đã lưu thông tin hộ. Tiếp theo, nhập thông tin chủ hộ vào danh sách nhân khẩu.',
+            'data' => ['id' => $household->id],
+        ], 201);
     }
 
     public function show(Household $household)
@@ -68,7 +78,12 @@ class HouseholdController extends Controller
             $this->households->details($household);
         $canSeeHouseholdHead = true;
 
-        return view('households.show', compact('household', 'headPerson', 'persons', 'canSeeHouseholdHead', 'hasAnyHouseholdHead'));
+        return response()->json([
+            'household' => $household,
+            'head' => $headPerson,
+            'persons' => $persons,
+            'has_household_head' => $hasAnyHouseholdHead,
+        ]);
     }
 
     public function edit(Household $household)
@@ -78,7 +93,11 @@ class HouseholdController extends Controller
         $user = request()->user();
         $provinces = $this->households->provincesFor($user);
 
-        return view('households.edit', compact('household', 'provinces'));
+        return response()->json([
+            'household' => $household,
+            'provinces' => $provinces,
+            'school_years' => $this->households->schoolYears(),
+        ]);
     }
 
     public function update(Request $request, Household $household)
@@ -87,8 +106,7 @@ class HouseholdController extends Controller
         $data = $request->validate($this->rules($request, $household));
         $this->households->update($household, $request->user(), $data);
 
-        return redirect()->to(route('households.show', $household, false))
-            ->with('success', 'Đã cập nhật phiếu điều tra.');
+        return response()->json(['message' => 'Đã cập nhật phiếu điều tra.']);
     }
 
     public function destroy(Request $request, Household $household)
@@ -96,7 +114,7 @@ class HouseholdController extends Controller
         $this->assertAccess($household);
         $this->households->delete($household, $request->user());
 
-        return redirect()->to(route('households.index', [], false))->with('success', 'Đã xóa phiếu điều tra.');
+        return response()->json(['message' => 'Đã xóa phiếu điều tra.']);
     }
 
     public function bulkDestroy(Request $request)
@@ -108,11 +126,10 @@ class HouseholdController extends Controller
         ]);
 
         $deletedCount = $this->households->deleteMany($request->user(), $data['household_ids']);
-        // theo cả điều kiện xóa
-        $filters = $request->only(['q', 'school_code', 'school_year', 'province_code', 'commune_code', 'village_code', 'page']);
-
-        return redirect()->to(route('households.index', $filters, false))
-            ->with('success', "Đã xóa {$deletedCount} phiếu điều tra.");
+        return response()->json([
+            'message' => "Đã xóa {$deletedCount} phiếu điều tra.",
+            'deleted_count' => $deletedCount,
+        ]);
     }
 
     private function rules(Request $request, ?Household $household = null): array

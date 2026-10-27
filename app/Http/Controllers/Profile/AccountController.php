@@ -5,23 +5,22 @@ namespace App\Http\Controllers\Profile;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Profile\UpdateAccountPasswordRequest;
 use App\Services\Profile\AccountProfileService;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\View\View;
 
 class AccountController extends Controller
 {
-    public function show(Request $request, AccountProfileService $profileService): View
+    public function show(Request $request, AccountProfileService $profileService): JsonResponse
     {
-        return view('account.show', $profileService->viewData($request->user()));
+        return response()->json($profileService->viewData($request->user()));
     }
 
     public function updatePassword(
         UpdateAccountPasswordRequest $request,
         AccountProfileService $profileService,
-    ): RedirectResponse {
+    ): JsonResponse {
         $profileService->updatePassword($request->user(), $request->validated('password'));
 
-        return to_route('account.show')->with('success', 'Đổi mật khẩu thành công.');
+        return response()->json(['message' => 'Đổi mật khẩu thành công.']);
     }
 }

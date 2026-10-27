@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Households;
 use App\Http\Controllers\Controller;
 use App\Models\ImportLog;
 use App\Services\Households\HouseholdImportHistoryService;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,7 +12,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HouseholdImportHistoryController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request): JsonResponse
     {
         $imports = ImportLog::query()
             ->where('user_id', $request->user()->id)
@@ -30,7 +29,11 @@ class HouseholdImportHistoryController extends Controller
         );
         $queueTotal = $pendingImportIds->count();
 
-        return view('households.import-history', compact('imports', 'queuePositions', 'queueTotal'));
+        return response()->json([
+            'imports' => $imports,
+            'queue_positions' => $queuePositions,
+            'queue_total' => $queueTotal,
+        ]);
     }
 
     public function download(Request $request, ImportLog $importLog): BinaryFileResponse

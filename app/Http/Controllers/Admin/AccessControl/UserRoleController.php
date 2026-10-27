@@ -7,17 +7,16 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\UserAccessControlService;
 use App\Support\DelegatedAccess;
-use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
-use Illuminate\View\View;
 
 class UserRoleController extends Controller
 {
     public function __construct(private UserAccessControlService $users) {}
 
-    public function index(Request $request): View
+    public function index(Request $request): JsonResponse
     {
         $actor = $request->user();
         $provinces = $this->users->provincesForFilter($actor);
@@ -47,30 +46,28 @@ class UserRoleController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'scope_level']);
 
-        return view('admin.access-control.users.index', [
+        return response()->json([
             ...$this->users->indexData($actor, $filter, $provinces),
-            'actor' => $actor,
             'roleOptions' => $roleOptions,
         ]);
     }
 
-    public function create(Request $request): View
+    public function create(Request $request): JsonResponse
     {
         $actor = $request->user();
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
 
-        return view('admin.access-control.users.create', [
+        return response()->json([
             'user' => new User(['is_active' => true]),
-            'actor' => $actor,
             'roles' => $this->users->rolesForForm($actor, $accountLevels),
-            'accountLevels' => $accountLevels,
-            'accountScopeLevel' => old('scope_level', 'province'),
+            'account_levels' => $accountLevels,
+            'account_scope_level' => 'province',
             'provinces' => $this->users->manageableProvinces($actor),
-            'selectedLocations' => $this->users->selectedLocations(),
+            'selected_locations' => $this->users->selectedLocations(),
         ]);
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse
     {
         $actor = $request->user();
         $data = $request->validate($this->rules($actor));
@@ -81,27 +78,26 @@ class UserRoleController extends Controller
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
         $this->users->create($actor, $data, $scope, $scopeLevel, $role);
 
-        return to_route('admin.users.index')->with('success', 'Đã tạo tài khoản và gán quyền truy cập.');
+        return response()->json(['message' => 'Đã tạo tài khoản và gán quyền truy cập.'], 201);
     }
 
-    public function edit(Request $request, User $user): View
+    public function edit(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->users->canManageUser($actor, $user), 403);
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
 
-        return view('admin.access-control.users.edit', [
+        return response()->json([
             'user' => $user->load(['roles', 'villages']),
-            'actor' => $actor,
             'roles' => $this->users->rolesForForm($actor, $accountLevels),
-            'accountLevels' => $accountLevels,
-            'accountScopeLevel' => old('scope_level', $user->scope_level),
+            'account_levels' => $accountLevels,
+            'account_scope_level' => $user->scope_level,
             'provinces' => $this->users->manageableProvinces($actor, $user),
-            'selectedLocations' => $this->users->selectedLocations($user),
+            'selected_locations' => $this->users->selectedLocations($user),
         ]);
     }
 
-    public function update(Request $request, User $user): RedirectResponse
+    public function update(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->users->canManageUser($actor, $user), 403);
@@ -114,10 +110,10 @@ class UserRoleController extends Controller
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
         $this->users->update($actor, $user, $data, $scope, $scopeLevel, $role);
 
-        return to_route('admin.users.index')->with('success', 'Đã cập nhật tài khoản và quyền truy cập.');
+        return response()->json(['message' => 'Đã cập nhật tài khoản và quyền truy cập.']);
     }
 
-    public function updateStatus(Request $request, User $user): RedirectResponse
+    public function updateStatus(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->users->canChangeUserStatus($actor, $user), 403);
@@ -127,30 +123,32 @@ class UserRoleController extends Controller
         ]);
 
         if ($actor->is($user) && ! $data['is_active']) {
-            return to_route('admin.users.index')->withErrors([
-                'is_active' => 'Bạn không thể thu hồi chính tài khoản đang đăng nhập.',
-            ]);
+            return response()->json([
+                'message' => 'Bạn không thể thu hồi chính tài khoản đang đăng nhập.',
+                'errors' => ['is_active' => ['Bạn không thể thu hồi chính tài khoản đang đăng nhập.']],
+            ], 422);
         }
 
         $this->users->updateStatus($user, (bool) $data['is_active']);
 
-        return to_route('admin.users.index')->with(
-            'success',
-            $user->is_active ? 'Đã kích hoạt lại tài khoản.' : 'Đã thu hồi quyền đăng nhập của tài khoản.'
-        );
+        return response()->json([
+            'message' => $user->is_active
+                ? 'Đã kích hoạt lại tài khoản.'
+                : 'Đã thu hồi quyền đăng nhập của tài khoản.',
+        ]);
     }
 
-    public function resetPassword(Request $request, User $user): RedirectResponse
+    public function resetPassword(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->users->canResetUserPassword($actor, $user), 403);
 
         $this->users->resetPassword($user);
 
-        return to_route('admin.users.index')->with(
-            'success',
-            'Đã đặt lại mật khẩu về '.User::TEMPORARY_PASSWORD.'.'
-        );
+        return response()->json([
+            'message' => 'Đã đặt lại mật khẩu về '.User::TEMPORARY_PASSWORD.'.',
+            'temporary_password' => User::TEMPORARY_PASSWORD,
+        ]);
     }
 
     private function rules(User $actor, ?User $user = null): array

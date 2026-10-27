@@ -23,7 +23,12 @@ class VillageController extends Controller
             ? $user->commune_code
             : '';
 
-        return view('villages.index', compact('villages', 'provinces', 'provinceCode', 'communeCode'));
+        return response()->json([
+            'villages' => $villages,
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+            'commune_code' => $communeCode,
+        ]);
     }
 
     public function create(Request $request)
@@ -38,7 +43,12 @@ class VillageController extends Controller
             ? $user->commune_code
             : '';
 
-        return view('villages.create', compact('village', 'provinces', 'provinceCode', 'communeCode'));
+        return response()->json([
+            'village' => $village,
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+            'commune_code' => $communeCode,
+        ]);
     }
 
     public function store(Request $request)
@@ -56,8 +66,7 @@ class VillageController extends Controller
         ]);
         $this->villages->create($request->user(), $data);
 
-        return redirect()->to(route('villages.index', [], false))
-            ->with('success', 'Thêm mới thôn/bản thành công!');
+        return response()->json(['message' => 'Thêm mới thôn/bản thành công!'], 201);
     }
 
     public function edit(string $code, Request $request)
@@ -67,7 +76,11 @@ class VillageController extends Controller
         $provinceCode = $village->commune->province_code;
         $provinces = $this->villages->provincesFor($request->user());
 
-        return view('villages.edit', compact('village', 'provinces', 'provinceCode'));
+        return response()->json([
+            'village' => $village,
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+        ]);
     }
 
     public function update(Request $request, string $code)
@@ -90,8 +103,7 @@ class VillageController extends Controller
         ]);
         $this->villages->update($request->user(), $village, $data);
 
-        return redirect()->to(route('villages.index', [], false))
-            ->with('success', 'Cập nhật thông tin thôn/bản thành công!');
+        return response()->json(['message' => 'Cập nhật thông tin thôn/bản thành công!']);
     }
 
     public function destroy(Request $request, string $code)
@@ -99,12 +111,7 @@ class VillageController extends Controller
         $village = $this->villages->findWithCommune($code);
         $this->villages->delete($request->user(), $village);
 
-        if ($request->expectsJson()) {
-            return response()->json(['message' => 'Đã xóa thôn/bản thành công!']);
-        }
-
-        return redirect()->to(route('villages.index', [], false))
-            ->with('success', 'Đã xóa thôn/bản thành công!');
+        return response()->json(['message' => 'Đã xóa thôn/bản thành công!']);
     }
 
     private function locationRules(Request $request): array

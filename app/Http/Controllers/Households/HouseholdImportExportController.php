@@ -53,15 +53,15 @@ class HouseholdImportExportController extends Controller
             }
         }
 
-        return view('households.import', compact(
-            'provinces',
-            'provinceCode',
-            'communeCode',
-            'villageCode',
-            'villageRequired',
-            'initialCommune',
-            'initialVillages'
-        ));
+        return response()->json([
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+            'commune_code' => $communeCode,
+            'village_code' => $villageCode,
+            'village_required' => $villageRequired,
+            'initial_commune' => $initialCommune,
+            'initial_villages' => $initialVillages,
+        ]);
     }
 
     public function template()

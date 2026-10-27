@@ -378,7 +378,7 @@ class AccessControlTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->deleteJson('/villages/V1')
+            ->deleteJson('/api/v1/villages/V1')
             ->assertUnprocessable()
             ->assertJsonValidationErrors([
                 'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
@@ -388,7 +388,7 @@ class AccessControlTest extends TestCase
         $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
 
         $household->delete();
-        $this->deleteJson('/villages/V1')
+        $this->deleteJson('/api/v1/villages/V1')
             ->assertOk()
             ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
 
@@ -1320,10 +1320,8 @@ class AccessControlTest extends TestCase
             'HTTP_X-Requested-With' => 'XMLHttpRequest',
         ])
             ->assertOk()
-            ->assertSee('active-member')
-            ->assertSee('inactive-member')
-            ->assertSee('Đang hoạt động')
-            ->assertSee('Đã vô hiệu hóa')
+            ->assertJsonFragment(['username' => 'active-member', 'is_active' => true])
+            ->assertJsonFragment(['username' => 'inactive-member', 'is_active' => false])
             ->assertDontSee('not-member');
 
         $this->get(route('admin.roles.members', $group))
@@ -1695,6 +1693,107 @@ class AccessControlTest extends TestCase
             ->assertSee('href="/households"', false);
         $this->get('/households/import')->assertOk()->assertSee('href="/households"', false);
         $this->get('/households')->assertOk();
+    }
+
+    public function test_household_json_api_requires_permission_and_returns_scoped_pagination(): void
+    {
+        Schema::table('persons', function (Blueprint $table): void {
+            $table->string('relationship_with_head')->nullable();
+        });
+
+        $permission = Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'guard_name' => 'web',
+        ]);
+        $role = Role::create([
+            'name' => 'household-api-viewer',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $role->permissions()->attach($permission);
+        $user = User::factory()->create([
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'scope_level' => 'commune',
+            'is_active' => true,
+        ]);
+        $user->roles()->attach($role);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/session')
+            ->assertOk()
+            ->assertJsonFragment(['view-households']);
+
+        $this->getJson('/api/v1/households')
+            ->assertOk()
+            ->assertJsonStructure(['data', 'current_page', 'total'])
+            ->assertJsonPath('total', 0);
+    }
+
+    public function test_household_json_api_hides_details_outside_the_users_commune(): void
+    {
+        Schema::table('persons', function (Blueprint $table): void {
+            $table->string('relationship_with_head')->nullable();
+        });
+
+        $permission = Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'guard_name' => 'web',
+        ]);
+        $role = Role::create([
+            'name' => 'household-api-scoped-viewer',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+        $role->permissions()->attach($permission);
+        $user = User::factory()->create([
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'scope_level' => 'commune',
+            'is_active' => true,
+        ]);
+        $user->roles()->attach($role);
+        $household = Household::create([
+            'household_code' => 'OUTSIDE',
+            'school_year' => '2025-2026',
+            'province_code' => 'P1',
+            'commune_code' => 'C2',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/households/{$household->id}")
+            ->assertNotFound();
+    }
+
+    public function test_role_members_api_returns_paginated_member_data_for_authorized_manager(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $group = Role::create([
+            'name' => 'Nhóm API',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+        ]);
+        $member = User::factory()->create([
+            'name' => 'Thành viên API',
+            'username' => 'api-role-member',
+            'is_active' => true,
+        ]);
+        $member->roles()->attach($group);
+
+        $this->actingAs($admin)
+            ->getJson("/api/v1/roles/{$group->id}/members")
+            ->assertOk()
+            ->assertJsonPath('role.name', 'Nhóm API')
+            ->assertJsonPath('data.0.name', 'Thành viên API')
+            ->assertJsonPath('data.0.username', 'api-role-member')
+            ->assertJsonPath('total', 1);
     }
 
     public function test_account_management_permission_also_grants_group_management(): void
@@ -2201,7 +2300,7 @@ class AccessControlTest extends TestCase
             ->assertDontSee('Tài khoản 00');
     }
 
-    public function test_inline_role_member_pagination_returns_only_the_member_table(): void
+    public function test_role_member_json_api_paginates_member_data(): void
     {
         $adminRole = Role::create([
             'name' => Role::SYSTEM_ADMIN,
@@ -2227,27 +2326,17 @@ class AccessControlTest extends TestCase
         }
 
         $this->actingAs($admin)
-            ->get(route('admin.roles.members', $group), [
-                'HTTP_ACCEPT' => 'text/html',
-                'HTTP_X-Requested-With' => 'XMLHttpRequest',
-            ])
+            ->getJson(route('api.roles.members', $group))
             ->assertOk()
-            ->assertSee('Thành viên 1')
-            ->assertDontSee('Thành viên 6')
-            ->assertSee('aria-label="Phân trang thành viên nhóm"', false)
-            ->assertSee('aria-label="Chọn trang thành viên"', false)
-            ->assertSee('page=2', false)
-            ->assertDontSee('<!DOCTYPE html>', false);
+            ->assertJsonPath('data.0.name', 'Thành viên 1')
+            ->assertJsonPath('data.4.name', 'Thành viên 5')
+            ->assertJsonPath('current_page', 1)
+            ->assertJsonPath('last_page', 2);
 
-        $this->get(route('admin.roles.members', ['role' => $group, 'page' => 2]), [
-            'HTTP_ACCEPT' => 'text/html',
-            'HTTP_X-Requested-With' => 'XMLHttpRequest',
-        ])
+        $this->getJson(route('api.roles.members', ['role' => $group, 'page' => 2]))
             ->assertOk()
-            ->assertSee('Thành viên 6')
-            ->assertDontSee('Thành viên 1')
-            ->assertSee('page=2" selected', false)
-            ->assertDontSee('<!DOCTYPE html>', false);
+            ->assertJsonPath('data.0.name', 'Thành viên 6')
+            ->assertJsonPath('current_page', 2);
     }
 
     public function test_management_accounts_show_a_crown_and_appear_before_regular_accounts(): void

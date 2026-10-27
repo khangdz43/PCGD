@@ -37,18 +37,21 @@ class HouseholdService
         return $filters;
     }
 
-    public function paginate(User $user, array $filters): LengthAwarePaginator
+    public function paginate(User $user, array $filters, bool $withPersonDetails = true): LengthAwarePaginator
     {
-        $query = Household::with([
-            'province',
-            'commune',
-            'village',
-            'persons',
-            'persons.ethnicity',
-            'persons.educations',
-            'persons.educations.school',
-            'persons.disability',
-        ])->withCount([
+        $relations = ['province', 'commune', 'village'];
+        if ($withPersonDetails) {
+            $relations = [
+                ...$relations,
+                'persons',
+                'persons.ethnicity',
+                'persons.educations',
+                'persons.educations.school',
+                'persons.disability',
+            ];
+        }
+
+        $query = Household::with($relations)->withCount([
             'persons',
             'persons as head_persons_count' => fn ($builder) => $builder->where('relationship_with_head', 'Chủ hộ'),
         ]);

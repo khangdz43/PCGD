@@ -427,8 +427,8 @@ class HouseholdImportProcessingService
         }
 
         $destination = $user->can('view-households')
-            ? route('households.index', [], false)
-            : route('index', [], false);
+            ? route('api.households.index')
+            : route('api.dashboard');
 
         return response()->json([
             'success' => true,

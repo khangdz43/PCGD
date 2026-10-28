@@ -44,15 +44,23 @@ paths:
       responses:
         '201':
           description: Tạo token thành công
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiSuccess'
         '422':
           description: Thông tin đăng nhập không hợp lệ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiFailure'
   /auth/tokens/current:
     delete:
       tags: [Xác thực]
       summary: Thu hồi token hiện tại
       responses:
-        '204':
-          description: Đã thu hồi token
+        '200':
+          $ref: '#/components/responses/Success'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /me:
@@ -719,24 +727,76 @@ components:
       content:
         application/json:
           schema:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/ApiSuccess'
     Unauthorized:
       description: Chưa xác thực hoặc token không hợp lệ
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiFailure'
     NotFound:
       description: Không tìm thấy tài nguyên
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiFailure'
     ValidationError:
       description: Dữ liệu không hợp lệ
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              message:
-                type: string
-              errors:
+            $ref: '#/components/schemas/ApiFailure'
+  schemas:
+    ApiSuccess:
+      type: object
+      required: [success, status_code, message, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        status_code:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: User retrieved successfully
+        data:
+          nullable: true
+          description: Kết quả của request
+        meta:
+          type: object
+          description: Thông tin phân trang nếu có
+          additionalProperties: true
+      additionalProperties: false
+    ApiFailure:
+      type: object
+      required: [success, status_code, message, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        status_code:
+          type: integer
+          example: 422
+        message:
+          type: string
+          example: Validation failed
+        error:
+          type: object
+          required: [code, details]
+          properties:
+            code:
+              type: string
+              example: VALIDATION_FAILED
+            details:
+              type: array
+              items:
                 type: object
-                additionalProperties:
-                  type: array
-                  items:
+                required: [field, issue]
+                properties:
+                  field:
                     type: string
+                    example: email
+                  issue:
+                    type: string
+                    example: Email address is invalid.

@@ -391,9 +391,11 @@ class AccessControlTest extends TestCase
         $this->withToken($user->createToken('test-api')->plainTextToken)
             ->deleteJson('/api/v1/villages/V1')
             ->assertUnprocessable()
-            ->assertJsonValidationErrors([
-                'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
-            ]);
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('status_code', 422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.details.0.field', 'village')
+            ->assertJsonPath('error.details.0.issue', 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.');
 
         $this->assertDatabaseHas('villages', ['code' => 'V1']);
         $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
@@ -1740,8 +1742,9 @@ class AccessControlTest extends TestCase
 
         $this->getJson('/api/v1/households')
             ->assertOk()
-            ->assertJsonStructure(['data', 'current_page', 'total'])
-            ->assertJsonPath('total', 0);
+            ->assertJsonPath('success', true)
+            ->assertJsonStructure(['success', 'status_code', 'message', 'data', 'meta'])
+            ->assertJsonPath('meta.total', 0);
     }
 
     public function test_household_json_api_hides_details_outside_the_users_commune(): void
@@ -1804,10 +1807,11 @@ class AccessControlTest extends TestCase
         $this->withToken($admin->createToken('test-api')->plainTextToken)
             ->getJson("/api/v1/roles/{$group->id}/users")
             ->assertOk()
-            ->assertJsonPath('role.name', 'Nhóm API')
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('meta.role.name', 'Nhóm API')
             ->assertJsonPath('data.0.name', 'Thành viên API')
             ->assertJsonPath('data.0.username', 'api-role-member')
-            ->assertJsonPath('total', 1);
+            ->assertJsonPath('meta.total', 1);
     }
 
     public function test_account_management_permission_also_grants_group_management(): void
@@ -2342,15 +2346,16 @@ class AccessControlTest extends TestCase
         $this->withToken($admin->createToken('test-api')->plainTextToken)
             ->getJson(route('api.roles.users.index', $group))
             ->assertOk()
+            ->assertJsonPath('success', true)
             ->assertJsonPath('data.0.name', 'Thành viên 1')
             ->assertJsonPath('data.4.name', 'Thành viên 5')
-            ->assertJsonPath('current_page', 1)
-            ->assertJsonPath('last_page', 2);
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.last_page', 2);
 
         $this->getJson(route('api.roles.users.index', ['role' => $group, 'page' => 2]))
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Thành viên 6')
-            ->assertJsonPath('current_page', 2);
+        ->assertJsonPath('meta.current_page', 2);
     }
 
     public function test_management_accounts_show_a_crown_and_appear_before_regular_accounts(): void

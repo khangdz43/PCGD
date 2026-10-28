@@ -17,16 +17,22 @@ Create a token with `POST /auth/tokens`:
 }
 ```
 
-The `201 Created` response contains `data.access_token`, `data.token_type`
-(`Bearer`), `data.expires_at`, and the authenticated user. Access tokens expire after
-eight hours. Send the token on protected requests:
+All JSON responses use a shared envelope. A successful response contains
+`success: true`, the HTTP `status_code`, a `message`, and `data`. A failed response
+contains `success: false`, `status_code`, `message`, and `error` with a stable
+error `code` and `details`. Validation details are returned as `{ field, issue }`
+entries. Paginated responses also include a `meta` object.
+
+The `201 Created` token response contains `data.access_token`,
+`data.token_type` (`Bearer`), `data.expires_at`, and the authenticated user.
+Access tokens expire after eight hours. Send the token on protected requests:
 
 Set the `Authorization` header to the `Bearer` scheme followed by the value of
 `data.access_token`, and send `Accept: application/json`.
 
 `GET /me` returns the authenticated user and permissions.
-`DELETE /auth/tokens/current` revokes the current token and returns `204 No
-Content`.
+`DELETE /auth/tokens/current` revokes the current token and returns a standard
+success envelope with HTTP `200`.
 
 ## Resources
 
@@ -51,10 +57,11 @@ Content`.
 
 `PUT` replaces a resource and `PATCH` applies a partial update. `POST` creates
 resources; successful creation returns `201`. Validation failures return `422`
-with Laravel's JSON `message` and `errors` fields. Authentication, authorization,
-and missing resources return `401`, `403`, and `404` respectively. Household
-and person queries remain restricted to the authenticated user's assigned
-geographic scope.
+with `error.code: VALIDATION_FAILED` and field-specific `error.details`.
+Authentication, authorization, and missing resources return `401`, `403`, and
+`404` respectively using the same error envelope. File downloads keep their
+binary response rather than a JSON envelope. Household and person queries remain
+restricted to the authenticated user's assigned geographic scope.
 
 Endpoints that only supplied HTML-form defaults (`/create`, `/edit`, and
 `/form`) are not part of this API. Clients should send the resource fields

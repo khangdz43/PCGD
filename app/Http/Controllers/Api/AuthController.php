@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
 use App\Services\Auth\AuthenticationService;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -24,26 +25,28 @@ class AuthController extends Controller
             now()->addHours(8),
         );
 
-        return response()->json([
-            'data' => [
+        return ApiResponse::success(
+            [
                 'token_type' => 'Bearer',
                 'access_token' => $token->plainTextToken,
                 'expires_at' => $token->accessToken->expires_at?->toISOString(),
                 'user' => $this->userData($user, false),
             ],
-        ], 201);
+            'Token created successfully',
+            201,
+        );
     }
 
     public function show(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->userData($request->user())]);
+        return ApiResponse::success($this->userData($request->user()), 'User retrieved successfully');
     }
 
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()?->delete();
 
-        return response()->json([], 204);
+        return ApiResponse::success(null, 'Token revoked successfully');
     }
 
     /**

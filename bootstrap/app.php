@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureBearerToken;
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\FormatApiResponse;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
     // gán bí danh active cho thằng ensureUserIsActive
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->api(append: [FormatApiResponse::class]);
         $middleware->alias([
             'api.token' => EnsureBearerToken::class,
             'active' => EnsureUserIsActive::class,
@@ -27,6 +29,13 @@ return Application::configure(basePath: dirname(__DIR__))
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->render(function (\Throwable $exception, Request $request) {
+            if ($request->is('api/*')) {
+                return \App\Support\ApiResponse::fromException($exception);
+            }
+
+            return null;
+        });
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request, \Throwable $exception): bool => $request->is('api/*') || $request->expectsJson(),
         );

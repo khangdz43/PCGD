@@ -67,6 +67,33 @@ class UserRoleController extends Controller
         ]);
     }
 
+    public function show(Request $request, User $user): JsonResponse
+    {
+        abort_unless($this->users->canManageUser($request->user(), $user), 403);
+        $user->load(['roles', 'province', 'commune', 'villages']);
+
+        return response()->json([
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'username' => $user->username,
+                'is_active' => $user->is_active,
+                'scope_level' => $user->scope_level,
+                'province' => $user->province?->only(['code', 'name']),
+                'commune' => $user->commune?->only(['code', 'name']),
+                'villages' => $user->villages->map(fn ($village): array => [
+                    'code' => $village->code,
+                    'name' => $village->name,
+                ])->values(),
+                'roles' => $user->roles->map(fn (Role $role): array => [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'scope_level' => $role->scope_level,
+                ])->values(),
+            ],
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $actor = $request->user();
@@ -109,6 +136,9 @@ class UserRoleController extends Controller
         $scope = $request->validate($this->scopeRules($scopeLevel));
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
         $this->users->update($actor, $user, $data, $scope, $scopeLevel, $role);
+        if (filled($data['password'] ?? null)) {
+            $user->tokens()->delete();
+        }
 
         return response()->json(['message' => 'Đã cập nhật tài khoản và quyền truy cập.']);
     }
@@ -130,6 +160,9 @@ class UserRoleController extends Controller
         }
 
         $this->users->updateStatus($user, (bool) $data['is_active']);
+        if (! $data['is_active']) {
+            $user->tokens()->delete();
+        }
 
         return response()->json([
             'message' => $user->is_active
@@ -144,6 +177,7 @@ class UserRoleController extends Controller
         abort_unless($this->users->canResetUserPassword($actor, $user), 403);
 
         $this->users->resetPassword($user);
+        $user->tokens()->delete();
 
         return response()->json([
             'message' => 'Đã đặt lại mật khẩu về '.User::TEMPORARY_PASSWORD.'.',

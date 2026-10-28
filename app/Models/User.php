@@ -8,10 +8,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasFactory;
+    use HasApiTokens, HasFactory;
 
     public const TEMPORARY_PASSWORD = 'Huukhang2k4#';
 
@@ -78,7 +79,7 @@ class User extends Authenticatable
         $this->loadMissing('roles');
 
         return $this->roles->contains(fn(Role $role): bool => $role->name === $name
-            && $role->guard_name === config('auth.defaults.guard', 'web'));
+            && $role->guard_name === config('auth.permission_guard', 'web'));
     }
 
     // check xem đủ điều kiện hợp lệ để thực hiện quyền ko
@@ -122,7 +123,7 @@ class User extends Authenticatable
     public function permissionNames(): array
     {
         $rolePermissions = $this->roles()
-            ->where('roles.guard_name', config('auth.defaults.guard', 'web'))
+            ->where('roles.guard_name', config('auth.permission_guard', 'web'))
             ->with(['permissions', 'creator'])
             ->get()
             ->flatMap(fn(Role $role) => $role->permissions
@@ -144,7 +145,7 @@ class User extends Authenticatable
         // lấy ra list scope_level của user này
         $this->loadMissing('roles');
         $levels = $this->roles
-            ->where('guard_name', config('auth.defaults.guard', 'web'))
+            ->where('guard_name', config('auth.permission_guard', 'web'))
             ->pluck('scope_level')
             ->unique()
             ->values();
@@ -186,11 +187,11 @@ class User extends Authenticatable
         $visited[] = $this->id;
 
         $roles = $this->roles()
-            ->where('roles.guard_name', config('auth.defaults.guard', 'web'))
+            ->where('roles.guard_name', config('auth.permission_guard', 'web'))
             ->where('roles.scope_level', $scopeLevel)
             ->whereHas('permissions', function ($query) use ($name): void {
                 $query->where('permissions.name', $name)
-                    ->where('permissions.guard_name', config('auth.defaults.guard', 'web'));
+                    ->where('permissions.guard_name', config('auth.permission_guard', 'web'));
             })
             ->with('creator')
             ->get();

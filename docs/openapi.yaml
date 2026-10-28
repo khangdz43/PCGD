@@ -1,0 +1,742 @@
+openapi: 3.0.3
+info:
+  title: PCGD-XMC API
+  description: |
+    REST API quản lý dữ liệu Phổ cập giáo dục - Xóa mù chữ.
+    API dùng Bearer token; tạo token tại `POST /auth/tokens`.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: API v1 trên máy chủ hiện tại
+tags:
+  - name: Xác thực
+  - name: Tài khoản
+  - name: Địa bàn
+  - name: Hộ gia đình
+  - name: Nhân khẩu
+  - name: Thùng rác
+  - name: Thôn/xóm
+  - name: Trường học
+  - name: Nhập xuất dữ liệu
+  - name: Quản trị
+security:
+  - bearerAuth: []
+paths:
+  /auth/tokens:
+    post:
+      tags: [Xác thực]
+      summary: Đăng nhập và tạo access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: ten-dang-nhap
+                password:
+                  type: string
+                  format: password
+      responses:
+        '201':
+          description: Tạo token thành công
+        '422':
+          description: Thông tin đăng nhập không hợp lệ
+  /auth/tokens/current:
+    delete:
+      tags: [Xác thực]
+      summary: Thu hồi token hiện tại
+      responses:
+        '204':
+          description: Đã thu hồi token
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me:
+    get:
+      tags: [Xác thực]
+      summary: Lấy thông tin người dùng hiện tại và quyền
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /dashboard:
+    get:
+      tags: [Tài khoản]
+      summary: Lấy dữ liệu trang tổng quan
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /account:
+    get:
+      tags: [Tài khoản]
+      summary: Lấy hồ sơ cá nhân
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /account/password:
+    patch:
+      tags: [Tài khoản]
+      summary: Đổi mật khẩu
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /provinces/{provinceCode}/communes:
+    get:
+      tags: [Địa bàn]
+      summary: Danh sách xã theo tỉnh
+      parameters:
+        - $ref: '#/components/parameters/ProvinceCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /communes/{communeCode}/villages:
+    get:
+      tags: [Địa bàn]
+      summary: Danh sách thôn theo xã
+      parameters:
+        - $ref: '#/components/parameters/CommuneCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /provinces/{provinceCode}/schools:
+    get:
+      tags: [Địa bàn]
+      summary: Danh sách trường theo tỉnh
+      parameters:
+        - $ref: '#/components/parameters/ProvinceCode'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /households:
+    get:
+      tags: [Hộ gia đình]
+      summary: Danh sách hộ gia đình trong phạm vi được cấp quyền
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Hộ gia đình]
+      summary: Tạo hộ gia đình
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Hộ gia đình]
+      summary: Xóa nhiều hộ gia đình
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /households/{household}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      tags: [Hộ gia đình]
+      summary: Xem chi tiết hộ gia đình
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Hộ gia đình]
+      summary: Cập nhật hộ gia đình
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    patch:
+      tags: [Hộ gia đình]
+      summary: Cập nhật một phần hộ gia đình
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Hộ gia đình]
+      summary: Xóa hộ gia đình
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /households/{household}/persons:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+    get:
+      tags: [Nhân khẩu]
+      summary: Danh sách nhân khẩu trong hộ
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Nhân khẩu]
+      summary: Thêm nhân khẩu vào hộ
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /households/persons:
+    delete:
+      tags: [Nhân khẩu]
+      summary: Xóa nhiều nhân khẩu
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /households/{household}/persons/{personId}:
+    parameters:
+      - $ref: '#/components/parameters/HouseholdId'
+      - name: personId
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Nhân khẩu]
+      summary: Xem chi tiết nhân khẩu
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    put:
+      tags: [Nhân khẩu]
+      summary: Cập nhật nhân khẩu
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    patch:
+      tags: [Nhân khẩu]
+      summary: Cập nhật một phần nhân khẩu
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Nhân khẩu]
+      summary: Xóa nhân khẩu khỏi hộ
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /trash:
+    get:
+      tags: [Thùng rác]
+      summary: Danh sách dữ liệu đã xóa
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /trash/batch-operations:
+    post:
+      tags: [Thùng rác]
+      summary: Thao tác hàng loạt với dữ liệu trong thùng rác
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /trash/households/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Thùng rác]
+      summary: Xem hộ gia đình trong thùng rác
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    patch:
+      tags: [Thùng rác]
+      summary: Khôi phục hộ gia đình
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Thùng rác]
+      summary: Xóa vĩnh viễn hộ gia đình
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /trash/persons/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Thùng rác]
+      summary: Khôi phục nhân khẩu
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Thùng rác]
+      summary: Xóa vĩnh viễn nhân khẩu
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /villages:
+    get:
+      tags: [Thôn/xóm]
+      summary: Danh sách thôn/xóm
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Thôn/xóm]
+      summary: Tạo thôn/xóm
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /villages/{code}:
+    parameters:
+      - name: code
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      tags: [Thôn/xóm]
+      summary: Xem chi tiết thôn/xóm
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    put:
+      tags: [Thôn/xóm]
+      summary: Cập nhật thôn/xóm
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    patch:
+      tags: [Thôn/xóm]
+      summary: Cập nhật một phần thôn/xóm
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Thôn/xóm]
+      summary: Xóa thôn/xóm
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /village-merges:
+    get:
+      tags: [Thôn/xóm]
+      summary: Danh sách yêu cầu gộp thôn/xóm
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Thôn/xóm]
+      summary: Tạo yêu cầu gộp thôn/xóm
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+  /schools:
+    get:
+      tags: [Trường học]
+      summary: Danh sách trường học
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Trường học]
+      summary: Tạo trường học
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /schools/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Trường học]
+      summary: Xem chi tiết trường học
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    put:
+      tags: [Trường học]
+      summary: Cập nhật trường học
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    patch:
+      tags: [Trường học]
+      summary: Cập nhật một phần trường học
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Trường học]
+      summary: Xóa trường học
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /household-imports:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Danh sách lịch sử nhập dữ liệu
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Nhập xuất dữ liệu]
+      summary: Nhập dữ liệu hộ gia đình
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '202':
+          description: Đã tiếp nhận yêu cầu nhập dữ liệu
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /household-imports/statuses:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Lấy trạng thái các lần nhập
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /household-imports/{importLog}:
+    parameters:
+      - name: importLog
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Xem trạng thái một lần nhập
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Nhập xuất dữ liệu]
+      summary: Xóa lịch sử nhập
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /household-imports/template:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Tải tệp mẫu nhập dữ liệu
+      responses:
+        '200':
+          description: Tệp Excel mẫu
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+  /household-imports/{importLog}/file:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Tải tệp dữ liệu đã nhập
+      parameters:
+        - name: importLog
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tệp đã nhập
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /household-imports/{importLog}/error-file:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Tải tệp lỗi của lần nhập
+      parameters:
+        - name: importLog
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Tệp lỗi
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /household-exports:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Xuất dữ liệu hộ gia đình
+      responses:
+        '200':
+          description: Tệp Excel dữ liệu
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+  /household-import-notifications:
+    get:
+      tags: [Nhập xuất dữ liệu]
+      summary: Danh sách thông báo nhập dữ liệu
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /household-import-notifications/read:
+    patch:
+      tags: [Nhập xuất dữ liệu]
+      summary: Đánh dấu thông báo nhập dữ liệu đã đọc
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /roles:
+    get:
+      tags: [Quản trị]
+      summary: Danh sách nhóm quyền
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Quản trị]
+      summary: Tạo nhóm quyền
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+  /roles/{role}/users:
+    get:
+      tags: [Quản trị]
+      summary: Danh sách tài khoản trong nhóm quyền
+      parameters:
+        - name: role
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /roles/{role}:
+    parameters:
+      - name: role
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Quản trị]
+      summary: Xem chi tiết nhóm quyền
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    put:
+      tags: [Quản trị]
+      summary: Cập nhật nhóm quyền
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    patch:
+      tags: [Quản trị]
+      summary: Cập nhật một phần nhóm quyền
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    delete:
+      tags: [Quản trị]
+      summary: Xóa nhóm quyền
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /users:
+    get:
+      tags: [Quản trị]
+      summary: Danh sách tài khoản
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    post:
+      tags: [Quản trị]
+      summary: Tạo tài khoản
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/Success'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+  /users/{user}:
+    parameters:
+      - name: user
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Quản trị]
+      summary: Xem chi tiết tài khoản
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    put:
+      tags: [Quản trị]
+      summary: Cập nhật tài khoản
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+    patch:
+      tags: [Quản trị]
+      summary: Cập nhật một phần tài khoản
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /users/{user}/status:
+    patch:
+      tags: [Quản trị]
+      summary: Cập nhật trạng thái tài khoản
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+  /users/{user}/password-resets:
+    post:
+      tags: [Quản trị]
+      summary: Đặt lại mật khẩu tài khoản
+      parameters:
+        - name: user
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        $ref: '#/components/requestBodies/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum token
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+    HouseholdId:
+      name: household
+      in: path
+      required: true
+      schema:
+        type: integer
+    ProvinceCode:
+      name: provinceCode
+      in: path
+      required: true
+      schema:
+        type: string
+    CommuneCode:
+      name: communeCode
+      in: path
+      required: true
+      schema:
+        type: string
+  requestBodies:
+    JsonObject:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+  responses:
+    Success:
+      description: Thành công
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    Unauthorized:
+      description: Chưa xác thực hoặc token không hợp lệ
+    NotFound:
+      description: Không tìm thấy tài nguyên
+    ValidationError:
+      description: Dữ liệu không hợp lệ
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message:
+                type: string
+              errors:
+                type: object
+                additionalProperties:
+                  type: array
+                  items:
+                    type: string

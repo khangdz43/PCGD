@@ -8,40 +8,42 @@ use App\Models\User;
 use App\Services\Auth\AuthenticationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
-class SessionController extends Controller
+class AuthController extends Controller
 {
-    public function csrfCookie(Request $request): JsonResponse
-    {
-        return response()->json(['csrf_token' => $request->session()->token()]);
-    }
-
     public function login(LoginRequest $request, AuthenticationService $authenticationService): JsonResponse
     {
-        $authenticationService->authenticate(
+        $user = $authenticationService->authenticateApi(
             $request->validated('username'),
             $request->validated('password'),
             $request->ip(),
-            $request->boolean('remember'),
         );
-        $request->session()->regenerate();
+        $token = $user->createToken(
+            'api',
+            ['*'],
+            now()->addHours(8),
+        );
 
-        return response()->json(['user' => $this->userData($request->user(), false)]);
+        return response()->json([
+            'data' => [
+                'token_type' => 'Bearer',
+                'access_token' => $token->plainTextToken,
+                'expires_at' => $token->accessToken->expires_at?->toISOString(),
+                'user' => $this->userData($user, false),
+            ],
+        ], 201);
     }
 
     public function show(Request $request): JsonResponse
     {
-        return response()->json(['user' => $this->userData($request->user())]);
+        return response()->json(['data' => $this->userData($request->user())]);
     }
 
     public function logout(Request $request): JsonResponse
     {
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+        $request->user()->currentAccessToken()?->delete();
 
-        return response()->json(['message' => 'Đã đăng xuất.']);
+        return response()->json([], 204);
     }
 
     /**

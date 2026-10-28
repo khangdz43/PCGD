@@ -43,6 +43,13 @@ class SchoolController extends Controller
         return response()->json(['school' => $school, 'provinces' => $provinces]);
     }
 
+    public function show(int $id, Request $request)
+    {
+        return response()->json([
+            'data' => $this->schools->findAccessible($request->user(), $id),
+        ]);
+    }
+
     public function store(Request $request)
     {
         $data = $request->validate($this->rules($request, true), [

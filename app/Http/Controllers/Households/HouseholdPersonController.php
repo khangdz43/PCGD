@@ -16,6 +16,22 @@ class HouseholdPersonController extends Controller
 {
     public function __construct(private readonly HouseholdPersonService $people) {}
 
+    public function index(Request $request, Household $household)
+    {
+        $this->assertHouseholdAccess($request, $household);
+        $filters = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $persons = $household->persons()
+            ->with(['ethnicity', 'educations.school', 'disability'])
+            ->orderBy('id')
+            ->paginate($filters['per_page'] ?? 15)
+            ->withQueryString();
+
+        return response()->json($persons);
+    }
+
     public function create(Request $request, Household $household)
     {
         $this->assertHouseholdAccess($request, $household);

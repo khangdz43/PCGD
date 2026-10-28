@@ -10,7 +10,7 @@ class AccountProfileService
     public function viewData(User $user): array
     {
         $user->load([
-            'roles' => fn ($query) => $query->where('roles.guard_name', config('auth.defaults.guard', 'web')),
+            'roles' => fn ($query) => $query->where('roles.guard_name', config('auth.permission_guard', 'web')),
             'province',
             'commune.province',
             'villages.commune.province',

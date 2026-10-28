@@ -11,7 +11,7 @@ class VillageMergeController extends Controller
 {
     public function __construct(private readonly VillageService $villages) {}
 
-    public function create(Request $request)
+    public function index(Request $request)
     {
         $user = $request->user();
         abort_unless($user->roleScopeLevel() === 'commune' && filled($user->commune_code), 403);

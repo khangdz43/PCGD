@@ -51,6 +51,14 @@ class VillageController extends Controller
         ]);
     }
 
+    public function show(string $code, Request $request)
+    {
+        $village = $this->villages->findWithCommune($code);
+        $this->villages->assertCanUseCommune($request->user(), $village->commune_code, $village);
+
+        return response()->json(['data' => $village]);
+    }
+
     public function store(Request $request)
     {
         $request->merge(['name' => trim((string) $request->input('name'))]);

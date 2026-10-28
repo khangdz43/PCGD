@@ -1,9 +1,11 @@
 <?php
 
+use App\Http\Middleware\EnsureBearerToken;
 use App\Http\Middleware\EnsureUserIsActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -17,9 +19,15 @@ return Application::configure(basePath: dirname(__DIR__))
     // gán bí danh active cho thằng ensureUserIsActive
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
+            'api.token' => EnsureBearerToken::class,
             'active' => EnsureUserIsActive::class,
         ]);
+        $middleware->redirectGuestsTo(
+            fn (Request $request): ?string => $request->is('api/*') ? null : route('login'),
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->shouldRenderJsonWhen(
+            fn (Request $request, \Throwable $exception): bool => $request->is('api/*') || $request->expectsJson(),
+        );
     })->create();

@@ -15,6 +15,7 @@ use App\Support\DataAccessScope;
 use Database\Seeders\RolePermissionSeeder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
@@ -46,6 +47,16 @@ class AccessControlTest extends TestCase
             $table->string('commune_code')->nullable();
             $table->string('scope_level')->nullable();
             $table->rememberToken();
+            $table->timestamps();
+        });
+        Schema::create('personal_access_tokens', function (Blueprint $table): void {
+            $table->id();
+            $table->morphs('tokenable');
+            $table->text('name');
+            $table->string('token', 64)->unique();
+            $table->text('abilities')->nullable();
+            $table->timestamp('last_used_at')->nullable();
+            $table->timestamp('expires_at')->nullable()->index();
             $table->timestamps();
         });
         Schema::create('roles', function (Blueprint $table): void {
@@ -377,7 +388,7 @@ class AccessControlTest extends TestCase
             'village_code' => 'V1',
         ]);
 
-        $this->actingAs($user)
+        $this->withToken($user->createToken('test-api')->plainTextToken)
             ->deleteJson('/api/v1/villages/V1')
             ->assertUnprocessable()
             ->assertJsonValidationErrors([
@@ -388,6 +399,7 @@ class AccessControlTest extends TestCase
         $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
 
         $household->delete();
+        Auth::forgetGuards();
         $this->deleteJson('/api/v1/villages/V1')
             ->assertOk()
             ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
@@ -1718,9 +1730,11 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $user->roles()->attach($role);
+        $this->assertTrue($user->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
+        $this->assertContains(AccessPermission::VIEW_HOUSEHOLDS, $user->fresh()->permissionNames());
 
-        $this->actingAs($user)
-            ->getJson('/api/v1/session')
+        $this->withToken($user->createToken('test-api')->plainTextToken)
+            ->getJson('/api/v1/me')
             ->assertOk()
             ->assertJsonFragment(['view-households']);
 
@@ -1760,7 +1774,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C2',
         ]);
 
-        $this->actingAs($user)
+        $this->withToken($user->createToken('test-api')->plainTextToken)
             ->getJson("/api/v1/households/{$household->id}")
             ->assertNotFound();
     }
@@ -1787,8 +1801,8 @@ class AccessControlTest extends TestCase
         ]);
         $member->roles()->attach($group);
 
-        $this->actingAs($admin)
-            ->getJson("/api/v1/roles/{$group->id}/members")
+        $this->withToken($admin->createToken('test-api')->plainTextToken)
+            ->getJson("/api/v1/roles/{$group->id}/users")
             ->assertOk()
             ->assertJsonPath('role.name', 'Nhóm API')
             ->assertJsonPath('data.0.name', 'Thành viên API')
@@ -2325,15 +2339,15 @@ class AccessControlTest extends TestCase
             $group->users()->attach($member);
         }
 
-        $this->actingAs($admin)
-            ->getJson(route('api.roles.members', $group))
+        $this->withToken($admin->createToken('test-api')->plainTextToken)
+            ->getJson(route('api.roles.users.index', $group))
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Thành viên 1')
             ->assertJsonPath('data.4.name', 'Thành viên 5')
             ->assertJsonPath('current_page', 1)
             ->assertJsonPath('last_page', 2);
 
-        $this->getJson(route('api.roles.members', ['role' => $group, 'page' => 2]))
+        $this->getJson(route('api.roles.users.index', ['role' => $group, 'page' => 2]))
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Thành viên 6')
             ->assertJsonPath('current_page', 2);

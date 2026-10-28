@@ -82,6 +82,25 @@ class RoleController extends Controller
         ]);
     }
 
+    public function show(Request $request, Role $role): JsonResponse
+    {
+        $actor = $request->user();
+        abort_unless($this->roles->canManageRole($actor, $role), 403);
+        $role->load('permissions')->loadCount('users');
+
+        return response()->json([
+            'data' => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'description' => $role->description,
+                'scope_level' => $role->scope_level,
+                'users_count' => $role->users_count,
+                'permissions' => $role->permissions->pluck('name')->values(),
+                'can_manage' => $this->roles->canManageRole($actor, $role),
+            ],
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $actor = $request->user();

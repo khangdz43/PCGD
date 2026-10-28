@@ -28,17 +28,24 @@ class UserAccessControlService
         return $query->get(['code', 'name']);
     }
 
-    public function indexData(User $actor, array $filter, Collection $provinces, int $perPage = 10): array
-    {
+    public function indexData(
+        User $actor,
+        array $filter,
+        Collection $provinces,
+        int $perPage = 10,
+        bool $includeOrganizationData = true,
+    ): array {
         $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
-        $showOrganizationTree = ($isSystemAdmin && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
-            || (! $isSystemAdmin && $actor->canManageSubordinateUsers());
+        $showOrganizationTree = $includeOrganizationData && (
+            ($isSystemAdmin && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
+            || (! $isSystemAdmin && $actor->canManageSubordinateUsers())
+        );
         $unitProvinces = collect();
         $unitProvinceCounts = collect();
         $unitRootType = 'province';
         $unitRootCount = 0;
 
-        if ($showOrganizationTree) {
+        if ($includeOrganizationData && $showOrganizationTree) {
             if ($isSystemAdmin) {
                 $unitProvinces = Province::query()->orderBy('name')->get(['code', 'name']);
                 $locatedAccounts = User::query()
@@ -79,7 +86,12 @@ class UserAccessControlService
         );
         $villageCode = $filter['village_code'] ?? null;
         $query = $this->manageableUsers($actor)
-            ->with(['roles.permissions', 'villages', 'commune', 'province']);
+            ->with([
+                'roles:id,name,guard_name,scope_level',
+                'villages:code,name',
+                'commune:code,name',
+                'province:code,name',
+            ]);
 
         if (! $isSystemAdmin && $actor->roleScopeLevel() === 'province') {
             $query->where(function (Builder $accounts) use ($actor): void {
@@ -116,43 +128,30 @@ class UserAccessControlService
         $search = trim((string) ($filter['q'] ?? ''));
         $roleId = $filter['role_id'] ?? null;
         $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode) || filled($roleId) || $search !== '';
-        $query->orderByRaw(
-            'CASE
-                WHEN EXISTS (
-                    SELECT 1
-                    FROM model_has_roles AS account_model_roles
-                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
-                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
-                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
-                    WHERE account_model_roles.model_id = users.id
-                        AND account_model_roles.model_type = ?
-                        AND account_roles.scope_level = ?
-                        AND account_permissions.name IN (?, ?)
-                ) THEN 0
-                WHEN EXISTS (
-                    SELECT 1
-                    FROM model_has_roles AS account_model_roles
-                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
-                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
-                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
-                    WHERE account_model_roles.model_id = users.id
-                        AND account_model_roles.model_type = ?
-                        AND account_roles.scope_level = ?
-                        AND account_permissions.name IN (?, ?)
-                ) THEN 1
-                ELSE 2
-            END',
-            [
-                User::class,
-                'province',
+        $managementPriority = DB::table('model_has_roles as account_model_roles')
+            ->join('roles as account_roles', 'account_roles.id', '=', 'account_model_roles.role_id')
+            ->join('role_has_permissions as account_role_permissions', 'account_role_permissions.role_id', '=', 'account_roles.id')
+            ->join('permissions as account_permissions', 'account_permissions.id', '=', 'account_role_permissions.permission_id')
+            ->where('account_model_roles.model_type', User::class)
+            ->whereIn('account_roles.scope_level', ['province', 'commune'])
+            ->whereIn('account_permissions.name', [
                 AccessPermission::MANAGE_USER_ACCOUNTS,
                 AccessPermission::MANAGE_ACCESS_CONTROL,
-                User::class,
-                'commune',
-                AccessPermission::MANAGE_USER_ACCOUNTS,
-                AccessPermission::MANAGE_ACCESS_CONTROL,
-            ],
-        )->orderBy('name');
+            ])
+            ->select('account_model_roles.model_id')
+            ->selectRaw(
+                'MIN(CASE WHEN account_roles.scope_level = ? THEN 0 ELSE 1 END) AS priority',
+                ['province'],
+            )
+            ->groupBy('account_model_roles.model_id');
+
+        $query->leftJoinSub(
+            $managementPriority,
+            'user_management_priority',
+            fn ($join) => $join->on('users.id', '=', 'user_management_priority.model_id'),
+        )->select('users.*')
+            ->orderByRaw('COALESCE(user_management_priority.priority, 2)')
+            ->orderBy('users.name');
 
         $allUsers = $query
             ->paginate(min(max($perPage, 1), 100))
@@ -164,7 +163,10 @@ class UserAccessControlService
         $hierarchy = [];
         $noLocationUsers = collect();
 
-        foreach ($showOrganizationTree ? collect() : $allUsers as $user) {
+        $usersForHierarchy = $includeOrganizationData && ! $showOrganizationTree
+            ? $allUsers
+            : collect();
+        foreach ($usersForHierarchy as $user) {
             $provinceName = $user->province?->name;
             $provinceCode = $user->province_code;
             $communeName = $user->commune?->name;
@@ -216,9 +218,11 @@ class UserAccessControlService
             }
         }
 
-        uasort($hierarchy, fn ($a, $b) => strcmp($a['name'], $b['name']));
-        foreach ($hierarchy as &$province) {
-            uasort($province['communes'], fn ($a, $b) => strcmp($a['name'], $b['name']));
+        if ($includeOrganizationData) {
+            uasort($hierarchy, fn ($a, $b) => strcmp($a['name'], $b['name']));
+            foreach ($hierarchy as &$province) {
+                uasort($province['communes'], fn ($a, $b) => strcmp($a['name'], $b['name']));
+            }
         }
 
         return compact(
@@ -361,11 +365,7 @@ class UserAccessControlService
             return false;
         }
 
-        $assignableRoleIds = $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? null
-            : $this->availableRoles($actor, [$targetLevel])->modelKeys();
-
-        return $this->statusTargetIsManageable($actor, $target, $targetLevel, $assignableRoleIds);
+        return $this->statusTargetIsManageable($actor, $target, $targetLevel);
     }
 
     private function addStatusManagementFlags(User $actor, SupportCollection $users): void
@@ -375,30 +375,91 @@ class UserAccessControlService
 
         foreach ($users as $user) {
             $targetLevel = $user->roleScopeLevel();
-            $assignableRoleIds = in_array($targetLevel, $targetLevels, true)
-                && $canManageAccounts
-                && ! $actor->hasRole(Role::SYSTEM_ADMIN)
-                ? $this->availableRoles($actor, [$targetLevel])->modelKeys()
-                : null;
             $canChangeStatus = in_array($targetLevel, $targetLevels, true)
                 && $canManageAccounts
-                && $this->statusTargetIsManageable($actor, $user, $targetLevel, $assignableRoleIds);
+                && $this->statusTargetIsManageable($actor, $user, $targetLevel);
             $user->setAttribute('can_change_account_status', $canChangeStatus);
         }
     }
 
     private function addPasswordResetFlags(User $actor, SupportCollection $users): void
     {
+        $canManageAccounts = $actor->hasRole(Role::SYSTEM_ADMIN) || $actor->canManageSubordinateUsers();
+        $manageableLevels = $canManageAccounts ? DelegatedAccess::manageableAccountLevels($actor) : [];
+        $assignableRoleIds = $canManageAccounts && ! $actor->hasRole(Role::SYSTEM_ADMIN)
+            ? $this->assignableRoleIdsByLevel($actor, $manageableLevels)
+            : [];
+
         foreach ($users as $user) {
-            $user->setAttribute('can_reset_account_password', $this->canResetUserPassword($actor, $user));
+            $targetLevel = $user->roleScopeLevel();
+            $canResetPassword = ! $actor->is($user)
+                && $canManageAccounts
+                && $this->canManageUserWithAssignableRoles(
+                    $actor,
+                    $user,
+                    $targetLevel,
+                    $manageableLevels,
+                    $assignableRoleIds,
+                );
+            $user->setAttribute('can_reset_account_password', $canResetPassword);
         }
+    }
+
+    /**
+     * @param array<int, string> $levels
+     * @return array<string, array<int, int>>
+     */
+    private function assignableRoleIdsByLevel(User $actor, array $levels): array
+    {
+        $roleIds = [];
+        foreach (array_unique($levels) as $level) {
+            $roleIds[$level] = $this->availableRoles($actor, [$level])->modelKeys();
+        }
+
+        return $roleIds;
+    }
+
+    /**
+     * @param array<int, string> $manageableLevels
+     * @param array<string, array<int, int>> $assignableRoleIds
+     */
+    private function canManageUserWithAssignableRoles(
+        User $actor,
+        User $target,
+        ?string $targetLevel,
+        array $manageableLevels,
+        array $assignableRoleIds,
+    ): bool {
+        if ($targetLevel === null) {
+            return $actor->hasRole(Role::SYSTEM_ADMIN);
+        }
+        if ($targetLevel === 'global') {
+            return $actor->hasRole(Role::SYSTEM_ADMIN)
+                && ! $target->hasRole(Role::SYSTEM_ADMIN);
+        }
+        if (! in_array($targetLevel, $manageableLevels, true)) {
+            return false;
+        }
+
+        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
+            $allowedRoleIds = $assignableRoleIds[$targetLevel] ?? [];
+            $targetRoles = $target->relationLoaded('roles')
+                ? $target->roles
+                : $target->roles()->get();
+            if ($targetRoles->contains(
+                fn (Role $role): bool => ! in_array($role->id, $allowedRoleIds, true),
+            )) {
+                return false;
+            }
+        }
+
+        return DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
     }
 
     private function statusTargetIsManageable(
         User $actor,
         User $target,
         string $targetLevel,
-        ?array $assignableRoleIds
     ): bool {
         $target->loadMissing(['roles', 'villages']);
 

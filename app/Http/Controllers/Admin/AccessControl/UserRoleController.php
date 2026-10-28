@@ -42,18 +42,26 @@ class UserRoleController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
-        $data = $this->users->indexData($actor, $filter, $provinces, $filter['per_page'] ?? 10);
+        $data = $this->users->indexData(
+            $actor,
+            $filter,
+            $provinces,
+            $filter['per_page'] ?? 10,
+            includeOrganizationData: false,
+        );
         $accounts = $data['allUsers'];
-        $data['allUsers'] = $accounts->items();
-
-        $roleOptions = Role::query()
-            ->whereIn('id', $this->users->availableRoles($actor, DelegatedAccess::manageableAccountLevels($actor))->modelKeys())
-            ->orderBy('scope_level')
-            ->orderBy('name')
-            ->get(['id', 'name', 'scope_level']);
+        $users = $accounts->getCollection()->map(fn (User $user): array => [
+            'id' => $user->id,
+            'name' => $user->name,
+            'username' => $user->username,
+            'scope_level' => $user->roleScopeLevel(),
+            'is_active' => $user->is_active,
+            'can_change_account_status' => $user->can_change_account_status,
+            'can_reset_account_password' => $user->can_reset_account_password,
+        ])->all();
 
         return ApiResponse::success(
-            [...$data, 'roleOptions' => $roleOptions],
+            ['allUsers' => $users],
             'Lấy danh sách tài khoản thành công.',
             meta: [
                 'current_page' => $accounts->currentPage(),

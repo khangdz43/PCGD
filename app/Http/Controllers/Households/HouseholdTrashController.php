@@ -28,6 +28,8 @@ class HouseholdTrashController extends Controller
             'province_code' => ['nullable', 'string', 'max:20'],
             'commune_code' => ['nullable', 'string', 'max:20'],
             'village_code' => ['nullable', 'string', 'max:20'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $data = $this->trash->paginate($user, $filters);
 

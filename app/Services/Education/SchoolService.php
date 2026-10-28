@@ -49,7 +49,10 @@ class SchoolService
             }
         }
 
-        return $query->orderBy('name')->paginate(10)->withQueryString();
+        return $query
+            ->orderBy('name')
+            ->paginate(min(max((int) ($filters['per_page'] ?? 10), 1), 100))
+            ->withQueryString();
     }
 
     public function provincesFor(User $user): Collection

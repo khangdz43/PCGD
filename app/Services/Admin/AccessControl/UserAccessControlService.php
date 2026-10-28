@@ -28,7 +28,7 @@ class UserAccessControlService
         return $query->get(['code', 'name']);
     }
 
-    public function indexData(User $actor, array $filter, Collection $provinces): array
+    public function indexData(User $actor, array $filter, Collection $provinces, int $perPage = 10): array
     {
         $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
         $showOrganizationTree = ($isSystemAdmin && $actor->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
@@ -154,15 +154,11 @@ class UserAccessControlService
             ],
         )->orderBy('name');
 
-        if ($showOrganizationTree) {
-            $allUsers = $query->paginate(10)->withQueryString();
-            $usersForView = $allUsers->getCollection();
-            $totalUserCount = $allUsers->total();
-        } else {
-            $allUsers = $query->get();
-            $usersForView = $allUsers;
-            $totalUserCount = $allUsers->count();
-        }
+        $allUsers = $query
+            ->paginate(min(max($perPage, 1), 100))
+            ->withQueryString();
+        $usersForView = $allUsers->getCollection();
+        $totalUserCount = $allUsers->total();
         $this->addStatusManagementFlags($actor, $usersForView);
         $this->addPasswordResetFlags($actor, $usersForView);
         $hierarchy = [];

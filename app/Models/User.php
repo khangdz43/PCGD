@@ -8,11 +8,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
-use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory;
+    use HasFactory;
 
     public const TEMPORARY_PASSWORD = 'Huukhang2k4#';
 
@@ -66,6 +65,7 @@ class User extends Authenticatable
     {
         return $this->belongsTo(Commune::class, 'commune_code', 'code');
     }
+
     // lấy thôn ng được phân công
     public function managedVillageCodes(): array
     {
@@ -78,13 +78,13 @@ class User extends Authenticatable
         // lấy role của user này , load rồi thì không load lại nữa vì cái này lắm thằng query lắm
         $this->loadMissing('roles');
 
-        return $this->roles->contains(fn(Role $role): bool => $role->name === $name
+        return $this->roles->contains(fn (Role $role): bool => $role->name === $name
             && $role->guard_name === config('auth.permission_guard', 'web'));
     }
 
     // check xem đủ điều kiện hợp lệ để thực hiện quyền ko
     public function hasPermissionTo(string $name): bool
-    {   
+    {
         // role scope level là global , province , .... quyền về phạm vi
         $scopeLevel = $this->roleScopeLevel();
         // bắt buộc phải đúng scope theo các từ
@@ -116,20 +116,22 @@ class User extends Authenticatable
                 return true;
             }
         }
-     
+
         return $this->hasPermissionWithinDelegation($name, []);
     }
-    // lấy danh sách các role hợp lệ 
+
+    // lấy danh sách các role hợp lệ
     public function permissionNames(): array
     {
         $rolePermissions = $this->roles()
             ->where('roles.guard_name', config('auth.permission_guard', 'web'))
             ->with(['permissions', 'creator'])
             ->get()
-            ->flatMap(fn(Role $role) => $role->permissions
-                ->filter(fn($permission) => $this->hasPermissionTo($permission->name))
+            ->flatMap(fn (Role $role) => $role->permissions
+                ->filter(fn ($permission) => $this->hasPermissionTo($permission->name))
                 ->pluck('name'))
             ->all();
+
         return AccessPermission::withPrerequisites(array_values(array_unique($rolePermissions)));
     }
 

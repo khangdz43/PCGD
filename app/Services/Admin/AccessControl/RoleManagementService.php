@@ -7,15 +7,15 @@ use App\Models\Role;
 use App\Models\User;
 use App\Support\AccessPermission;
 use App\Support\DelegatedAccess;
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class RoleManagementService
 {
-    public function rolesForIndex(User $actor): Collection
+    public function rolesForIndex(User $actor, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         $manageableLevels = DelegatedAccess::manageableRoleLevels($actor);
         // Tính số tài khoản được gán cho từng nhóm.
@@ -42,6 +42,18 @@ class RoleManagementService
                 }
             });
 
+        if (filled($filters['q'] ?? null)) {
+            $search = trim((string) $filters['q']);
+            $query->where(function (Builder $builder) use ($search): void {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        if (filled($filters['scope_level'] ?? null)) {
+            $query->where('scope_level', $filters['scope_level']);
+        }
+
         return $query
             ->orderByRaw(
                 "CASE scope_level
@@ -53,7 +65,8 @@ class RoleManagementService
                 END"
             )
             ->orderBy('name')
-            ->get();
+            ->paginate(min(max($perPage, 1), 100))
+            ->withQueryString();
     }
 
     public function canManageRole(User $actor, Role $role): bool
@@ -72,7 +85,7 @@ class RoleManagementService
             && DelegatedAccess::roleBelongsToActorArea($actor, $role);
     }
 
-    public function membersFor(User $actor, Role $role): LengthAwarePaginator
+    public function membersFor(User $actor, Role $role, int $perPage = 5): LengthAwarePaginator
     {
         $query = $role->users()->getQuery();
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
@@ -81,7 +94,7 @@ class RoleManagementService
 
         return $query->with(['province:code,name', 'commune:code,name', 'villages:code,name'])
             ->orderBy('users.name')
-            ->paginate(5);
+            ->paginate(min(max($perPage, 1), 100));
     }
 
     private function constrainMembersToActorArea(Builder $query, User $actor): void
@@ -122,6 +135,9 @@ class RoleManagementService
         }
     }
 
+    /**
+     * @return Collection<int, Permission>
+     */
     public function manageablePermissions(User $actor, array $scopeLevels): Collection
     {
         $permissionNames = collect($scopeLevels)

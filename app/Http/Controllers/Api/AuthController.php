@@ -9,64 +9,63 @@ use App\Services\Auth\AuthenticationService;
 use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class AuthController extends Controller
 {
-    public function login(LoginRequest $request, AuthenticationService $authenticationService): JsonResponse
-    {
-        $user = $authenticationService->authenticateApi(
+    public function login(
+        LoginRequest $request,
+        AuthenticationService $authenticationService,
+    ): JsonResponse {
+        $authenticationService->authenticate(
             $request->validated('username'),
             $request->validated('password'),
             $request->ip(),
+            $request->boolean('remember'),
         );
-        $token = $user->createToken(
-            'api',
-            ['*'],
-            now()->addHours(8),
-        );
+        $request->session()->regenerate();
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
 
         return ApiResponse::success(
-            [
-                'token_type' => 'Bearer',
-                'access_token' => $token->plainTextToken,
-                'expires_at' => $token->accessToken->expires_at?->toISOString(),
-                'user' => $this->userData($user, false),
-            ],
-            'Token created successfully',
-            201,
+            ['user' => $this->userData($user)],
+            'Đăng nhập thành công.',
         );
     }
 
     public function show(Request $request): JsonResponse
     {
-        return ApiResponse::success($this->userData($request->user()), 'User retrieved successfully');
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        return ApiResponse::success(
+            ['user' => $this->userData($user)],
+            'Lấy thông tin người dùng hiện tại và quyền.',
+        );
     }
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
 
-        return ApiResponse::success(null, 'Token revoked successfully');
+        return ApiResponse::success(null, 'Đăng xuất thành công.');
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function userData(User $user, bool $includePermissions = true): array
+    private function userData(User $user): array
     {
-        $data = [
+        return [
             'id' => $user->id,
             'name' => $user->name,
             'username' => $user->username,
-            'scope_level' => $includePermissions ? $user->roleScopeLevel() : $user->scope_level,
+            'scope_level' => $user->roleScopeLevel(),
             'province_code' => $user->province_code,
             'commune_code' => $user->commune_code,
+            'permissions' => $user->permissionNames(),
         ];
-
-        if ($includePermissions) {
-            $data['permissions'] = $user->permissionNames();
-        }
-
-        return $data;
     }
 }

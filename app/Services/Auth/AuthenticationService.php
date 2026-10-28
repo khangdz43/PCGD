@@ -2,9 +2,7 @@
 
 namespace App\Services\Auth;
 
-use App\Models\User;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -38,36 +36,5 @@ class AuthenticationService
         }
 
         RateLimiter::clear($throttleKey);
-    }
-
-    public function authenticateApi(string $username, string $password, string $ip): User
-    {
-        $throttleKey = Str::transliterate(Str::lower($username).'|'.$ip);
-        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
-            throw ValidationException::withMessages([
-                'username' => 'Bạn đã đăng nhập sai quá nhiều lần. Vui lòng thử lại sau.',
-            ]);
-        }
-
-        $user = User::query()->where('username', $username)->first();
-        if ($user === null || ! Hash::check($password, $user->password)) {
-            RateLimiter::hit($throttleKey, 60);
-
-            throw ValidationException::withMessages([
-                'username' => 'Thông tin đăng nhập không chính xác.',
-            ]);
-        }
-
-        if (! $user->is_active) {
-            RateLimiter::hit($throttleKey, 60);
-
-            throw ValidationException::withMessages([
-                'username' => 'Tài khoản đã bị vô hiệu hóa.',
-            ]);
-        }
-
-        RateLimiter::clear($throttleKey);
-
-        return $user;
     }
 }

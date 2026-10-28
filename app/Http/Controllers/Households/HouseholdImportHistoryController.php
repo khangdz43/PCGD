@@ -14,10 +14,14 @@ class HouseholdImportHistoryController extends Controller
 {
     public function __invoke(Request $request): JsonResponse
     {
+        $filters = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
         $imports = ImportLog::query()
             ->where('user_id', $request->user()->id)
             ->latest('created_at')
-            ->paginate(20)
+            ->paginate($filters['per_page'] ?? 20)
             ->withQueryString();
         $pendingImportIds = ImportLog::query()
             ->where('status', 'PENDING')

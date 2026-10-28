@@ -27,6 +27,7 @@ class FormRequestRulesTest extends TestCase
         self::assertSame([
             'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
+            'remember' => ['sometimes', 'boolean'],
         ], $request->rules());
     }
 

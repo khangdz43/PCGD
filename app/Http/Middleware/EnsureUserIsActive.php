@@ -2,10 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\ApiResponse;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Laravel\Sanctum\PersonalAccessToken;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureUserIsActive
@@ -17,20 +17,19 @@ class EnsureUserIsActive
         // lấy instance người dùng log in hiện tại
         // $request->user()  response model User
         if ($request->user() && ! $request->user()->is_active) {
-            $accessToken = $request->user()->currentAccessToken();
-            if ($accessToken instanceof PersonalAccessToken) {
-                $accessToken->delete();
-            } elseif ($request->hasSession()) {
+            if ($request->hasSession()) {
                 Auth::logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
             }
 
             if ($request->expectsJson() || $request->is('api/*')) {
-                return response()->json([
-                    'message' => 'Tài khoản đã bị vô hiệu hóa.',
-                    'errors' => ['username' => ['Tài khoản đã bị vô hiệu hóa.']],
-                ], 403);
+                return ApiResponse::failure(
+                    'Tài khoản đã bị vô hiệu hóa.',
+                    'FORBIDDEN',
+                    [['field' => 'username', 'issue' => 'Tài khoản đã bị vô hiệu hóa.']],
+                    403,
+                );
             }
 
             return redirect()->route('login')->withErrors([

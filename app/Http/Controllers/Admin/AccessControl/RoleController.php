@@ -7,7 +7,9 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\RoleManagementService;
+use App\Support\ApiResponse;
 use App\Support\DelegatedAccess;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -19,11 +21,16 @@ class RoleController extends Controller
     public function index(Request $request): JsonResponse
     {
         $actor = $request->user();
-        $roles = $this->roles->rolesForIndex($actor);
-        $rolesByScope = $roles->groupBy('scope_level');
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'scope_level' => ['nullable', Rule::in(['global', 'province', 'commune', 'village'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $roles = $this->roles->rolesForIndex($actor, $filters, $filters['per_page'] ?? 15);
 
-        return response()->json([
-            'data' => $roles->map(fn (Role $role): array => [
+        return ApiResponse::success(
+            $roles->getCollection()->map(fn (Role $role): array => [
                 'id' => $role->id,
                 'name' => $role->name,
                 'description' => $role->description,
@@ -32,14 +39,25 @@ class RoleController extends Controller
                 'permissions' => $role->permissions->pluck('name')->values(),
                 'can_manage' => $this->roles->canManageRole($actor, $role),
             ])->values(),
-        ]);
+            'Lấy danh sách nhóm quyền thành công.',
+            meta: [
+                'current_page' => $roles->currentPage(),
+                'last_page' => $roles->lastPage(),
+                'per_page' => $roles->perPage(),
+                'total' => $roles->total(),
+            ],
+        );
     }
 
     public function members(Request $request, Role $role): JsonResponse
     {
         $actor = $request->user();
         abort_unless($this->roles->canManageRole($actor, $role), 403);
-        $members = $this->roles->membersFor($actor, $role);
+        $filters = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $members = $this->roles->membersFor($actor, $role, $filters['per_page'] ?? 5);
 
         $members->through(fn (User $member): array => [
             'id' => $member->id,
@@ -116,6 +134,7 @@ class RoleController extends Controller
         $scopeLevels = DelegatedAccess::manageableRoleLevels($actor);
 
         $role->load('permissions')->loadCount('users');
+        /** @var Collection<int, Permission> $permissions */
         $permissions = $role->name === Role::SYSTEM_ADMIN
             ? Permission::where('guard_name', 'web')->orderBy('name')->get()
             : $this->roles->manageablePermissions($actor, $scopeLevels);

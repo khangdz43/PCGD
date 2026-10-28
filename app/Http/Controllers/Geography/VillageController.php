@@ -16,7 +16,14 @@ class VillageController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $villages = $this->villages->listing($user, $request->only(['q', 'province_code', 'commune_code']));
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'province_code' => ['nullable', 'string', 'max:50'],
+            'commune_code' => ['nullable', 'string', 'max:50'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $villages = $this->villages->listing($user, $filters);
         $provinces = $this->villages->provincesFor($user);
         $provinceCode = $user->hasRole(Role::SYSTEM_ADMIN) ? '' : $user->province_code;
         $communeCode = in_array($user->roleScopeLevel(), ['commune', 'village'], true)

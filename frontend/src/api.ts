@@ -20,16 +20,20 @@ export const api = axios.create({
     withXSRFToken: true,
 });
 
+interface ApiSuccess<T> {
+    data: T;
+}
+
 export async function getSession(): Promise<User> {
-    const { data } = await api.get<{ user: User }>('/session');
-    return data.user;
+    const { data } = await api.get<ApiSuccess<{ user: User }>>('/session');
+    return data.data.user;
 }
 
 export async function login(username: string, password: string, remember: boolean): Promise<User> {
     await api.get('/csrf-cookie');
-    const { data } = await api.post<{ user: User }>('/login', { username, password, remember });
-    const sessionUser = await getSession();
-    return { ...data.user, ...sessionUser };
+    await api.post('/login', { username, password, remember });
+
+    return getSession();
 }
 
 export async function logout(): Promise<void> {

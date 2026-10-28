@@ -26,7 +26,15 @@ class SchoolController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $schools = $this->schools->listing($user, $request->only(['q', 'level', 'province_code', 'commune_code']));
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'level' => ['nullable', 'string', 'max:50'],
+            'province_code' => ['nullable', 'string', 'max:50'],
+            'commune_code' => ['nullable', 'string', 'max:50'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $schools = $this->schools->listing($user, $filters);
         $provinces = $this->schools->provincesFor($user);
 
         return response()->json([
@@ -41,6 +49,13 @@ class SchoolController extends Controller
         $provinces = $this->schools->provincesFor($request->user());
 
         return response()->json(['school' => $school, 'provinces' => $provinces]);
+    }
+
+    public function show(int $id, Request $request)
+    {
+        return response()->json([
+            'data' => $this->schools->findAccessible($request->user(), $id),
+        ]);
     }
 
     public function store(Request $request)
@@ -83,6 +98,15 @@ class SchoolController extends Controller
 
     private function rules(Request $request, bool $creating = false, ?School $school = null): array
     {
+        $requiredOnUpdate = $creating ? [] : ['present'];
+        $levelRules = [...$requiredOnUpdate, 'nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])];
+        $provinceRules = [...$requiredOnUpdate, 'nullable', 'exists:provinces,code'];
+        $communeRules = [
+            ...$requiredOnUpdate,
+            'nullable',
+            Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
+        ];
+
         $rules = [
             'name' => [
                 'required',
@@ -94,12 +118,9 @@ class SchoolController extends Controller
                     ->where('level', $request->input('level'))
                     ->ignore($school?->id),
             ],
-            'level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
-            'province_code' => 'nullable|exists:provinces,code',
-            'commune_code' => [
-                'nullable',
-                Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
-            ],
+            'level' => $levelRules,
+            'province_code' => $provinceRules,
+            'commune_code' => $communeRules,
         ];
 
         if (! $creating) {

@@ -6,19 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\User;
 use App\Services\Auth\AuthenticationService;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
-class SessionController extends Controller
+class AuthController extends Controller
 {
-    public function csrfCookie(Request $request): JsonResponse
-    {
-        return response()->json(['csrf_token' => $request->session()->token()]);
-    }
-
-    public function login(LoginRequest $request, AuthenticationService $authenticationService): JsonResponse
-    {
+    public function login(
+        LoginRequest $request,
+        AuthenticationService $authenticationService,
+    ): JsonResponse {
         $authenticationService->authenticate(
             $request->validated('username'),
             $request->validated('password'),
@@ -26,42 +24,48 @@ class SessionController extends Controller
             $request->boolean('remember'),
         );
         $request->session()->regenerate();
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
 
-        return response()->json(['user' => $this->userData($request->user(), false)]);
+        return ApiResponse::success(
+            ['user' => $this->userData($user)],
+            'Đăng nhập thành công.',
+        );
     }
 
     public function show(Request $request): JsonResponse
     {
-        return response()->json(['user' => $this->userData($request->user())]);
+        $user = $request->user();
+        abort_unless($user instanceof User, 401);
+
+        return ApiResponse::success(
+            ['user' => $this->userData($user)],
+            'Lấy thông tin người dùng hiện tại và quyền.',
+        );
     }
 
     public function logout(Request $request): JsonResponse
     {
-        Auth::logout();
+        Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        return response()->json(['message' => 'Đã đăng xuất.']);
+        return ApiResponse::success(null, 'Đăng xuất thành công.');
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function userData(User $user, bool $includePermissions = true): array
+    private function userData(User $user): array
     {
-        $data = [
+        return [
             'id' => $user->id,
             'name' => $user->name,
             'username' => $user->username,
-            'scope_level' => $includePermissions ? $user->roleScopeLevel() : $user->scope_level,
+            'scope_level' => $user->roleScopeLevel(),
             'province_code' => $user->province_code,
             'commune_code' => $user->commune_code,
+            'permissions' => $user->permissionNames(),
         ];
-
-        if ($includePermissions) {
-            $data['permissions'] = $user->permissionNames();
-        }
-
-        return $data;
     }
 }

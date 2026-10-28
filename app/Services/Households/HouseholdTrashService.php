@@ -61,7 +61,7 @@ class HouseholdTrashService
             ->fromSub($query, 'trash_items')
             ->orderByDesc('deleted_at')
             ->orderByDesc('id')
-            ->paginate(15)
+            ->paginate(min(max((int) ($filters['per_page'] ?? 15), 1), 100))
             ->withQueryString();
 
         $pageItems = $items->getCollection();

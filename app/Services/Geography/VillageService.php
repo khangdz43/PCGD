@@ -38,7 +38,10 @@ class VillageService
             $query->where('commune_code', $filters['commune_code']);
         }
 
-        return $query->orderBy('name')->paginate(10)->withQueryString();
+        return $query
+            ->orderBy('name')
+            ->paginate(min(max((int) ($filters['per_page'] ?? 10), 1), 100))
+            ->withQueryString();
     }
 
     public function availableForMerge(User $user): Collection

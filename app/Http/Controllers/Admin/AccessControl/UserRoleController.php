@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\UserAccessControlService;
+use App\Support\ApiResponse;
 use App\Support\DelegatedAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -38,7 +39,12 @@ class UserRoleController extends Controller
                 'string',
                 Rule::exists('villages', 'code')->where('commune_code', $request->input('commune_code') ?? ''),
             ],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
+        $data = $this->users->indexData($actor, $filter, $provinces, $filter['per_page'] ?? 10);
+        $accounts = $data['allUsers'];
+        $data['allUsers'] = $accounts->items();
 
         $roleOptions = Role::query()
             ->whereIn('id', $this->users->availableRoles($actor, DelegatedAccess::manageableAccountLevels($actor))->modelKeys())
@@ -46,10 +52,16 @@ class UserRoleController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'scope_level']);
 
-        return response()->json([
-            ...$this->users->indexData($actor, $filter, $provinces),
-            'roleOptions' => $roleOptions,
-        ]);
+        return ApiResponse::success(
+            [...$data, 'roleOptions' => $roleOptions],
+            'Lấy danh sách tài khoản thành công.',
+            meta: [
+                'current_page' => $accounts->currentPage(),
+                'last_page' => $accounts->lastPage(),
+                'per_page' => $accounts->perPage(),
+                'total' => $accounts->total(),
+            ],
+        );
     }
 
     public function create(Request $request): JsonResponse
@@ -64,6 +76,33 @@ class UserRoleController extends Controller
             'account_scope_level' => 'province',
             'provinces' => $this->users->manageableProvinces($actor),
             'selected_locations' => $this->users->selectedLocations(),
+        ]);
+    }
+
+    public function show(Request $request, User $user): JsonResponse
+    {
+        abort_unless($this->users->canManageUser($request->user(), $user), 403);
+        $user->load(['roles', 'province', 'commune', 'villages']);
+
+        return response()->json([
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'username' => $user->username,
+                'is_active' => $user->is_active,
+                'scope_level' => $user->scope_level,
+                'province' => $user->province?->only(['code', 'name']),
+                'commune' => $user->commune?->only(['code', 'name']),
+                'villages' => $user->villages->map(fn ($village): array => [
+                    'code' => $village->code,
+                    'name' => $village->name,
+                ])->values(),
+                'roles' => $user->roles->map(fn (Role $role): array => [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                    'scope_level' => $role->scope_level,
+                ])->values(),
+            ],
         ]);
     }
 
@@ -142,7 +181,7 @@ class UserRoleController extends Controller
     {
         $actor = $request->user();
         abort_unless($this->users->canResetUserPassword($actor, $user), 403);
-
+        $this->users->resetPassword($user);
         $this->users->resetPassword($user);
 
         return response()->json([

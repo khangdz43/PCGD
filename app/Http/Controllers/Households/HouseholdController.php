@@ -134,6 +134,9 @@ class HouseholdController extends Controller
 
     private function rules(Request $request, ?Household $household = null): array
     {
+        $optionalPresence = $household === null
+            ? ['nullable']
+            : ['present', 'nullable'];
         $householdCodeRule = Rule::unique('households', 'household_code')
             ->where(fn ($query) => $query->where('school_year', $request->input('school_year')));
         if ($household) {
@@ -147,7 +150,7 @@ class HouseholdController extends Controller
                 Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
             ],
             'village_code' => [
-                'nullable',
+                ...$optionalPresence,
                 Rule::exists('villages', 'code')->where('commune_code', $request->input('commune_code')),
             ],
         ];
@@ -171,9 +174,9 @@ class HouseholdController extends Controller
             'head_first_name' => 'required|string|max:100',
             'head_last_name' => 'required|string|max:50',
             ...$locationRules,
-            'address' => 'nullable|string|max:1000',
+            'address' => [...$optionalPresence, 'string', 'max:1000'],
             'residence_type' => 'required|in:THUONG_TRU,TAM_TRU,KHAC',
-            'residence_status' => 'nullable|string|max:100',
+            'residence_status' => [...$optionalPresence, 'string', 'max:100'],
         ];
     }
 

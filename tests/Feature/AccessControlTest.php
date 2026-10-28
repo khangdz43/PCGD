@@ -2,7 +2,6 @@
 
 namespace Tests\Feature;
 
-use App\Http\Controllers\Households\HouseholdImportExportController;
 use App\Jobs\ProcessHouseholdImport;
 use App\Models\Household;
 use App\Models\ImportLog;
@@ -32,7 +31,6 @@ class AccessControlTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('created_by')->nullable();
@@ -134,6 +132,11 @@ class AccessControlTest extends TestCase
             $table->softDeletes();
             $table->timestamps();
         });
+    }
+
+    private function authenticateApiUser(User $user): void
+    {
+        $this->actingAs($user, 'web');
     }
 
     public function test_login_page_is_public_but_application_pages_require_authentication(): void
@@ -315,7 +318,7 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('is_household_head', true);
         $this->assertSoftDeleted('persons', ['id' => $headId]);
 
-        $bulkIds = collect(['Anh', 'Chị'])->map(fn(string $relationship): int => DB::table('persons')->insertGetId([
+        $bulkIds = collect(['Anh', 'Chị'])->map(fn (string $relationship): int => DB::table('persons')->insertGetId([
             'household_id' => $household->id,
             'relationship_with_head' => $relationship,
             'created_at' => now(),
@@ -377,12 +380,15 @@ class AccessControlTest extends TestCase
             'village_code' => 'V1',
         ]);
 
-        $this->actingAs($user)
+        $this->authenticateApiUser($user);
+        $this
             ->deleteJson('/api/v1/villages/V1')
             ->assertUnprocessable()
-            ->assertJsonValidationErrors([
-                'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
-            ]);
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('status_code', 422)
+            ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.details.0.field', 'village')
+            ->assertJsonPath('error.details.0.issue', 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.');
 
         $this->assertDatabaseHas('villages', ['code' => 'V1']);
         $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
@@ -445,7 +451,7 @@ class AccessControlTest extends TestCase
             ->assertSee(route('account.show'))
             ->assertSee('app-account-card', false)
             ->assertSee('app-account-location', false)
-            ->assertSee('Năm học: ' . $this->currentSchoolYear())
+            ->assertSee('Năm học: '.$this->currentSchoolYear())
             ->assertSee('Đăng xuất');
     }
 
@@ -1417,7 +1423,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $permissions = collect(range(1, 4))->map(fn(int $index) => Permission::create([
+        $permissions = collect(range(1, 4))->map(fn (int $index) => Permission::create([
             'name' => "test-permission-{$index}",
             'description' => "Quyền kiểm thử {$index}",
             'guard_name' => 'web',
@@ -1430,7 +1436,7 @@ class AccessControlTest extends TestCase
             ->assertSee('+1 quyền khác')
             ->assertSee('data-role-permissions-toggle', false)
             ->assertSee('aria-expanded="false"', false)
-            ->assertSee('id="role-permissions-extra-' . $group->id . '" hidden', false)
+            ->assertSee('id="role-permissions-extra-'.$group->id.'" hidden', false)
             ->assertSee('Quyền kiểm thử 4');
     }
 
@@ -1584,7 +1590,7 @@ class AccessControlTest extends TestCase
                 'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
                 'guard_name' => 'web',
             ],
-        ])->map(fn(array $attributes) => Permission::create($attributes));
+        ])->map(fn (array $attributes) => Permission::create($attributes));
         $schoolManagerRole->permissions()->attach($provincePermissions);
 
         $this->actingAs($admin)
@@ -1718,16 +1724,19 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $user->roles()->attach($role);
+        $this->assertTrue($user->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
+        $this->assertContains(AccessPermission::VIEW_HOUSEHOLDS, $user->fresh()->permissionNames());
 
-        $this->actingAs($user)
-            ->getJson('/api/v1/session')
+        $this->authenticateApiUser($user);
+        $this->getJson('/api/v1/session')
             ->assertOk()
             ->assertJsonFragment(['view-households']);
 
         $this->getJson('/api/v1/households')
             ->assertOk()
-            ->assertJsonStructure(['data', 'current_page', 'total'])
-            ->assertJsonPath('total', 0);
+            ->assertJsonPath('success', true)
+            ->assertJsonStructure(['success', 'status_code', 'message', 'data', 'meta'])
+            ->assertJsonPath('meta.total', 0);
     }
 
     public function test_household_json_api_hides_details_outside_the_users_commune(): void
@@ -1760,9 +1769,35 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C2',
         ]);
 
-        $this->actingAs($user)
+        $this->authenticateApiUser($user);
+        $this
             ->getJson("/api/v1/households/{$household->id}")
-            ->assertNotFound();
+            ->assertNotFound()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('status_code', 404)
+            ->assertJsonPath('message', 'Không tìm thấy tài nguyên yêu cầu.')
+            ->assertJsonPath('error.code', 'NOT_FOUND');
+    }
+
+    public function test_api_returns_a_resource_specific_message_when_village_is_missing(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $this->authenticateApiUser($admin);
+        $this
+            ->getJson('/api/v1/villages/NOT-FOUND')
+            ->assertNotFound()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('status_code', 404)
+            ->assertJsonPath('message', 'Không tìm thấy thôn/xóm này.')
+            ->assertJsonPath('error.code', 'NOT_FOUND')
+            ->assertJsonPath('error.details', []);
     }
 
     public function test_role_members_api_returns_paginated_member_data_for_authorized_manager(): void
@@ -1787,13 +1822,15 @@ class AccessControlTest extends TestCase
         ]);
         $member->roles()->attach($group);
 
-        $this->actingAs($admin)
-            ->getJson("/api/v1/roles/{$group->id}/members")
+        $this->authenticateApiUser($admin);
+        $this
+            ->getJson("/api/v1/roles/{$group->id}/users")
             ->assertOk()
-            ->assertJsonPath('role.name', 'Nhóm API')
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('meta.role.name', 'Nhóm API')
             ->assertJsonPath('data.0.name', 'Thành viên API')
             ->assertJsonPath('data.0.username', 'api-role-member')
-            ->assertJsonPath('total', 1);
+            ->assertJsonPath('meta.total', 1);
     }
 
     public function test_account_management_permission_also_grants_group_management(): void
@@ -1962,7 +1999,7 @@ class AccessControlTest extends TestCase
             ->get('/households/import')
             ->assertOk()
             ->assertSee('id="import-school-year"', false)
-            ->assertSee('name="school_year" value="' . (now()->month >= 8 ? now()->year : now()->year - 1) . '-' . ((now()->month >= 8 ? now()->year : now()->year - 1) + 1) . '"', false)
+            ->assertSee('name="school_year" value="'.(now()->month >= 8 ? now()->year : now()->year - 1).'-'.((now()->month >= 8 ? now()->year : now()->year - 1) + 1).'"', false)
             ->assertDontSee('<select id="import-school-year"', false)
             ->assertSee('value="P1" selected', false)
             ->assertDontSee('value="P2"', false)
@@ -2325,18 +2362,69 @@ class AccessControlTest extends TestCase
             $group->users()->attach($member);
         }
 
-        $this->actingAs($admin)
-            ->getJson(route('api.roles.members', $group))
+        $this->authenticateApiUser($admin);
+        $this
+            ->getJson(route('api.roles.users.index', $group))
             ->assertOk()
+            ->assertJsonPath('success', true)
             ->assertJsonPath('data.0.name', 'Thành viên 1')
             ->assertJsonPath('data.4.name', 'Thành viên 5')
-            ->assertJsonPath('current_page', 1)
-            ->assertJsonPath('last_page', 2);
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.last_page', 2);
 
-        $this->getJson(route('api.roles.members', ['role' => $group, 'page' => 2]))
+        $this->getJson(route('api.roles.users.index', ['role' => $group, 'page' => 2]))
             ->assertOk()
             ->assertJsonPath('data.0.name', 'Thành viên 6')
-            ->assertJsonPath('current_page', 2);
+            ->assertJsonPath('meta.current_page', 2);
+
+        $this->getJson(route('api.roles.users.index', ['role' => $group, 'page' => 2, 'per_page' => 3]))
+            ->assertOk()
+            ->assertJsonCount(3, 'data')
+            ->assertJsonPath('data.0.name', 'Thành viên 4')
+            ->assertJsonPath('meta.per_page', 3);
+    }
+
+    public function test_role_and_user_api_lists_filter_and_limit_page_size(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        foreach (range(1, 3) as $index) {
+            Role::create([
+                'name' => "API paged role {$index}",
+                'scope_level' => 'province',
+                'guard_name' => 'web',
+            ]);
+            User::factory()->create([
+                'name' => "API paged user {$index}",
+                'username' => "api-paged-user-{$index}",
+                'scope_level' => 'province',
+                'is_active' => true,
+            ]);
+        }
+
+        $this->authenticateApiUser($admin);
+
+        $this->getJson('/api/v1/roles?q=API%20paged%20role&per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('meta.per_page', 2)
+            ->assertJsonPath('meta.total', 3);
+
+        $this->getJson('/api/v1/users?q=API%20paged%20user&per_page=2')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.allUsers')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('meta.per_page', 2)
+            ->assertJsonPath('meta.total', 3);
     }
 
     public function test_management_accounts_show_a_crown_and_appear_before_regular_accounts(): void
@@ -2519,7 +2607,7 @@ class AccessControlTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-" . ($year + 1);
+        return "{$year}-".($year + 1);
     }
 
     public function test_import_rejects_school_code_outside_the_selected_commune(): void
@@ -2622,7 +2710,7 @@ class AccessControlTest extends TestCase
             return UploadedFile::fake()->createWithContent('import.xls', $fileContents);
         };
         $currentSchoolYearStart = now()->month >= 8 ? now()->year : now()->year - 1;
-        $previousSchoolYear = ($currentSchoolYearStart - 1) . '-' . $currentSchoolYearStart;
+        $previousSchoolYear = ($currentSchoolYearStart - 1).'-'.$currentSchoolYearStart;
 
         $this->actingAs($user)
             ->post('/households/import', [
@@ -3714,15 +3802,15 @@ class AccessControlTest extends TestCase
         ]);
 
         $currentSchoolYear = now()->month >= 8
-            ? now()->year . '-' . (now()->year + 1)
-            : (now()->year - 1) . '-' . now()->year;
-        $previousSchoolYear = ((int) explode('-', $currentSchoolYear)[0] - 1) . '-' . explode('-', $currentSchoolYear)[0];
+            ? now()->year.'-'.(now()->year + 1)
+            : (now()->year - 1).'-'.now()->year;
+        $previousSchoolYear = ((int) explode('-', $currentSchoolYear)[0] - 1).'-'.explode('-', $currentSchoolYear)[0];
         DB::table('households')->insert([
             ['household_code' => '01', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '02', 'school_year' => $previousSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '03', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
             ...array_map(
-                static fn(int $code): array => [
+                static fn (int $code): array => [
                     'household_code' => sprintf('%02d', $code),
                     'school_year' => $currentSchoolYear,
                     'province_code' => 'P1',
@@ -3761,7 +3849,7 @@ class AccessControlTest extends TestCase
             ->assertSee('value="P1" selected', false)
             ->assertSee('data-selected-code="C1"', false)
             ->assertSee('data-selected-code="V1"', false)
-            ->assertSee('value="' . $currentSchoolYear . '" selected', false)
+            ->assertSee('value="'.$currentSchoolYear.'" selected', false)
             ->assertSee('Vuốt ngang bảng để xem thêm thông tin.')
             ->assertSee('title="Xem chi tiết hộ"', false)
             ->assertDontSee('class="household-row"', false)
@@ -3802,8 +3890,8 @@ class AccessControlTest extends TestCase
             ['code' => 'V3', 'name' => 'Thôn ngoài phạm vi', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
         $schoolYear = now()->month >= 8
-            ? now()->year . '-' . (now()->year + 1)
-            : (now()->year - 1) . '-' . now()->year;
+            ? now()->year.'-'.(now()->year + 1)
+            : (now()->year - 1).'-'.now()->year;
         DB::table('households')->insert([
             ['household_code' => '11', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '12', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],

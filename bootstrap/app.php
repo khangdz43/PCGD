@@ -1,9 +1,12 @@
 <?php
 
 use App\Http\Middleware\EnsureUserIsActive;
+use App\Http\Middleware\FormatApiResponse;
+use App\Support\ApiResponse;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -16,10 +19,23 @@ return Application::configure(basePath: dirname(__DIR__))
 
     // gán bí danh active cho thằng ensureUserIsActive
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->api(append: [FormatApiResponse::class]);
         $middleware->alias([
             'active' => EnsureUserIsActive::class,
         ]);
+        $middleware->redirectGuestsTo(
+            fn (Request $request): ?string => $request->is('api/*') ? null : route('login'),
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->render(function (Throwable $exception, Request $request) {
+            if ($request->is('api/*')) {
+                return ApiResponse::fromException($exception, $request);
+            }
+
+            return null;
+        });
+        $exceptions->shouldRenderJsonWhen(
+            fn (Request $request, Throwable $exception): bool => $request->is('api/*') || $request->expectsJson(),
+        );
     })->create();

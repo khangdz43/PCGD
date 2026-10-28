@@ -85,7 +85,10 @@ class HouseholdService
             });
         }
 
-        return $query->orderBy('household_code')->paginate(7)->withQueryString();
+        return $query
+            ->orderBy('household_code')
+            ->paginate(min(max((int) ($filters['per_page'] ?? 7), 1), 100))
+            ->withQueryString();
     }
 
     public function provincesFor(User $user): Collection

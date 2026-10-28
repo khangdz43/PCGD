@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\ApiResponse;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,15 +17,19 @@ class EnsureUserIsActive
         // lấy instance người dùng log in hiện tại
         // $request->user()  response model User
         if ($request->user() && ! $request->user()->is_active) {
-            Auth::logout();
-            $request->session()->invalidate();
-            $request->session()->regenerateToken();
+            if ($request->hasSession()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
 
-            if ($request->expectsJson()) {
-                return response()->json([
-                    'message' => 'Tài khoản đã bị vô hiệu hóa.',
-                    'errors' => ['username' => ['Tài khoản đã bị vô hiệu hóa.']],
-                ], 403);
+            if ($request->expectsJson() || $request->is('api/*')) {
+                return ApiResponse::failure(
+                    'Tài khoản đã bị vô hiệu hóa.',
+                    'FORBIDDEN',
+                    [['field' => 'username', 'issue' => 'Tài khoản đã bị vô hiệu hóa.']],
+                    403,
+                );
             }
 
             return redirect()->route('login')->withErrors([

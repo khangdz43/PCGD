@@ -20,6 +20,8 @@ return [
         'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
     ],
 
+    'permission_guard' => env('AUTH_PERMISSION_GUARD', 'web'),
+
     /*
     |--------------------------------------------------------------------------
     | Authentication Guards

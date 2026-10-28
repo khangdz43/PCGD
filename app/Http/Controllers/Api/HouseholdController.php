@@ -24,6 +24,7 @@ class HouseholdController extends Controller
             'school_year' => ['nullable', 'string', 'max:20'],
             'school_code' => ['nullable', 'string', 'max:50'],
             'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
         foreach ($households->defaultFilters($user) as $key => $value) {

@@ -11,6 +11,10 @@ export interface User {
 export interface ApiErrorResponse {
     message?: string;
     errors?: Record<string, string[]>;
+    error?: {
+        code?: string;
+        details?: { field: string; issue: string }[];
+    };
 }
 
 export interface HouseholdSummary {

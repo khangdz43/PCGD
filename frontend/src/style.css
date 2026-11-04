@@ -6206,6 +6206,14 @@ button {
 padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
+@media (min-width: 801px) {
+    .app-content.app-content-wide {
+        max-width: none;
+        padding-right: clamp(12px, 1.25vw, 24px);
+        padding-left: clamp(12px, 1.25vw, 24px);
+    }
+}
+
 .app-global-notice {
     margin: 0 0 20px;
 }

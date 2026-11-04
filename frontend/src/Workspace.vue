@@ -110,6 +110,10 @@ const trashPageSize = ref(10);
 const deleteResult = ref<DeleteResult | null>(null);
 const trashActionDialog = ref<TrashActionDialog | null>(null);
 const accountActionDialog = ref<AccountActionDialog | null>(null);
+const userDetail = ref<Row | null>(null);
+const userDetailRow = ref<Row | null>(null);
+const userDetailLoading = ref(false);
+const userDetailError = ref("");
 const managementResult = ref<{
     success: boolean;
     title: string;
@@ -2991,6 +2995,37 @@ async function openHousehold(row: Row): Promise<void> {
     } finally {
         householdLoading.value = false;
     }
+}
+
+async function openUserDetail(row: Row): Promise<void> {
+    const id = row.id;
+    if (id === undefined) return;
+
+    userDetailRow.value = row;
+    userDetail.value = null;
+    userDetailError.value = "";
+    userDetailLoading.value = true;
+    try {
+        const response = await api.get<unknown>(`/users/${id}`);
+        const payload = asRow(apiData<unknown>(response.data));
+        userDetail.value = asRow(payload.data ?? payload);
+    } catch (cause) {
+        userDetailError.value = errorMessage(cause);
+    } finally {
+        userDetailLoading.value = false;
+    }
+}
+
+function closeUserDetail(): void {
+    userDetail.value = null;
+    userDetailRow.value = null;
+    userDetailError.value = "";
+}
+
+function editUserDetail(): void {
+    const row = userDetailRow.value;
+    closeUserDetail();
+    if (row) void beginEdit(row);
 }
 
 function closeHouseholdDetail(): void {
@@ -8341,6 +8376,32 @@ onMounted(() => void load());
                             >
                                 <div class="account-action-controls">
                                     <button
+                                        v-if="row.can_view_details"
+                                        class="secondary-button account-action-button account-icon-action"
+                                        type="button"
+                                        :aria-label="`Xem chi tiết tài khoản ${row.name}`"
+                                        title="Xem chi tiết"
+                                        @click="openUserDetail(row)"
+                                    >
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" />
+                                            <circle cx="12" cy="12" r="2.7" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        v-if="row.can_edit_configuration"
+                                        class="secondary-button account-action-button account-icon-action user-edit-account-button"
+                                        type="button"
+                                        :aria-label="`Sửa tài khoản ${row.name}`"
+                                        title="Sửa tài khoản"
+                                        @click="beginEdit(row)"
+                                    >
+                                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                                            <path d="M13.8 3.2a2 2 0 0 1 2.8 2.8L8 14.6l-3.5.9.9-3.5 8.4-8.8Z" />
+                                            <path d="m12.5 4.5 3 3" />
+                                        </svg>
+                                    </button>
+                                    <button
                                         v-if="row.can_change_account_status"
                                         class="secondary-button account-action-button account-icon-action"
                                         :class="
@@ -10986,6 +11047,87 @@ onMounted(() => void load());
                     }}
                 </button>
             </div>
+        </section>
+    </div>
+    <div
+        v-if="moduleKey === 'users' && (userDetail || userDetailLoading || userDetailError)"
+        class="workspace-modal-backdrop user-detail-backdrop"
+        role="presentation"
+        @click.self="closeUserDetail"
+        @keydown.esc="closeUserDetail"
+    >
+        <section
+            class="workspace-modal-card user-detail-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-detail-title"
+        >
+            <header class="user-detail-header">
+                <div>
+                    <p class="workspace-eyebrow">THÔNG TIN TÀI KHOẢN</p>
+                    <h2 id="user-detail-title">
+                        {{ userDetail?.name ?? userDetailRow?.name ?? "Chi tiết tài khoản" }}
+                    </h2>
+                </div>
+                <button
+                    class="household-detail-icon-button"
+                    type="button"
+                    aria-label="Đóng chi tiết tài khoản"
+                    title="Đóng"
+                    @click="closeUserDetail"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m6 6 12 12M18 6 6 18" />
+                    </svg>
+                </button>
+            </header>
+            <p v-if="userDetailLoading" class="user-detail-loading" role="status">
+                Đang tải thông tin tài khoản…
+            </p>
+            <p v-else-if="userDetailError" class="notice login-error" role="alert">
+                {{ userDetailError }}
+            </p>
+            <template v-else-if="userDetail">
+                <dl class="user-detail-grid">
+                    <div><dt>Tên đăng nhập</dt><dd>{{ userDetail.username || "—" }}</dd></div>
+                    <div><dt>Số điện thoại</dt><dd>{{ userDetail.phone || "—" }}</dd></div>
+                    <div><dt>Email</dt><dd>{{ userDetail.email || "—" }}</dd></div>
+                    <div><dt>Số CCCD</dt><dd>{{ userDetail.citizen_id || "—" }}</dd></div>
+                    <div><dt>Ngày sinh</dt><dd>{{ userDetail.date_of_birth || "—" }}</dd></div>
+                    <div>
+                        <dt>Trạng thái</dt>
+                        <dd>{{ userDetail.is_active ? "Đang hoạt động" : "Đã vô hiệu hóa" }}</dd>
+                    </div>
+                    <div><dt>Cấp quản lý</dt><dd>{{ scopeLabels[String(userDetail.scope_level)] || "—" }}</dd></div>
+                    <div><dt>Tỉnh / thành phố</dt><dd>{{ asRow(userDetail.province).name || "—" }}</dd></div>
+                    <div><dt>Xã / phường</dt><dd>{{ asRow(userDetail.commune).name || "—" }}</dd></div>
+                    <div>
+                        <dt>Thôn / xóm</dt>
+                        <dd>{{ asRows(userDetail.villages).map((village) => String(village.name ?? "")).filter(Boolean).join(", ") || "—" }}</dd>
+                    </div>
+                    <div class="user-detail-roles">
+                        <dt>Nhóm quyền</dt>
+                        <dd>{{ asRows(userDetail.roles).map((role) => String(role.name ?? "")).filter(Boolean).join(", ") || "Chưa được gán nhóm" }}</dd>
+                    </div>
+                </dl>
+                <div class="user-detail-actions">
+                    <button
+                        class="secondary-button management-tool-button"
+                        type="button"
+                        @click="closeUserDetail"
+                    >
+                        Đóng
+                    </button>
+                    <button
+                        v-if="userDetailRow?.can_edit_configuration"
+                        class="primary-button management-tool-button"
+                        type="button"
+                        @click="editUserDetail"
+                    >
+                        Sửa tài khoản
+                    </button>
+                </div>
+            </template>
         </section>
     </div>
     <div

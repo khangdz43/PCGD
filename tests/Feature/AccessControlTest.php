@@ -2162,6 +2162,7 @@ class AccessControlTest extends TestCase
         $managerRole->permissions()->attach([
             Permission::create(['name' => AccessPermission::MANAGE_USER_ACCOUNTS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::MANAGE_ACCESS_CONTROL, 'guard_name' => 'web'])->id,
+            Permission::create(['name' => AccessPermission::VIEW_HOUSEHOLDS, 'guard_name' => 'web'])->id,
         ]);
         $communeManager = User::factory()->create([
             'scope_level' => 'commune',
@@ -2197,7 +2198,14 @@ class AccessControlTest extends TestCase
             ->assertJsonFragment([
                 'id' => $staff->id,
                 'can_change_account_status' => true,
+                'can_view_details' => true,
+                'can_edit_configuration' => true,
             ]);
+        $this->getJson("/api/v1/users/{$staff->id}")
+            ->assertOk()
+            ->assertJsonPath('data.username', $staff->username);
+        $this->getJson("/api/v1/users/{$staff->id}/edit")
+            ->assertOk();
         $this->patchJson("/api/v1/users/{$staff->id}/status", ['is_active' => false])
             ->assertOk();
         $this->assertDatabaseHas('users', ['id' => $staff->id, 'is_active' => false]);

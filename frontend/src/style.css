@@ -4151,6 +4151,10 @@ h2 {
     gap: 12px;
 }
 
+.user-management-toolbar-bottom>.management-tool-button {
+    margin-left: auto;
+}
+
 .village-management-toolbar-bottom {
     display: flex;
     width: 100%;
@@ -5256,13 +5260,13 @@ h2 {
 }
 
 .account-management-table .table-actions {
-    min-width: 105px;
+    min-width: 180px;
     text-align: center;
     white-space: nowrap;
 }
 
 .account-management-table .account-actions-heading {
-    min-width: 105px;
+    min-width: 180px;
     text-align: center;
 }
 
@@ -5282,10 +5286,10 @@ h2 {
 }
 
 .account-action-controls {
-    display: grid;
-    grid-template-columns: repeat(2, 36px);
+    display: flex;
     align-items: stretch;
-    gap: 8px;
+    justify-content: center;
+    gap: 6px;
 }
 
 .account-management-table .account-action-button {
@@ -5310,6 +5314,80 @@ h2 {
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.7;
+}
+
+.user-edit-account-button {
+    border-color: #cbdcf5 !important;
+    background: #f5f9ff !important;
+    color: #3568a8 !important;
+}
+
+.user-edit-account-button:hover {
+    border-color: #8db4eb !important;
+    background: #eaf3ff !important;
+}
+
+.user-detail-backdrop {
+    z-index: 1010;
+}
+
+.user-detail-card {
+    width: min(100%, 680px);
+}
+
+.user-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.user-detail-header h2 {
+    margin: 0;
+    color: #223551;
+    font-size: 1.25rem;
+}
+
+.user-detail-loading {
+    margin: 0;
+    color: #64748b;
+}
+
+.user-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 20px;
+    margin: 0;
+}
+
+.user-detail-grid>div {
+    min-width: 0;
+}
+
+.user-detail-grid dt {
+    margin-bottom: 4px;
+    color: #728096;
+    font-size: .73rem;
+    font-weight: 650;
+}
+
+.user-detail-grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: #263b59;
+    font-size: .86rem;
+}
+
+.user-detail-roles {
+    grid-column: 1 / -1;
+}
+
+.user-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
 }
 
 .account-management-table th,

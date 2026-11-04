@@ -22,6 +22,13 @@ class AppServiceProvider extends ServiceProvider
     {
         // Gate::before tự động chạy khi gặp @can , can: , authorize ....
         Gate::before(function (User $user, string $ability): ?bool {
+            if (
+                $user->roleScopeLevel() === 'global'
+                && in_array($ability, AccessPermission::mergePermissions(), true)
+            ) {
+                return false;
+            }
+
             if ($user->hasRole(Role::SYSTEM_ADMIN)) {
                 return true;
             }

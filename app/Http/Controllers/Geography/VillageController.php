@@ -22,11 +22,12 @@ class VillageController extends Controller
             'commune_code' => ['nullable', 'string', 'max:50'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $villages = $this->villages->listing($user, $filters);
         $provinces = $this->villages->provincesFor($user);
         $provinceCode = $user->hasRole(Role::SYSTEM_ADMIN) ? '' : $user->province_code;
-        $communeCode = in_array($user->roleScopeLevel(), ['commune', 'village'], true)
+        $communeCode = $user->roleScopeLevel() === 'commune'
             ? $user->commune_code
             : '';
 
@@ -40,13 +41,17 @@ class VillageController extends Controller
 
     public function create(Request $request)
     {
-        abort_if($request->user()->roleScopeLevel() === 'village', 403);
+        abort_if(
+            $request->user()->roleScopeLevel() === 'commune'
+                && $request->user()->managedVillageCodes() !== [],
+            403
+        );
 
         $village = new Village;
         $provinces = $this->villages->provincesFor($request->user());
         $user = $request->user();
         $provinceCode = $user->hasRole(Role::SYSTEM_ADMIN) ? '' : $user->province_code;
-        $communeCode = in_array($user->roleScopeLevel(), ['commune', 'village'], true)
+        $communeCode = $user->roleScopeLevel() === 'commune'
             ? $user->commune_code
             : '';
 
@@ -79,9 +84,13 @@ class VillageController extends Controller
         ], $this->locationRules($request)), [
             'name.unique' => 'Tên thôn/xóm đã tồn tại trong xã này.',
         ]);
-        $this->villages->create($request->user(), $data);
+        $village = $this->villages->create($request->user(), $data);
+        $village->load('commune.province');
 
-        return response()->json(['message' => 'Thêm mới thôn/bản thành công!'], 201);
+        return response()->json([
+            'message' => 'Thêm mới thôn/bản thành công!',
+            'village' => $village,
+        ], 201);
     }
 
     public function edit(string $code, Request $request)
@@ -113,12 +122,17 @@ class VillageController extends Controller
                     ->where('commune_code', $request->input('commune_code'))
                     ->ignore($village->code, 'code'),
             ],
+            'operational_status' => ['sometimes', Rule::in(['active', 'paused'])],
         ], $this->locationRules($request)), [
             'name.unique' => 'Tên thôn/xóm đã tồn tại trong xã này.',
         ]);
         $this->villages->update($request->user(), $village, $data);
+        $village->refresh()->load('commune.province');
 
-        return response()->json(['message' => 'Cập nhật thông tin thôn/bản thành công!']);
+        return response()->json([
+            'message' => 'Cập nhật thông tin thôn/bản thành công!',
+            'village' => $village,
+        ]);
     }
 
     public function destroy(Request $request, string $code)

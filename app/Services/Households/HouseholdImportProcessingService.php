@@ -9,10 +9,12 @@ use App\Models\School;
 use App\Models\User;
 use App\Support\DataAccessScope;
 use App\Support\HouseholdImportChunkReadFilter;
+use App\Support\HouseholdImportErrorReadFilter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -40,7 +42,7 @@ class HouseholdImportProcessingService
             foreach ($worksheetInfo as $info) {
                 if (
                     $visibleDataWorksheet === null
-                    && $info['sheetState'] === 'visible'
+                    && ($info['sheetState'] ?? 'visible') === 'visible'
                     && $info['totalColumns'] >= 15
                     && $info['totalRows'] >= 5
                 ) {
@@ -65,9 +67,13 @@ class HouseholdImportProcessingService
             }
             $worksheet = collect($worksheetInfo)->firstWhere('worksheetName', $worksheetName);
             $highestDataRow = (int) ($worksheet['totalRows'] ?? 0);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
             $importLog->update([
                 'status' => 'FAILED',
+            ]);
+            Log::error('Không đọc được file Excel khi xử lý nhập dữ liệu.', [
+                'import_log_id' => $importLog->id,
+                'exception' => $exception,
             ]);
 
             return response()->json(['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.'], 422);
@@ -79,7 +85,7 @@ class HouseholdImportProcessingService
             $ethnicityCodes[$this->normalize($ethnicity->name)] = $ethnicity->code;
         }
         // Lưu cả xã của trường để từ chối mã trường thuộc ngoài xã đang nhập.
-        $schoolCommuneCodes = School::query()->pluck('commune_code', 'code');
+        $schoolCommuneCodes = School::query()->where('is_active', true)->pluck('commune_code', 'code');
         $schoolYear = $data['school_year'];
         $groups = [];
         $errors = new HouseholdImportErrorCollector($highestDataRow);
@@ -103,13 +109,14 @@ class HouseholdImportProcessingService
                 }
 
                 // map các trường vào cell
-                $householdCode = $this->cell($sheet, 'O'.$row);
-                $lastName = $this->cell($sheet, 'C'.$row);
-                $firstName = $this->cell($sheet, 'D'.$row);
+                $householdCode = $this->cell($sheet, 'O' . $row);
+                $lastName = $this->cell($sheet, 'C' . $row);
+                $firstName = $this->cell($sheet, 'D' . $row);
                 // bỏ qua các dòng trống k có dữ liệu
                 if ($householdCode === '' && $lastName === '' && $firstName === '') {
                     continue;
                 }
+                $totalRows++;
 
                 if ($householdCode === '' || $lastName === '' || $firstName === '') {
                     $errors->add($row, 'Cần có Số phiếu, Họ đệm và Tên.');
@@ -117,7 +124,7 @@ class HouseholdImportProcessingService
                     continue;
                 }
 
-                $ethnicityName = $this->cell($sheet, 'I'.$row);
+                $ethnicityName = $this->cell($sheet, 'I' . $row);
                 // nếu trống để code là null còn cps trog mảng kia thì trả ra cái code để lưu code dân tộc
                 $ethnicityCode = $ethnicityName === '' ? null : ($ethnicityCodes[$this->normalize($ethnicityName)] ?? null);
                 if ($ethnicityName === '') {
@@ -125,7 +132,6 @@ class HouseholdImportProcessingService
                 } elseif ($ethnicityCode === null) {
                     $errors->add($row, "Dân tộc '{$ethnicityName}' chưa có trong danh mục.");
                 }
-
                 $birthDate = $this->birthDate($sheet, $row);
 
                 if ($birthDate['date'] === null) {
@@ -134,7 +140,7 @@ class HouseholdImportProcessingService
                     $errors->add($row, 'Ngày sinh không được ở tương lai.');
                 }
                 //
-                $schoolCode = $this->cell($sheet, 'V'.$row);
+                $schoolCode = $this->cell($sheet, 'V' . $row);
                 if ($schoolCode !== '') {
                     if ($schoolCommuneCodes->has($schoolCode)) {
                         if ($schoolCommuneCodes->get($schoolCode) !== $data['commune_code']) {
@@ -152,49 +158,49 @@ class HouseholdImportProcessingService
                     'first_name' => $firstName,
                     'dob' => $birthDate,
                     // tick là nữ ko nam
-                    'gender' => $this->isMarked($this->cell($sheet, 'H'.$row)) ? 'NU' : 'NAM',
+                    'gender' => $this->isMarked($this->cell($sheet, 'H' . $row)) ? 'NU' : 'NAM',
                     'ethnicity_code' => $ethnicityCode,
 
-                    'religion' => $this->nullableCell($sheet, 'J'.$row),
-                    'priority_type' => $this->nullableCell($sheet, 'K'.$row),
-                    'head_last_name' => $this->cell($sheet, 'L'.$row),
-                    'head_first_name' => $this->cell($sheet, 'M'.$row),
-                    'address' => $this->nullableCell($sheet, 'N'.$row),
-                    'residence_type' => $this->cell($sheet, 'P'.$row),
-                    'residence_status' => $this->nullableCell($sheet, 'Q'.$row),
-                    'academic_block' => $this->nullableCell($sheet, 'R'.$row),
-                    'current_class' => $this->nullableCell($sheet, 'S'.$row),
+                    'religion' => $this->nullableCell($sheet, 'J' . $row),
+                    'priority_type' => $this->nullableCell($sheet, 'K' . $row),
+                    'head_last_name' => $this->cell($sheet, 'L' . $row),
+                    'head_first_name' => $this->cell($sheet, 'M' . $row),
+                    'address' => $this->nullableCell($sheet, 'N' . $row),
+                    'residence_type' => $this->cell($sheet, 'P' . $row),
+                    'residence_status' => $this->nullableCell($sheet, 'Q' . $row),
+                    'academic_block' => $this->nullableCell($sheet, 'R' . $row),
+                    'current_class' => $this->nullableCell($sheet, 'S' . $row),
                     'school_code' => $schoolCode ?: null,
-                    'graduation_level' => $this->nullableCell($sheet, 'W'.$row),
-                    'is_complementary' => $this->isMarked($this->cell($sheet, 'X'.$row)),
-                    'graduation_year' => $this->nullableCell($sheet, 'Y'.$row),
-                    'vocational_grad_level' => $this->nullableCell($sheet, 'Z'.$row),
-                    'vocational_grad_year' => $this->nullableCell($sheet, 'AB'.$row),
-                    'finished_class' => $this->nullableCell($sheet, 'AC'.$row),
-                    'finished_year' => $this->nullableCell($sheet, 'AD'.$row),
-                    'dropped_class' => $this->nullableCell($sheet, 'AE'.$row),
-                    'dropped_year' => $this->nullableCell($sheet, 'AF'.$row),
-                    'literacy_current_class' => $this->nullableCell($sheet, 'AG'.$row),
-                    'literacy_completed_class' => $this->nullableCell($sheet, 'AH'.$row),
-                    'literacy_relapse_level' => $this->nullableCell($sheet, 'AI'.$row),
+                    'graduation_level' => $this->nullableCell($sheet, 'W' . $row),
+                    'is_complementary' => $this->isMarked($this->cell($sheet, 'X' . $row)),
+                    'graduation_year' => $this->nullableCell($sheet, 'Y' . $row),
+                    'vocational_grad_level' => $this->nullableCell($sheet, 'Z' . $row),
+                    'vocational_grad_year' => $this->nullableCell($sheet, 'AB' . $row),
+                    'finished_class' => $this->nullableCell($sheet, 'AC' . $row),
+                    'finished_year' => $this->nullableCell($sheet, 'AD' . $row),
+                    'dropped_class' => $this->nullableCell($sheet, 'AE' . $row),
+                    'dropped_year' => $this->nullableCell($sheet, 'AF' . $row),
+                    'literacy_current_class' => $this->nullableCell($sheet, 'AG' . $row),
+                    'literacy_completed_class' => $this->nullableCell($sheet, 'AH' . $row),
+                    'literacy_relapse_level' => $this->nullableCell($sheet, 'AI' . $row),
                     'disability' => [
-                        'mobility_disability' => $this->isMarked($this->cell($sheet, 'AJ'.$row)),
-                        'hearing_speech_disability' => $this->isMarked($this->cell($sheet, 'AK'.$row)),
-                        'visual_disability' => $this->isMarked($this->cell($sheet, 'AL'.$row)),
-                        'mental_disability' => $this->isMarked($this->cell($sheet, 'AM'.$row)),
-                        'intellectual_disability' => $this->isMarked($this->cell($sheet, 'AN'.$row)),
-                        'learning_disability' => $this->isMarked($this->cell($sheet, 'AO'.$row)),
-                        'autism' => $this->isMarked($this->cell($sheet, 'AP'.$row)),
-                        'other_disability' => $this->isMarked($this->cell($sheet, 'AQ'.$row)),
-                        'has_disability_cert' => $this->isMarked($this->cell($sheet, 'AR'.$row)),
-                        'can_study' => $this->isMarked($this->cell($sheet, 'AS'.$row)),
-                        'special_circumstance' => $this->nullableCell($sheet, 'AT'.$row),
-                        'special_circumstance_detail' => $this->nullableCell($sheet, 'AU'.$row),
+                        'mobility_disability' => $this->isMarked($this->cell($sheet, 'AJ' . $row)),
+                        'hearing_speech_disability' => $this->isMarked($this->cell($sheet, 'AK' . $row)),
+                        'visual_disability' => $this->isMarked($this->cell($sheet, 'AL' . $row)),
+                        'mental_disability' => $this->isMarked($this->cell($sheet, 'AM' . $row)),
+                        'intellectual_disability' => $this->isMarked($this->cell($sheet, 'AN' . $row)),
+                        'learning_disability' => $this->isMarked($this->cell($sheet, 'AO' . $row)),
+                        'autism' => $this->isMarked($this->cell($sheet, 'AP' . $row)),
+                        'other_disability' => $this->isMarked($this->cell($sheet, 'AQ' . $row)),
+                        'has_disability_cert' => $this->isMarked($this->cell($sheet, 'AR' . $row)),
+                        'can_study' => $this->isMarked($this->cell($sheet, 'AS' . $row)),
+                        'special_circumstance' => $this->nullableCell($sheet, 'AT' . $row),
+                        'special_circumstance_detail' => $this->nullableCell($sheet, 'AU' . $row),
                     ],
-                    'relationship_with_head' => $this->nullableCell($sheet, 'AV'.$row),
-                    'parent_name' => $this->nullableCell($sheet, 'AW'.$row),
-                    'phone' => $this->nullableCell($sheet, 'AX'.$row),
-                    'note' => $this->nullableCell($sheet, 'AY'.$row),
+                    'relationship_with_head' => $this->nullableCell($sheet, 'AV' . $row),
+                    'parent_name' => $this->nullableCell($sheet, 'AW' . $row),
+                    'phone' => $this->nullableCell($sheet, 'AX' . $row),
+                    'note' => $this->nullableCell($sheet, 'AY' . $row),
                 ];
 
                 foreach (
@@ -206,7 +212,7 @@ class HouseholdImportProcessingService
                     ] as $field => $label
                 ) {
                     if ($this->hasFutureYear($record[$field])) {
-                        $errors->add($row, "{$label} không được lớn hơn ".now()->year.'.');
+                        $errors->add($row, "{$label} không được lớn hơn " . now()->year . '.');
                     }
                 }
 
@@ -226,12 +232,6 @@ class HouseholdImportProcessingService
             $errors->add(null, 'Không tìm thấy dòng dữ liệu. Dữ liệu cần bắt đầu từ dòng 5.');
         }
 
-        if ($errors->hasErrors()) {
-            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
-
-            return response()->json(['message' => $errors->summary()], 422);
-        }
-
         // $groups = [
         //     'HK001' => [
         //         ['name' => 'Nguyễn Văn A', 'relationship' => 'Chủ hộ', 'row' => 5],
@@ -243,6 +243,17 @@ class HouseholdImportProcessingService
         // ];
 
         foreach ($groups as $householdCode => $records) {
+            $records = array_values(array_filter(
+                $records,
+                fn(array $record): bool => ! $errors->hasErrorsForRow($record['row']),
+            ));
+            if ($records === []) {
+                unset($groups[$householdCode]);
+
+                continue;
+            }
+            $groups[$householdCode] = $records;
+
             // records là value của từng householdCode(key)
             $headLastName = $this->firstValue($records, 'head_last_name');
             $headFirstName = $this->firstValue($records, 'head_first_name');
@@ -289,36 +300,30 @@ class HouseholdImportProcessingService
             }
         }
 
-        if ($errors->hasErrors()) {
-            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
+        foreach ($groups as $householdCode => $records) {
+            $records = array_values(array_filter(
+                $records,
+                fn(array $record): bool => ! $errors->hasErrorsForRow($record['row']),
+            ));
+            if ($records === []) {
+                unset($groups[$householdCode]);
 
-            return response()->json(['message' => $errors->summary()], 422);
+                continue;
+            }
+            $groups[$householdCode] = $records;
         }
 
-        // check query có tồn tại cái mã hộ này k
-        $existingCode = Household::query()
+        $existingCodes = Household::query()
             ->where('school_year', $schoolYear)
             ->whereIn('household_code', array_keys($groups))
-            ->value('household_code');
-        if ($existingCode !== null) {
+            ->pluck('household_code')
+            ->all();
+        foreach ($existingCodes as $existingCode) {
             $duplicateMessage = "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.";
             foreach ($groups[$existingCode] ?? [] as $record) {
                 $errors->add($record['row'], $duplicateMessage);
             }
-            if (! $errors->hasErrors()) {
-                $errors->add(null, $duplicateMessage);
-            }
-            $this->recordFailedImport(
-                $importLog,
-                $data['file']->getRealPath(),
-                $worksheetName,
-                $totalRows,
-                $errors,
-            );
-
-            return response()->json([
-                'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.",
-            ], 422);
+            unset($groups[$existingCode]);
         }
 
         $importLog->update([
@@ -326,11 +331,11 @@ class HouseholdImportProcessingService
             'status' => 'PROCESSING',
         ]);
 
-        try {
-            // dùng transaction để rollback nếu có err
-            DB::transaction(function () use ($groups, $data, $schoolYear, $importLog, &$totalRows) {
-                // thêm vào household
-                foreach ($groups as $householdCode => $records) {
+        $successRows = 0;
+        foreach ($groups as $householdCode => $records) {
+            try {
+                DB::transaction(function () use ($householdCode, $records, $data, $schoolYear, $importLog): void {
+                    // thêm vào household
                     $headLastName = $this->firstValue($records, 'head_last_name');
                     $headFirstName = $this->firstValue($records, 'head_first_name');
                     $firstRecord = $records[0];
@@ -412,28 +417,36 @@ class HouseholdImportProcessingService
                             'relationship_with_head' => 'Chủ hộ',
                         ]);
                     }
+                });
+                $successRows += count($records);
+            } catch (Throwable $exception) {
+                foreach ($records as $record) {
+                    $errors->add(
+                        $record['row'],
+                        "Không thể nhập phiếu '{$householdCode}': " . $exception->getMessage(),
+                    );
                 }
-
-                $importLog->update([
-                    'status' => 'SUCCESS',
-                    'success_rows' => $totalRows,
-                ]);
-            });
-        } catch (Throwable $exception) {
-            $errors->add(null, $exception->getMessage());
-            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
-
-            return response()->json(['message' => 'Nhập dữ liệu thất bại: '.$exception->getMessage()], 422);
+            }
         }
+
+        $this->recordImportResult(
+            $importLog,
+            $data['file']->getRealPath(),
+            $worksheetName,
+            $highestDataRow,
+            $totalRows,
+            $successRows,
+            $errors,
+        );
 
         $destination = $user->can('view-households')
             ? route('api.households.index')
             : route('api.dashboard');
 
         return response()->json([
-            'success' => true,
+            'success' => $successRows > 0,
             'destination' => $destination,
-            'message' => "Đã nhập {$totalRows} dòng nhân khẩu từ file Excel.",
+            'message' => "Đã nhập {$successRows} dòng nhân khẩu; {$errors->errorRowCount()} dòng cần kiểm tra.",
         ]);
     }
 
@@ -443,49 +456,100 @@ class HouseholdImportProcessingService
         return trim((string) $sheet->getCell($coordinate)->getFormattedValue());
     }
 
-    private function recordFailedImport(
+    private function recordImportResult(
         ImportLog $importLog,
         string $filePath,
         string $worksheetName,
+        int $highestDataRow,
         int $totalRows,
+        int $successRows,
         HouseholdImportErrorCollector $errors,
     ): void {
         $errorFilePath = null;
-        try {
-            $spreadsheet = IOFactory::load($filePath);
-            $sheet = $spreadsheet->getSheetByName($worksheetName);
-            if ($sheet === null) {
-                throw new \RuntimeException('Không tìm thấy trang tính dữ liệu để ghi chú lỗi.');
-            }
+        if ($errors->hasErrors()) {
+            $spreadsheet = null;
+            try {
+                $reader = IOFactory::createReaderForFile($filePath);
+                $reader->setReadFilter(
+                    new HouseholdImportErrorReadFilter($errors, $worksheetName),
+                );
+                $spreadsheet = $reader->load($filePath);
+                $sheet = $spreadsheet->getSheetByName($worksheetName);
+                if ($sheet === null) {
+                    throw new \RuntimeException('Không tìm thấy trang tính dữ liệu để ghi chú lỗi.');
+                }
 
-            foreach ($errors->errors() as $error) {
-                $cell = $error['row'] === null ? 'A1' : 'A'.$error['row'];
-                $existingValue = $error['first_for_row'] ? '' : trim((string) $sheet->getCell($cell)->getValue());
-                $message = $existingValue === ''
-                    ? $error['message']
-                    : $existingValue.' | '.$error['message'];
-                $sheet->setCellValue($cell, $message);
-                $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
-                $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
-            }
-            $sheet->getColumnDimension('A')->setWidth(45);
+                $errorRows = [];
+                foreach ($errors->errors() as $error) {
+                    $sourceRow = $error['row'];
+                    $cell = $sourceRow === null ? 'A1' : 'A' . $sourceRow;
+                    $existingValue = $error['first_for_row'] ? '' : trim((string) $sheet->getCell($cell)->getValue());
+                    $message = $existingValue === ''
+                        ? $error['message']
+                        : $existingValue . ' | ' . $error['message'];
+                    $sheet->setCellValue($cell, $message);
+                    $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
+                    $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
+                    if ($sourceRow !== null && $error['first_for_row']) {
+                        $errorRows[] = $sourceRow;
+                    }
+                }
 
-            $writerType = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'xls' ? 'Xls' : 'Xlsx';
-            $errorFilePath = dirname($importLog->file_path).'/error-'.basename($importLog->file_path);
-            IOFactory::createWriter($spreadsheet, $writerType)
-                ->save(Storage::disk('local')->path($errorFilePath));
-            $spreadsheet->disconnectWorksheets();
-        } catch (Throwable $exception) {
-            $errorFilePath = null;
-            Log::error('Không thể tạo file Excel có ghi chú lỗi khi nhập dữ liệu.', [
-                'import_log_id' => $importLog->id,
-                'exception' => $exception,
-            ]);
+                $lastErrorRow = 4;
+                $highestColumn = Coordinate::columnIndexFromString(
+                    $sheet->getHighestDataColumn(),
+                );
+                foreach ($errorRows as $index => $sourceRow) {
+                    $targetRow = 5 + $index;
+                    if ($sourceRow !== $targetRow) {
+                        $rowData = [];
+                        for ($column = 1; $column <= $highestColumn; $column++) {
+                            $source = $sheet->getCell(
+                                Coordinate::stringFromColumnIndex($column).$sourceRow,
+                            );
+                            $rowData[] = [
+                                $source->getValue(),
+                                $source->getDataType(),
+                                clone $source->getStyle(),
+                            ];
+                        }
+                        foreach ($rowData as $columnIndex => [$value, $dataType, $style]) {
+                            $target = $sheet->getCell(
+                                Coordinate::stringFromColumnIndex($columnIndex + 1).$targetRow,
+                            );
+                            $target->setValueExplicit($value, $dataType);
+                            $sheet->duplicateStyle(
+                                $style,
+                                $target->getCoordinate(),
+                            );
+                        }
+                    }
+                    $lastErrorRow = $targetRow;
+                }
+                if ($highestDataRow > $lastErrorRow) {
+                    $sheet->removeRow($lastErrorRow + 1, $highestDataRow - $lastErrorRow);
+                }
+                $sheet->getColumnDimension('A')->setWidth(45);
+
+                $writerType = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'xls' ? 'Xls' : 'Xlsx';
+                $errorFilePath = dirname($importLog->file_path) . '/error-' . basename($importLog->file_path);
+                IOFactory::createWriter($spreadsheet, $writerType)
+                    ->save(Storage::disk('local')->path($errorFilePath));
+            } catch (Throwable $exception) {
+                $errorFilePath = null;
+                Log::error('Không thể tạo file Excel có ghi chú lỗi khi nhập dữ liệu.', [
+                    'import_log_id' => $importLog->id,
+                    'exception' => $exception,
+                ]);
+            } finally {
+                $spreadsheet?->disconnectWorksheets();
+            }
         }
 
         $importLog->update([
-            'status' => 'FAILED',
+            'status' => $successRows === 0 ? 'FAILED' : ($errors->hasErrors() ? 'PARTIAL' : 'SUCCESS'),
             'total_rows' => $totalRows,
+            'success_rows' => $successRows,
             'error_rows' => $errors->errorRowCount(),
             'error_file_path' => $errorFilePath,
         ]);
@@ -500,9 +564,9 @@ class HouseholdImportProcessingService
 
     private function birthDate(Worksheet $sheet, int $row): array
     {
-        $day = $this->cell($sheet, 'E'.$row);
-        $month = $this->cell($sheet, 'F'.$row);
-        $year = $this->cell($sheet, 'G'.$row);
+        $day = $this->cell($sheet, 'E' . $row);
+        $month = $this->cell($sheet, 'F' . $row);
+        $year = $this->cell($sheet, 'G' . $row);
         // trống thì cho null date
         if ($day === '' && $month === '' && $year === '') {
             return ['date' => null, 'raw' => null];

@@ -25,10 +25,10 @@ class HouseholdImportExportController extends Controller
         }
         $provinces = $provinceQuery->get(['code', 'name']);
         $provinceCode = $user->hasRole(Role::SYSTEM_ADMIN) ? null : $user->province_code;
-        $communeCode = in_array($user->roleScopeLevel(), ['commune', 'village'], true)
+        $communeCode = $user->roleScopeLevel() === 'commune'
             ? $user->commune_code
             : null;
-        $managedVillageCodes = $user->roleScopeLevel() === 'village'
+        $managedVillageCodes = $user->roleScopeLevel() === 'commune'
             ? $user->managedVillageCodes()
             : [];
         $villageCode = count($managedVillageCodes) === 1
@@ -45,8 +45,11 @@ class HouseholdImportExportController extends Controller
                 ->first(['code', 'name']);
 
             if ($initialCommune !== null) {
-                $villagesQuery = $initialCommune->villages()->orderBy('name');
-                if ($user->roleScopeLevel() === 'village') {
+                $villagesQuery = $initialCommune->villages()
+                    ->whereNull('merged_into_code')
+                    ->whereNull('intake_paused_at')
+                    ->orderBy('name');
+                if ($managedVillageCodes !== []) {
                     $villagesQuery->whereIn('code', $managedVillageCodes);
                 }
                 $initialVillages = $villagesQuery->get(['code', 'name']);

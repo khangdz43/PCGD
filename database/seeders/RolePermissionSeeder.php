@@ -40,7 +40,15 @@ class RolePermissionSeeder extends Seeder
                 ]
             );
             // Sync tất cả permissions cho SYSTEM_ADMIN
-            $systemAdminRole->permissions()->sync($permissions->pluck('id'));
+            $systemAdminRole->permissions()->sync(
+                $permissions
+                    ->reject(fn (Permission $permission): bool => in_array(
+                        $permission->name,
+                        AccessPermission::mergePermissions(),
+                        true
+                    ))
+                    ->pluck('id')
+            );
 
             $this->command->info('Đã khởi tạo quyền và nhóm quản trị hệ thống.');
         });

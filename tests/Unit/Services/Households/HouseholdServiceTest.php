@@ -39,7 +39,7 @@ class HouseholdServiceTest extends TestCase
         /** @var User&MockInterface $user */
         $user = Mockery::mock($user)->makePartial();
         $user->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
-        $user->shouldReceive('roleScopeLevel')->twice()->andReturn('village');
+        $user->shouldReceive('roleScopeLevel')->twice()->andReturn('commune');
         $user->shouldReceive('managedVillageCodes')->once()->andReturn(['V03']);
 
         self::assertSame([
@@ -57,7 +57,7 @@ class HouseholdServiceTest extends TestCase
         /** @var User&MockInterface $user */
         $user = Mockery::mock($user)->makePartial();
         $user->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
-        $user->shouldReceive('roleScopeLevel')->twice()->andReturn('village');
+        $user->shouldReceive('roleScopeLevel')->twice()->andReturn('commune');
         $user->shouldReceive('managedVillageCodes')->once()->andReturn(['V03', 'V04']);
 
         $filters = (new HouseholdService)->defaultFilters($user);

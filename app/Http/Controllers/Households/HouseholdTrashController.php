@@ -21,6 +21,7 @@ class HouseholdTrashController extends Controller
         /** @var User $user */
         $user = $request->user();
         $filters = $request->validate([
+            'include_filters' => ['nullable', 'boolean'],
             'type' => ['nullable', 'in:all,household,person'],
             'q' => ['nullable', 'string', 'max:100'],
             'deleted_from' => ['nullable', 'date'],
@@ -33,53 +34,55 @@ class HouseholdTrashController extends Controller
         ]);
         $data = $this->trash->paginate($user, $filters);
 
-        $selectedProvinceCode = $filters['province_code']
-            ?? ($user->hasRole(Role::SYSTEM_ADMIN) || $user->roleScopeLevel() === 'global'
-                ? null
-                : $user->province_code);
-        $provinceQuery = Province::query()->orderBy('name');
-        if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->province_code !== null) {
-            $provinceQuery->where('code', $user->province_code);
-        }
-        $provinces = $provinceQuery->get(['code', 'name']);
-        $communeQuery = Commune::query()->orderBy('name');
-        if (filled($selectedProvinceCode)) {
-            $communeQuery->where('province_code', $selectedProvinceCode);
-        }
-        if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
-            $communeQuery->where('province_code', $user->province_code);
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
-                $communeQuery->where('code', $user->commune_code);
+        $response = [...$data, 'filters' => $filters];
+        if ($request->boolean('include_filters')) {
+            $selectedProvinceCode = $filters['province_code']
+                ?? ($user->hasRole(Role::SYSTEM_ADMIN) || $user->roleScopeLevel() === 'global'
+                    ? null
+                    : $user->province_code);
+            $provinceQuery = Province::query()->orderBy('name');
+            if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->province_code !== null) {
+                $provinceQuery->where('code', $user->province_code);
             }
-        }
-        $communes = $communeQuery->get(['code', 'name', 'province_code']);
-        $selectedCommuneCode = $filters['commune_code']
-            ?? (in_array($user->roleScopeLevel(), ['commune', 'village'], true)
-                ? $user->commune_code
-                : null);
-        $selectedCommune = $communes->firstWhere('code', $selectedCommuneCode);
-        $villageQuery = Village::query()->orderBy('name');
-        if ($selectedCommune) {
-            $villageQuery->where('commune_code', $selectedCommune->code);
-        } else {
-            $villageQuery->whereRaw('1 = 0');
-        }
-        if ($user->roleScopeLevel() === 'village') {
-            $villageCodes = $user->managedVillageCodes();
-            $villageQuery->whereIn('code', $villageCodes);
-        }
-        $villages = $villageQuery->get(['code', 'name']);
+            $provinces = $provinceQuery->get(['code', 'name']);
+            $communeQuery = Commune::query()->orderBy('name');
+            if (filled($selectedProvinceCode)) {
+                $communeQuery->where('province_code', $selectedProvinceCode);
+            }
+            if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
+                $communeQuery->where('province_code', $user->province_code);
+                if ($user->roleScopeLevel() === 'commune') {
+                    $communeQuery->where('code', $user->commune_code);
+                }
+            }
+            $communes = $communeQuery->get(['code', 'name', 'province_code']);
+            $selectedCommuneCode = $filters['commune_code']
+                ?? ($user->roleScopeLevel() === 'commune'
+                    ? $user->commune_code
+                    : null);
+            $selectedCommune = $communes->firstWhere('code', $selectedCommuneCode);
+            $villageQuery = Village::query()->orderBy('name');
+            if ($selectedCommune) {
+                $villageQuery->where('commune_code', $selectedCommune->code);
+            } else {
+                $villageQuery->whereRaw('1 = 0');
+            }
+            if ($user->roleScopeLevel() === 'commune' && $user->managedVillageCodes() !== []) {
+                $villageCodes = $user->managedVillageCodes();
+                $villageQuery->whereIn('code', $villageCodes);
+            }
 
-        return response()->json([
-            ...$data,
-            'provinces' => $provinces,
-            'communes' => $communes,
-            'selected_province_code' => $selectedProvinceCode,
-            'selected_commune_code' => $selectedCommune?->code,
-            'initial_commune' => $selectedCommune,
-            'villages' => $villages,
-            'filters' => $filters,
-        ]);
+            $response += [
+                'provinces' => $provinces,
+                'communes' => $communes,
+                'selected_province_code' => $selectedProvinceCode,
+                'selected_commune_code' => $selectedCommune?->code,
+                'initial_commune' => $selectedCommune,
+                'villages' => $villageQuery->get(['code', 'name']),
+            ];
+        }
+
+        return response()->json($response);
     }
 
     public function showHousehold(Request $request, int $id): JsonResponse
@@ -98,6 +101,10 @@ class HouseholdTrashController extends Controller
             'person_ids' => ['nullable', 'array'],
             'person_ids.*' => ['integer', 'distinct'],
         ]);
+        abort_unless(
+            $request->user()->can($data['operation'] === 'restore' ? 'update-trash' : 'delete-trash'),
+            403
+        );
         $householdIds = $data['household_ids'] ?? [];
         $personIds = $data['person_ids'] ?? [];
         if ($householdIds === [] && $personIds === []) {

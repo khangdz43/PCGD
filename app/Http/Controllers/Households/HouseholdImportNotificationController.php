@@ -13,19 +13,23 @@ class HouseholdImportNotificationController extends Controller
     {
         $imports = ImportLog::query()
             ->where('user_id', $request->user()->id)
-            ->whereIn('status', ['SUCCESS', 'FAILED'])
+            ->whereIn('status', ['SUCCESS', 'PARTIAL', 'FAILED'])
             ->whereNull('notification_read_at')
             ->oldest('created_at')
             ->limit(5)
             ->get();
 
         return response()->json([
-            'notifications' => $imports->map(fn (ImportLog $importLog): array => [
+            'notifications' => $imports->map(fn(ImportLog $importLog): array => [
                 'id' => $importLog->id,
                 'status' => $importLog->status,
-                'message' => $importLog->status === 'SUCCESS'
-                    ? "File \"{$importLog->file_name}\" đã nhập thành công: {$importLog->success_rows} dòng."
-                    : "File \"{$importLog->file_name}\" nhập thất bại: {$importLog->success_rows} dòng thành công, {$importLog->error_rows} dòng lỗi.",
+                'message' => match ($importLog->status) {
+                    'SUCCESS' => "File \"{$importLog->file_name}\" đã nhập thành công: {$importLog->success_rows} dòng.",
+                    'PARTIAL' => "File \"{$importLog->file_name}\" đã xử lý xong: {$importLog->success_rows} dòng thành công, {$importLog->error_rows} dòng lỗi.",
+                    default => $importLog->error_rows > 0
+                        ? "File \"{$importLog->file_name}\" không có dòng nào được nhập: {$importLog->error_rows} dòng lỗi."
+                        : "Không thể xử lý file \"{$importLog->file_name}\". Hãy kiểm tra định dạng tệp.",
+                },
                 'action_url' => route('api.households.import-history', [], false),
                 'action_label' => 'Xem',
             ])->values(),
@@ -41,7 +45,7 @@ class HouseholdImportNotificationController extends Controller
 
         ImportLog::query()
             ->where('user_id', $request->user()->id)
-            ->whereIn('status', ['SUCCESS', 'FAILED'])
+            ->whereIn('status', ['SUCCESS', 'PARTIAL', 'FAILED'])
             ->whereNull('notification_read_at')
             ->whereIn('id', $validated['ids'])
             ->update(['notification_read_at' => now()]);

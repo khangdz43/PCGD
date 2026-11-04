@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Support\AccessPermission;
 use App\Support\DelegatedAccess;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -18,9 +19,9 @@ class RoleManagementService
     public function rolesForIndex(User $actor, array $filters = [], int $perPage = 15): LengthAwarePaginator
     {
         $manageableLevels = DelegatedAccess::manageableRoleLevels($actor);
-        // Tính số tài khoản được gán cho từng nhóm.
         $query = Role::withCount([
             'users as users_count' => function ($users) use ($actor): void {
+                $users->where('users.created_by', $actor->id);
                 if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
                     $this->constrainMembersToActorArea($users, $actor);
                 }
@@ -28,19 +29,9 @@ class RoleManagementService
         ])
             ->with('permissions')
             ->where('guard_name', 'web')
-            ->where(function ($builder) use ($actor, $manageableLevels): void {
-                if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-                    $builder->where(function ($centralRoles) use ($manageableLevels): void {
-                        $centralRoles->where(function ($createdByCentral) use ($manageableLevels): void {
-                            $createdByCentral->whereNull('created_by')
-                                ->whereIn('scope_level', $manageableLevels);
-                        })->orWhere('name', Role::SYSTEM_ADMIN);
-                    });
-                } else {
-                    $builder->whereIn('scope_level', $manageableLevels)
-                        ->where('created_by', $actor->id);
-                }
-            });
+            ->where('name', '!=', Role::SYSTEM_ADMIN)
+            ->whereIn('scope_level', $manageableLevels)
+            ->where('created_by', $actor->id);
 
         if (filled($filters['q'] ?? null)) {
             $search = trim((string) $filters['q']);
@@ -60,7 +51,6 @@ class RoleManagementService
                     WHEN 'global' THEN 0
                     WHEN 'province' THEN 1
                     WHEN 'commune' THEN 2
-                    WHEN 'village' THEN 3
                     ELSE 4
                 END"
             )
@@ -71,23 +61,45 @@ class RoleManagementService
 
     public function canManageRole(User $actor, Role $role): bool
     {
-        if ($role->guard_name !== 'web') {
+        if ($role->guard_name !== 'web' || $role->is_system) {
             return false;
         }
 
-        if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
-            return $role->name === Role::SYSTEM_ADMIN
-                || ($role->created_by === null
-                    && in_array($role->scope_level, DelegatedAccess::manageableRoleLevels($actor), true));
+        if ($role->name === Role::SYSTEM_ADMIN) {
+            return $actor->hasRole(Role::SYSTEM_ADMIN);
         }
 
-        return $role->created_by === $actor->id
-            && DelegatedAccess::roleBelongsToActorArea($actor, $role);
+        if (! in_array($role->scope_level, DelegatedAccess::manageableRoleLevels($actor), true)
+            || ! DelegatedAccess::roleBelongsToActorArea($actor, $role)) {
+            return false;
+        }
+
+        return $role->created_by === $actor->id;
+    }
+
+    public function canViewRole(User $actor, Role $role): bool
+    {
+        if ($role->guard_name !== 'web'
+            || ! in_array($role->scope_level, DelegatedAccess::manageableRoleLevels($actor), true)) {
+            return false;
+        }
+
+        if ($role->name === Role::SYSTEM_ADMIN) {
+            return $actor->hasRole(Role::SYSTEM_ADMIN);
+        }
+
+        if (! DelegatedAccess::roleBelongsToActorArea($actor, $role)) {
+            return false;
+        }
+
+        return $role->created_by === $actor->id;
     }
 
     public function membersFor(User $actor, Role $role, int $perPage = 5): LengthAwarePaginator
     {
-        $query = $role->users()->getQuery();
+        $query = $role->users()
+            ->where('users.created_by', $actor->id)
+            ->getQuery();
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
             $this->constrainMembersToActorArea($query, $actor);
         }
@@ -111,7 +123,7 @@ class RoleManagementService
 
         $query->where('users.province_code', $actor->province_code);
 
-        if (in_array($scopeLevel, ['commune', 'village'], true)) {
+        if ($scopeLevel === 'commune') {
             if ($actor->commune_code === null) {
                 $query->whereRaw('1 = 0');
                 return;
@@ -120,17 +132,11 @@ class RoleManagementService
             $query->where('users.commune_code', $actor->commune_code);
         }
 
-        if ($scopeLevel === 'village') {
+        if ($scopeLevel === 'commune' && $actor->managedVillageCodes() !== []) {
             $villageCodes = $actor->managedVillageCodes();
-            if ($villageCodes === []) {
-                $query->whereRaw('1 = 0');
-                return;
-            }
-
             $query->where(function (Builder $users) use ($villageCodes): void {
-                $users->whereIn('users.village_code', $villageCodes)
-                    ->orWhereHas('villages', fn (Builder $villages) => $villages
-                        ->whereIn('villages.code', $villageCodes));
+                $users->whereHas('villages', fn (Builder $villages) => $villages
+                    ->whereIn('villages.code', $villageCodes));
             });
         }
     }
@@ -146,16 +152,23 @@ class RoleManagementService
             ->all();
 
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            if (! $actor->canManageSubordinateUsers()) {
-                $permissionNames = array_values(array_diff($permissionNames, [
-                    AccessPermission::MANAGE_USER_ACCOUNTS,
-                ]));
-            }
-            if (! $actor->can('manage-access-control')) {
-                $permissionNames = array_values(array_diff($permissionNames, [
-                    AccessPermission::MANAGE_ACCESS_CONTROL,
-                ]));
-            }
+            $delegatablePermissions = AccessPermission::withPrerequisites($actor->permissionNames());
+            $delegatedAdminPermissions = [
+                AccessPermission::MANAGE_USER_ACCOUNTS,
+                AccessPermission::VIEW_USERS,
+                AccessPermission::CREATE_USERS,
+                AccessPermission::UPDATE_USERS,
+                AccessPermission::DELETE_USERS,
+                AccessPermission::MANAGE_ACCESS_CONTROL,
+                AccessPermission::VIEW_ROLES,
+                AccessPermission::CREATE_ROLES,
+                AccessPermission::UPDATE_ROLES,
+                AccessPermission::DELETE_ROLES,
+            ];
+            $permissionNames = array_values(array_diff(
+                $permissionNames,
+                array_diff($delegatedAdminPermissions, $delegatablePermissions)
+            ));
         }
 
         return Permission::where('guard_name', 'web')
@@ -171,7 +184,6 @@ class RoleManagementService
             : match ($actor->roleScopeLevel()) {
                 'province' => 'province',
                 'commune' => 'commune',
-                'village' => 'village',
                 default => $scopeLevels[0] ?? 'province',
             };
 
@@ -180,7 +192,7 @@ class RoleManagementService
             : $scopeLevels[0];
     }
 
-    public function create(User $actor, array $data): void
+    public function create(User $actor, array $data): Role
     {
         $permissionIds = $data['permissions'] ?? [];
         $scopeLevel = $data['scope_level'];
@@ -193,19 +205,29 @@ class RoleManagementService
         $permissionIds = $this->permissionIdsForScope($actor, $scopeLevel, $permissionIds);
         $area = DelegatedAccess::roleAreaFor($actor);
 
-        DB::transaction(function () use ($actor, $data, $permissionIds, $area, $scopeLevel): void {
+        $role = DB::transaction(function () use ($actor, $data, $permissionIds, $area, $scopeLevel): Role {
             $role = Role::create([
                 ...$data,
                 'scope_level' => $scopeLevel,
                 ...$area,
-                'created_by' => $actor->hasRole(Role::SYSTEM_ADMIN) ? null : $actor->id,
+                'created_by' => $actor->id,
             ]);
             $role->permissions()->sync($permissionIds);
+
+            return $role;
         });
+
+        return $role->load('permissions');
     }
 
     public function update(User $actor, Role $role, array $data): void
     {
+        if ($role->is_system) {
+            throw new AuthorizationException(
+                'Nhóm người dùng do hệ thống quản lý, không thể chỉnh sửa.'
+            );
+        }
+
         $permissionIds = $data['permissions'] ?? [];
         $scopeLevel = $role->name === Role::SYSTEM_ADMIN
             ? 'global'
@@ -217,7 +239,11 @@ class RoleManagementService
         );
         unset($data['permissions'], $data['permission_groups'], $data['scope_level']);
         $permissionIds = $role->name === Role::SYSTEM_ADMIN
-            ? Permission::where('guard_name', 'web')->whereIn('id', $permissionIds)->pluck('id')->all()
+            ? Permission::where('guard_name', 'web')
+                ->whereIn('id', $permissionIds)
+                ->whereNotIn('name', AccessPermission::mergePermissions())
+                ->pluck('id')
+                ->all()
             : $this->permissionIdsForScope($actor, $scopeLevel, $permissionIds);
         if ($role->name === Role::SYSTEM_ADMIN) {
             $data['name'] = Role::SYSTEM_ADMIN;
@@ -242,6 +268,10 @@ class RoleManagementService
 
     public function delete(Role $role): ?string
     {
+        if ($role->is_system) {
+            return 'Nhóm người dùng do hệ thống quản lý, không thể xóa.';
+        }
+
         if ($role->name === Role::SYSTEM_ADMIN) {
             return 'Không thể xóa nhóm người dùng quản trị hệ thống.';
         }
@@ -296,6 +326,19 @@ class RoleManagementService
     private function permissionIdsForScope(User $actor, string $scopeLevel, array $permissionIds): array
     {
         $permissionNames = Permission::whereIn('id', $permissionIds)->pluck('name')->all();
+        $isCommuneAdministrator = $scopeLevel === 'commune'
+            && in_array(AccessPermission::MANAGE_VILLAGES, $permissionNames, true)
+            && in_array(AccessPermission::MANAGE_USER_ACCOUNTS, $permissionNames, true);
+        if ($isCommuneAdministrator) {
+            $definitions = AccessPermission::definitions();
+            $schoolPermission = Permission::firstOrCreate(
+                ['name' => AccessPermission::MANAGE_SCHOOLS, 'guard_name' => 'web'],
+                ['description' => $definitions[AccessPermission::MANAGE_SCHOOLS]],
+            );
+            $permissionNames[] = AccessPermission::MANAGE_SCHOOLS;
+            $permissionIds[] = $schoolPermission->id;
+        }
+
         $allowedNames = AccessPermission::permissionsForScope($scopeLevel);
         if (
             ! $actor->hasRole(Role::SYSTEM_ADMIN)
@@ -309,7 +352,15 @@ class RoleManagementService
         $missingNames = array_diff($requiredNames, $manageablePermissions->pluck('name')->all());
         $sameLevelPermissions = ! $actor->hasRole(Role::SYSTEM_ADMIN)
             && $scopeLevel === $actor->roleScopeLevel()
-                ? array_intersect($actor->permissionNames(), AccessPermission::permissionsForScope($scopeLevel))
+                ? $actor->roles()
+                    ->where('roles.scope_level', $scopeLevel)
+                    ->with('permissions')
+                    ->get()
+                    ->flatMap(fn (Role $role): \Illuminate\Support\Collection => $role->permissions->pluck('name'))
+                    ->unique()
+                    ->intersect(AccessPermission::permissionsForScope($scopeLevel))
+                    ->values()
+                    ->all()
                 : [];
         $duplicatesAllSameLevelPermissions = $sameLevelPermissions !== []
             && array_diff($sameLevelPermissions, $requiredNames) === [];

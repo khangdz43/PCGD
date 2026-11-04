@@ -1,136 +1,377 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { AxiosError } from 'axios';
 import {
+    computed,
+    defineAsyncComponent,
+    onMounted,
+    onUnmounted,
+    ref,
+    watch,
+} from "vue";
+import { AxiosError } from "axios";
+import Navbar from "./components/Navbar.vue";
+import Sidebar, { type ModuleKey } from "./components/Sidebar.vue";
+import {
+    ACCOUNT_DISABLED_EVENT,
+    HOUSEHOLD_IMPORT_SUBMITTED_EVENT,
+    SESSION_EXPIRED_EVENT,
+    api,
+    apiData,
     errorMessage,
-    getHousehold,
-    getHouseholds,
-    getRoleMembers,
-    getRoles,
     getSession,
     login,
     logout,
-} from './api';
-import Workspace from './Workspace.vue';
-import type { HouseholdDetail, HouseholdSummary, RoleMember, RoleSummary, User } from './types';
+} from "./api";
+import Login from "./views/auth/Login.vue";
+import type { User } from "./types";
+
+const Workspace = defineAsyncComponent(() => import("./Workspace.vue"));
+const Dashboard = defineAsyncComponent(
+    () => import("./views/Dashboard.vue"),
+);
+const ThonXomList = defineAsyncComponent(
+    () => import("./views/category/ThonXomList.vue"),
+);
+const TruongHocList = defineAsyncComponent(
+    () => import("./views/category/TruongHocList.vue"),
+);
+const PhieuDieuTra = defineAsyncComponent(
+    () => import("./views/investigation/PhieuDieuTra.vue"),
+);
+const TrashBin = defineAsyncComponent(
+    () => import("./views/investigation/TrashBin.vue"),
+);
+const GopThon = defineAsyncComponent(
+    () => import("./views/business/GopThon.vue"),
+);
+const GopTruong = defineAsyncComponent(
+    () => import("./views/business/GopTruong.vue"),
+);
+
+type ImportStatus = {
+    status: string;
+    success_rows?: number;
+    error_rows?: number;
+};
+type ImportNotice = {
+    id: number;
+    type: "queued" | "success" | "partial" | "failed";
+    title: string;
+    message: string;
+};
 
 const user = ref<User | null>(null);
-const username = ref('');
-const password = ref('');
-const remember = ref(false);
+const sessionChecked = ref(false);
 const busy = ref(false);
-const error = ref('');
-const activeModule = ref<'' | 'households' | 'schools' | 'villages' | 'roles' | 'users' | 'account' | 'imports' | 'trash' | 'merge'>('');
-const households = ref<HouseholdSummary[]>([]);
-const householdCount = ref(0);
-const loadingHouseholds = ref(false);
-const householdQuery = ref('');
-const schoolYear = ref('all');
-const currentPage = ref(1);
-const lastPage = ref(1);
-const selectedHousehold = ref<HouseholdDetail | null>(null);
-const roles = ref<RoleSummary[]>([]);
-const roleMembers = ref<RoleMember[]>([]);
-const selectedRole = ref<RoleSummary | null>(null);
-const roleMembersPage = ref(1);
-const roleMembersLastPage = ref(1);
-const roleMembersTotal = ref(0);
-const scopeLabels: Record<string, string> = {
-    global: 'Trung ương',
-    province: 'Cấp tỉnh',
-    commune: 'Cấp xã',
-    village: 'Cấp thôn / xóm',
-};
-const permissionLabels: Record<string, string> = {
-    'view-households': 'Xem phiếu điều tra và nhân khẩu',
-    'create-households': 'Tạo phiếu điều tra và nhân khẩu',
-    'update-households': 'Cập nhật phiếu điều tra và nhân khẩu',
-    'delete-households': 'Xóa phiếu điều tra và nhân khẩu',
-    'import-households': 'Nhập dữ liệu phiếu điều tra',
-    'export-households': 'Xuất dữ liệu phiếu điều tra',
-    'manage-villages': 'Quản lý danh mục thôn / xóm',
-    'manage-schools': 'Quản lý danh mục trường học',
-    'manage-access-control': 'Quản lý nhóm người dùng',
-    'manage-user-accounts': 'Quản lý tài khoản',
-    'view-organization-accounts': 'Xem cây đơn vị',
-};
+const error = ref("");
+const activeModule = ref<ModuleKey>("");
+const accountSection = ref<"profile" | "password">("profile");
+const trackedImports = new Map<number, string>();
+const importNotices = ref<ImportNotice[]>([]);
+const importNoticeTimers = new Map<number, number>();
+let importStatusTimer: number | null = null;
+let importStatusRequestActive = false;
+let nextImportNoticeId = 0;
 
-async function loadHouseholds(page = 1): Promise<void> {
-    if (!user.value?.permissions?.includes('view-households')) return;
+const moduleKeys: ModuleKey[] = [
+    "",
+    "households",
+    "schools",
+    "villages",
+    "roles",
+    "users",
+    "account",
+    "import-file",
+    "import-history",
+    "trash",
+    "merge",
+    "school-merge",
+];
 
-    loadingHouseholds.value = true;
+function moduleFromUrl(): ModuleKey {
+    const module = window.location.pathname
+        .replace(/^\/+|\/+$/g, "")
+        .split("/")[0];
+    if (module === "imports") return "import-file";
+    return moduleKeys.includes(module as ModuleKey)
+        ? (module as ModuleKey)
+        : "";
+}
+
+function syncModuleUrl(module: ModuleKey): void {
+    const url = new URL(window.location.href);
+    const path = module === "import-file" ? "imports" : module;
+    url.pathname = path ? `/${path}` : "/";
+    window.history.replaceState({ module }, "", url);
+}
+
+function restoreModuleFromUrl(): void {
+    activeModule.value = moduleFromUrl();
+}
+
+const permissions = computed(() => user.value?.permissions ?? []);
+
+function stopImportStatusPolling(): void {
+    if (importStatusTimer !== null) {
+        window.clearInterval(importStatusTimer);
+        importStatusTimer = null;
+    }
+}
+
+function showImportNotice(
+    type: ImportNotice["type"],
+    title: string,
+    message: string,
+): void {
+    const id = ++nextImportNoticeId;
+    importNotices.value.push({ id, type, title, message });
+    if (importNotices.value.length > 4) {
+        dismissImportNotice(importNotices.value[0].id);
+    }
+
+    importNoticeTimers.set(
+        id,
+        window.setTimeout(
+            () => dismissImportNotice(id),
+            type === "queued" ? 6000 : 10000,
+        ),
+    );
+}
+
+function dismissImportNotice(id: number): void {
+    const timer = importNoticeTimers.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    importNoticeTimers.delete(id);
+    importNotices.value = importNotices.value.filter(
+        (notice) => notice.id !== id,
+    );
+}
+
+function importCompletionMessage(
+    fileName: string,
+    status: ImportStatus,
+): string {
+    const successRows = status.success_rows ?? 0;
+    const errorRows = status.error_rows ?? 0;
+
+    if (status.status === "SUCCESS") {
+        return `File "${fileName}" đã xử lý xong. Nhập thành công ${successRows} dòng.`;
+    }
+    if (status.status === "PARTIAL") {
+        return `File "${fileName}" đã xử lý xong: ${successRows} dòng thành công, ${errorRows} dòng lỗi.`;
+    }
+
+    return errorRows > 0
+        ? `File "${fileName}" đã xử lý xong nhưng không có dòng nào được nhập: ${errorRows} dòng lỗi. Hãy xem file dòng lỗi trong lịch sử nhập.`
+        : `Hệ thống không thể đọc nội dung file "${fileName}". Hãy kiểm tra lại file Excel.`;
+}
+
+async function pollTrackedImports(): Promise<void> {
+    if (importStatusRequestActive || trackedImports.size === 0) return;
+    if (!user.value) {
+        trackedImports.clear();
+        stopImportStatusPolling();
+        return;
+    }
+
+    importStatusRequestActive = true;
     try {
-        const result = await getHouseholds(page, {
-            q: householdQuery.value,
-            school_year: schoolYear.value,
-            province_code: '',
-            commune_code: '',
-            village_code: '',
-        });
-        households.value = result.data;
-        householdCount.value = result.total;
-        currentPage.value = result.current_page;
-        lastPage.value = result.last_page;
+        const response = await api.get<unknown>(
+            "/household-imports/statuses",
+            { params: { ids: [...trackedImports.keys()] } },
+        );
+        const payload = apiData<{ statuses?: unknown }>(response.data);
+        if (
+            typeof payload.statuses !== "object" ||
+            payload.statuses === null ||
+            Array.isArray(payload.statuses)
+        ) {
+            throw new Error("Máy chủ trả về trạng thái file nhập không hợp lệ.");
+        }
+
+        const statuses = payload.statuses as Record<string, unknown>;
+        for (const [id, fileName] of trackedImports) {
+            const value = statuses[String(id)];
+            if (typeof value !== "object" || value === null) continue;
+
+            const status = value as ImportStatus;
+            if (!["SUCCESS", "PARTIAL", "FAILED"].includes(status.status)) {
+                continue;
+            }
+
+            trackedImports.delete(id);
+            const type: ImportNotice["type"] =
+                status.status === "SUCCESS"
+                    ? "success"
+                    : status.status === "PARTIAL"
+                      ? "partial"
+                      : "failed";
+            showImportNotice(
+                type,
+                status.status === "SUCCESS"
+                    ? "Nhập dữ liệu thành công"
+                    : status.status === "PARTIAL"
+                      ? "Đã xử lý xong, cần kiểm tra"
+                      : "Chưa thể nhập dữ liệu",
+                importCompletionMessage(fileName, status),
+            );
+        }
+        if (trackedImports.size === 0) stopImportStatusPolling();
     } catch (cause) {
-        error.value = errorMessage(cause);
+        console.error("Không thể kiểm tra trạng thái file nhập.", cause);
     } finally {
-        loadingHouseholds.value = false;
+        importStatusRequestActive = false;
     }
 }
 
-async function openHousehold(household: HouseholdSummary): Promise<void> {
-    error.value = '';
-    try {
-        selectedHousehold.value = await getHousehold(household.id);
-    } catch (cause) {
-        error.value = errorMessage(cause);
+function handleHouseholdImportSubmitted(event: Event): void {
+    const detail = (event as CustomEvent<unknown>).detail;
+    if (typeof detail !== "object" || detail === null) return;
+
+    const importData = detail as Record<string, unknown>;
+    if (
+        typeof importData.id !== "number" ||
+        typeof importData.fileName !== "string"
+    ) {
+        return;
     }
+
+    trackedImports.set(importData.id, importData.fileName);
+    showImportNotice(
+        "queued",
+        "Đã nhận tệp Excel",
+        `Tệp "${importData.fileName}" đang chờ hệ thống xử lý. Bạn có thể tiếp tục làm việc.`,
+    );
+    if (importStatusTimer === null) {
+        importStatusTimer = window.setInterval(
+            () => void pollTrackedImports(),
+            10000,
+        );
+    }
+    void pollTrackedImports();
 }
 
-async function loadRoles(): Promise<void> {
-    if (!user.value?.permissions?.includes('manage-access-control')) return;
-    try {
-        roles.value = await getRoles();
-    } catch (cause) {
-        error.value = errorMessage(cause);
+const pageTitles: Record<ModuleKey, string> = {
+    "": "Tổng quan",
+    households: "Phiếu điều tra",
+    schools: "Danh mục trường học",
+    villages: "Danh mục thôn / xóm",
+    roles: "Nhóm người dùng",
+    users: "Tài khoản & phân quyền",
+    account: "Thông tin cá nhân",
+    "import-file": "Import file",
+    "import-history": "Lịch sử file",
+    trash: "Tiện ích dữ liệu rác",
+    merge: "Gộp thôn / xóm",
+    "school-merge": "Gộp trường học",
+};
+
+const activeView = computed(() => {
+    switch (activeModule.value) {
+        case "households":
+            return PhieuDieuTra;
+        case "schools":
+            return TruongHocList;
+        case "villages":
+            return ThonXomList;
+        case "trash":
+            return TrashBin;
+        case "merge":
+            return GopThon;
+        case "school-merge":
+            return GopTruong;
+        default:
+            return Workspace;
     }
+});
+
+function handleAccountDisabled(): void {
+    trackedImports.clear();
+    stopImportStatusPolling();
+    user.value = null;
+    activeModule.value = "";
+    error.value =
+        "Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.";
 }
 
-async function openRole(role: RoleSummary, page = 1): Promise<void> {
-    error.value = '';
-    try {
-        const result = await getRoleMembers(role.id, page);
-        selectedRole.value = role;
-        roleMembers.value = result.data;
-        roleMembersPage.value = result.current_page;
-        roleMembersLastPage.value = result.last_page;
-        roleMembersTotal.value = result.total;
-    } catch (cause) {
-        error.value = errorMessage(cause);
-    }
+function handleSessionExpired(): void {
+    if (!user.value) return;
+    trackedImports.clear();
+    stopImportStatusPolling();
+    user.value = null;
+    activeModule.value = "";
+    error.value = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
 }
 
 onMounted(async () => {
+    window.addEventListener(ACCOUNT_DISABLED_EVENT, handleAccountDisabled);
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    window.addEventListener(
+        HOUSEHOLD_IMPORT_SUBMITTED_EVENT,
+        handleHouseholdImportSubmitted,
+    );
     try {
         user.value = await getSession();
-        await loadHouseholds();
-        await loadRoles();
     } catch (cause) {
         if (!(cause instanceof AxiosError) || cause.response?.status !== 401) {
             error.value = errorMessage(cause);
         }
+    } finally {
+        sessionChecked.value = true;
+        restoreModuleFromUrl();
+        syncModuleUrl(activeModule.value);
     }
 });
 
-async function submitLogin(): Promise<void> {
-    busy.value = true;
-    error.value = '';
+watch(activeModule, (module) => syncModuleUrl(module));
+watch(
+    [activeModule, permissions, sessionChecked],
+    ([module, availablePermissions, checked]) => {
+        if (!checked) return;
 
+        const requiredPermission =
+            module === "merge"
+                ? "view-village-merges"
+                : module === "school-merge"
+                  ? "view-school-merges"
+                  : null;
+        if (
+            requiredPermission &&
+            (user.value?.scope_level === "global" ||
+                !availablePermissions.includes(requiredPermission))
+        ) {
+            activeModule.value = "";
+        }
+    },
+);
+window.addEventListener("popstate", restoreModuleFromUrl);
+onUnmounted(() => {
+    stopImportStatusPolling();
+    for (const timer of importNoticeTimers.values())
+        window.clearTimeout(timer);
+    importNoticeTimers.clear();
+    window.removeEventListener("popstate", restoreModuleFromUrl);
+    window.removeEventListener(ACCOUNT_DISABLED_EVENT, handleAccountDisabled);
+    window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    window.removeEventListener(
+        HOUSEHOLD_IMPORT_SUBMITTED_EVENT,
+        handleHouseholdImportSubmitted,
+    );
+});
+
+async function submitLogin(credentials: {
+    username: string;
+    password: string;
+    remember: boolean;
+}): Promise<void> {
+    busy.value = true;
+    error.value = "";
     try {
-        user.value = await login(username.value, password.value, remember.value);
-        password.value = '';
-        await loadHouseholds();
-        await loadRoles();
+        user.value = await login(
+            credentials.username,
+            credentials.password,
+            credentials.remember,
+        );
+        activeModule.value = "";
     } catch (cause) {
         error.value = errorMessage(cause);
     } finally {
@@ -140,260 +381,142 @@ async function submitLogin(): Promise<void> {
 
 async function submitLogout(): Promise<void> {
     busy.value = true;
-    error.value = '';
-
+    error.value = "";
     try {
         await logout();
+        trackedImports.clear();
+        stopImportStatusPolling();
         user.value = null;
-        households.value = [];
-        householdCount.value = 0;
-        selectedHousehold.value = null;
-        roles.value = [];
-        roleMembers.value = [];
-        selectedRole.value = null;
-        activeModule.value = '';
+        activeModule.value = "";
     } catch (cause) {
         error.value = errorMessage(cause);
     } finally {
         busy.value = false;
     }
 }
+
+function openAccount(section: "profile" | "password"): void {
+    accountSection.value = section;
+    activeModule.value = "account";
+}
+
+function updateCurrentUserName(profile: { name: string }): void {
+    if (user.value) user.value.name = profile.name;
+}
 </script>
 
 <template>
-    <main class="page-shell">
-        <section v-if="!user" class="panel login-panel">
-            <div class="brand-mark" aria-hidden="true">PC</div>
-            <p class="eyebrow">PHỔ CẬP GIÁO DỤC - XÓA MÙ CHỮ</p>
-            <h1>Đăng nhập hệ thống</h1>
-            <p class="muted">Sử dụng tài khoản được cấp để tiếp tục.</p>
+    <main
+        v-if="!sessionChecked"
+        class="session-loading"
+        role="status"
+        aria-live="polite"
+    >
+        <span class="session-loading-indicator" aria-hidden="true"></span>
+        <span>Đang kiểm tra phiên đăng nhập…</span>
+    </main>
+    <Login
+        v-else-if="!user"
+        :busy="busy"
+        :error="error"
+        @submit="submitLogin"
+    />
 
-            <div v-if="error" class="notice" role="alert">{{ error }}</div>
-
-            <form class="login-form" @submit.prevent="submitLogin">
-                <label for="username">Tên đăng nhập</label>
-                <input
-                    id="username"
-                    v-model.trim="username"
-                    name="username"
-                    autocomplete="username"
-                    required
-                >
-
-                <label for="password">Mật khẩu</label>
-                <input
-                    id="password"
-                    v-model="password"
-                    name="password"
-                    type="password"
-                    autocomplete="current-password"
-                    required
-                >
-
-                <label class="remember-option">
-                    <input v-model="remember" type="checkbox" name="remember">
-                    <span>Ghi nhớ đăng nhập</span>
-                </label>
-
-                <button class="primary-button" type="submit" :disabled="busy">
-                    {{ busy ? 'Đang đăng nhập…' : 'Đăng nhập' }}
-                </button>
-            </form>
-        </section>
-
-        <section v-else class="panel dashboard-panel">
-            <header class="topbar">
-                <div class="app-brand">
-                    <div class="brand-mark" aria-hidden="true">PC</div>
-                    <div>
-                        <p class="eyebrow">PHỔ CẬP GIÁO DỤC - XÓA MÙ CHỮ</p>
-                        <h1>Hệ thống PCGD - XMC</h1>
-                        <p class="muted">Xin chào, {{ user.name }}</p>
-                    </div>
-                </div>
-                <button class="secondary-button" type="button" :disabled="busy" @click="submitLogout">
-                    Đăng xuất
-                </button>
-            </header>
-
-            <div v-if="error" class="notice" role="alert">{{ error }}</div>
-
-            <nav class="module-nav" aria-label="Chức năng hệ thống">
-                <button type="button" :class="{ selected: !activeModule }" @click="activeModule = ''">Trang chủ</button>
-                <button v-if="user.permissions?.includes('view-households')" type="button" :class="{ selected: activeModule === 'households' }" @click="activeModule = 'households'">Phiếu điều tra</button>
-                <button v-if="user.permissions?.includes('manage-schools')" type="button" :class="{ selected: activeModule === 'schools' }" @click="activeModule = 'schools'">Trường học</button>
-                <button v-if="user.permissions?.includes('manage-villages')" type="button" :class="{ selected: activeModule === 'villages' }" @click="activeModule = 'villages'">Thôn / xóm</button>
-                <button v-if="user.permissions?.includes('manage-access-control')" type="button" :class="{ selected: activeModule === 'roles' }" @click="activeModule = 'roles'">Nhóm quyền</button>
-                <button v-if="user.permissions?.includes('manage-user-accounts')" type="button" :class="{ selected: activeModule === 'users' }" @click="activeModule = 'users'">Tài khoản</button>
-                <button v-if="user.permissions?.includes('import-households')" type="button" :class="{ selected: activeModule === 'imports' }" @click="activeModule = 'imports'">Nhập / xuất Excel</button>
-                <button v-if="user.permissions?.includes('delete-households')" type="button" :class="{ selected: activeModule === 'trash' }" @click="activeModule = 'trash'">Thùng rác</button>
-                <button type="button" :class="{ selected: activeModule === 'account' }" @click="activeModule = 'account'">Tài khoản của tôi</button>
-                <button v-if="user.scope_level === 'commune' && user.permissions?.includes('manage-villages')" type="button" :class="{ selected: activeModule === 'merge' }" @click="activeModule = 'merge'">Gộp thôn</button>
-            </nav>
-
-            <Workspace
-                v-if="activeModule"
-                :module-key="activeModule"
-                :permissions="user.permissions ?? []"
-                @close="activeModule = ''"
+    <main v-else class="app-layout">
+        <Sidebar
+            :active-module="activeModule"
+            :permissions="permissions"
+            :scope-level="user?.scope_level ?? null"
+            @select="activeModule = $event"
+        />
+        <div class="app-main">
+            <Navbar
+                :user="user"
+                :title="pageTitles[activeModule]"
+                :busy="busy"
+                @account="openAccount('profile')"
+                @change-password="openAccount('password')"
+                @logout="submitLogout"
             />
-
-            <div v-else>
-            <div class="account-card">
-                <span class="account-avatar">{{ user.name.slice(0, 1).toLocaleUpperCase('vi') }}</span>
-                <div>
-                    <strong>{{ user.username }}</strong>
-                    <p class="muted">Phạm vi tài khoản: {{ scopeLabels[user.scope_level ?? ''] ?? 'Chưa xác định' }}</p>
-                </div>
-            </div>
-
-            <h2>Quyền được cấp</h2>
-            <ul v-if="user.permissions?.length" class="permission-list">
-                <li v-for="permission in user.permissions" :key="permission">{{ permissionLabels[permission] ?? permission }}</li>
-            </ul>
-            <p v-else class="muted">API phiên làm việc chưa trả về danh sách quyền.</p>
-
-            <section v-if="user.permissions?.includes('view-households')" class="household-section">
-                <div class="section-heading">
-                    <div>
-                        <h2>Phiếu điều tra</h2>
-                        <p class="muted">{{ householdCount }} hộ trong phạm vi được phép truy cập</p>
-                    </div>
-                    <span v-if="loadingHouseholds" class="muted">Đang tải…</span>
-                </div>
-                <form class="household-filters" @submit.prevent="loadHouseholds(1)">
-                    <input
-                        v-model.trim="householdQuery"
-                        type="search"
-                        aria-label="Tìm theo mã phiếu hoặc chủ hộ"
-                        placeholder="Mã phiếu / Chủ hộ"
+            <div class="app-content">
+                <p v-if="error" class="notice app-global-notice" role="alert">
+                    {{ error }}
+                </p>
+                <div
+                    class="import-toast-stack"
+                    aria-live="polite"
+                    aria-relevant="additions"
+                >
+                    <section
+                        v-for="notice in importNotices"
+                        :key="notice.id"
+                        class="import-toast"
+                        :class="`import-toast-${notice.type}`"
+                        role="status"
                     >
-                    <select v-model="schoolYear" aria-label="Lọc theo năm học">
-                        <option value="all">Tất cả năm học</option>
-                        <option :value="new Date().getMonth() >= 7 ? `${new Date().getFullYear()}-${new Date().getFullYear() + 1}` : `${new Date().getFullYear() - 1}-${new Date().getFullYear()}`">
-                            Năm học hiện tại
-                        </option>
-                    </select>
-                    <button class="secondary-button" type="submit" :disabled="loadingHouseholds">Lọc</button>
-                    <button
-                        class="secondary-button"
-                        type="button"
-                        :disabled="loadingHouseholds || currentPage <= 1"
-                        @click="loadHouseholds(currentPage - 1)"
-                    >
-                        Trang trước
-                    </button>
-                    <span class="muted">Trang {{ currentPage }} / {{ lastPage }}</span>
-                    <button
-                        class="secondary-button"
-                        type="button"
-                        :disabled="loadingHouseholds || currentPage >= lastPage"
-                        @click="loadHouseholds(currentPage + 1)"
-                    >
-                        Trang sau
-                    </button>
-                </form>
-                <div v-if="households.length" class="household-list">
-                    <button
-                        v-for="household in households"
-                        :key="household.id"
-                        class="household-item"
-                        type="button"
-                        @click="openHousehold(household)"
-                    >
-                        <div>
-                            <strong>{{ household.head_name || 'Chưa có thông tin chủ hộ' }}</strong>
-                            <p class="muted">
-                                Phiếu {{ household.household_code }} · {{ household.school_year }}
-                            </p>
+                        <span class="import-toast-icon" aria-hidden="true">
+                            {{ notice.type === "success" ? "✓" : notice.type === "failed" ? "!" : notice.type === "partial" ? "•" : "↻" }}
+                        </span>
+                        <div class="import-toast-content">
+                            <strong>{{ notice.title }}</strong>
+                            <p>{{ notice.message }}</p>
+                            <button
+                                v-if="notice.type !== 'queued'"
+                                class="import-toast-history"
+                                type="button"
+                                @click="
+                                    activeModule = 'import-history';
+                                    dismissImportNotice(notice.id);
+                                "
+                            >
+                                Xem lịch sử nhập
+                            </button>
                         </div>
-                        <span class="member-count">{{ household.members_count }} nhân khẩu</span>
-                    </button>
-                </div>
-                <p v-else-if="!loadingHouseholds" class="empty-state">Chưa có phiếu điều tra trong phạm vi này.</p>
-
-                <section v-if="selectedHousehold" class="household-detail">
-                    <button class="close-detail" type="button" @click="selectedHousehold = null">Đóng</button>
-                    <h2>Phiếu {{ selectedHousehold.household_code }} · {{ selectedHousehold.school_year }}</h2>
-                    <p class="muted">
-                        {{ [selectedHousehold.village?.name, selectedHousehold.commune?.name, selectedHousehold.province?.name].filter(Boolean).join(', ') || 'Chưa khai báo địa bàn' }}
-                    </p>
-                    <p>{{ selectedHousehold.address || 'Chưa có địa chỉ' }}</p>
-                    <h3>Nhân khẩu ({{ selectedHousehold.persons.length }})</h3>
-                    <ul class="detail-person-list">
-                        <li v-for="person in selectedHousehold.persons" :key="person.id">
-                            <span>{{ person.name }}</span>
-                            <span class="muted">{{ person.relationship_with_head || '—' }} · {{ person.dob || 'Chưa có ngày sinh' }}</span>
-                        </li>
-                    </ul>
-                </section>
-
-                <section v-if="user.permissions?.includes('manage-access-control')" class="household-section">
-                    <div class="section-heading">
-                        <div>
-                            <h2>Nhóm người dùng</h2>
-                            <p class="muted">Chọn nhóm để xem tài khoản thành viên trong phạm vi quản lý.</p>
-                        </div>
-                    </div>
-                    <div v-if="roles.length" class="role-list">
                         <button
-                            v-for="role in roles"
-                            :key="role.id"
                             type="button"
-                            class="role-item"
-                            :class="{ 'is-selected': selectedRole?.id === role.id }"
-                            @click="openRole(role)"
+                            aria-label="Đóng thông báo"
+                            @click="dismissImportNotice(notice.id)"
                         >
-                            <span>
-                                <strong>{{ role.name }}</strong>
-                                <small>{{ role.description || role.scope_level }}</small>
-                            </span>
-                            <span class="member-count">{{ role.users_count }} tài khoản</span>
+                            ×
                         </button>
-                    </div>
-                    <p v-else class="empty-state">Không có nhóm người dùng trong phạm vi quản lý.</p>
-
-                    <section v-if="selectedRole" class="household-detail">
-                        <div class="section-heading">
-                            <div>
-                                <h2>Thành viên: {{ selectedRole.name }}</h2>
-                                <p class="muted">{{ roleMembersTotal }} tài khoản</p>
-                            </div>
-                            <div class="pagination-actions">
-                                <button
-                                    class="secondary-button"
-                                    type="button"
-                                    :disabled="roleMembersPage <= 1"
-                                    @click="openRole(selectedRole, roleMembersPage - 1)"
-                                >Trước</button>
-                                <span class="muted">{{ roleMembersPage }} / {{ roleMembersLastPage }}</span>
-                                <button
-                                    class="secondary-button"
-                                    type="button"
-                                    :disabled="roleMembersPage >= roleMembersLastPage"
-                                    @click="openRole(selectedRole, roleMembersPage + 1)"
-                                >Sau</button>
-                            </div>
-                        </div>
-                        <div v-if="roleMembers.length" class="role-member-list">
-                            <article v-for="member in roleMembers" :key="member.id" class="role-member">
-                                <div>
-                                    <strong>{{ member.name }}</strong>
-                                    <p class="muted">{{ member.username || 'Chưa có tên đăng nhập' }} · {{ member.scope_level || 'Chưa xác định' }}</p>
-                                    <p class="muted">
-                                        {{ [member.province, member.commune, ...member.villages].filter(Boolean).join(' · ') || 'Chưa gán địa bàn' }}
-                                    </p>
-                                </div>
-                                <span class="status-pill" :class="{ inactive: !member.is_active }">
-                                    {{ member.is_active ? 'Đang hoạt động' : 'Đã vô hiệu hóa' }}
-                                </span>
-                            </article>
-                        </div>
-                        <p v-else class="empty-state">Nhóm này chưa có thành viên.</p>
                     </section>
-                </section>
-            </section>
+                </div>
+                <Dashboard
+                    v-if="activeModule === ''"
+                    :user="user"
+                    @navigate="activeModule = $event"
+                />
+                <PhieuDieuTra
+                    v-else-if="activeModule === 'households'"
+                    :user="user"
+                    :permissions="permissions"
+                    @navigate="activeModule = $event"
+                    @close="activeModule = ''"
+                />
+                <component
+                    :is="activeView"
+                    v-else
+                    :module-key="
+                        activeModule === 'import-file' ||
+                        activeModule === 'import-history'
+                            ? 'imports'
+                            : activeModule
+                    "
+                    :permissions="permissions"
+                    :scope-level="user?.scope_level ?? null"
+                    :import-view="
+                        activeModule === 'import-history' ? 'history' : 'upload'
+                    "
+                    :account-section="accountSection"
+                    @navigate="activeModule = $event"
+                    @profile-updated="updateCurrentUserName"
+                    @close="activeModule = ''"
+                />
             </div>
-        </section>
+            <footer class="app-footer">
+                <span>PCGD - XMC</span>
+                <span>Hệ thống quản lý phổ cập giáo dục và xóa mù chữ</span>
+            </footer>
+        </div>
     </main>
 </template>

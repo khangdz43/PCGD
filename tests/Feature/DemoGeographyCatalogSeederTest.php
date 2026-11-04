@@ -33,10 +33,13 @@ class DemoGeographyCatalogSeederTest extends TestCase
             $table->id();
             $table->string('code')->unique();
             $table->string('name');
+            $table->string('type')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->string('level')->nullable();
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
 
         DB::table('provinces')->insert([
@@ -84,5 +87,9 @@ class DemoGeographyCatalogSeederTest extends TestCase
                 ->count(),
         );
         $this->assertSame(0, DB::table('schools')->where('code', 'not like', 'MPL-SCH-%')->count());
+        $this->assertSame(
+            DB::table('schools')->count(),
+            DB::table('schools')->where('type', 'single_level')->count(),
+        );
     }
 }

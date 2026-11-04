@@ -475,11 +475,9 @@ const moduleInfo: Record<
         columns: [
             "name",
             "username",
-            "date_of_birth",
             "email",
             "phone",
             "role_name",
-            "scope_level",
         ],
         fields: [
             "name",
@@ -8223,7 +8221,11 @@ onMounted(() => void load());
                                     column === 'is_active',
                             }"
                         >
-                            {{ fieldLabel(column) }}
+                            {{
+                                moduleKey === "users" && column === "name"
+                                    ? "Tên / Cấp quản lý"
+                                    : fieldLabel(column)
+                            }}
                         </th>
                         <th v-if="moduleKey === 'roles'">Quyền hạn</th>
                         <th v-if="moduleKey === 'users'">Trạng thái</th>
@@ -8375,6 +8377,37 @@ onMounted(() => void load());
                                     <path d="m7 7 6 6m0-6-6 6" />
                                 </svg>
                             </span>
+                            <div
+                                v-else-if="
+                                    moduleKey === 'users' && column === 'name'
+                                "
+                                class="account-name-cell"
+                            >
+                                <span class="account-name">{{ pathValue(row, column) }}</span>
+                                <small v-if="row.scope_level">
+                                    {{
+                                        scopeLabels[String(row.scope_level)] ||
+                                        row.scope_level
+                                    }}
+                                </small>
+                            </div>
+                            <div
+                                v-else-if="
+                                    moduleKey === 'users' &&
+                                    column === 'role_name'
+                                "
+                                class="account-role-cell"
+                            >
+                                <span>{{ pathValue(row, column) }}</span>
+                                <small
+                                    v-if="
+                                        row.scope_level === 'province' &&
+                                        row.province_name
+                                    "
+                                >
+                                    {{ row.province_name }}
+                                </small>
+                            </div>
                             <template v-else>
                                 {{ pathValue(row, column) }}
                             </template>

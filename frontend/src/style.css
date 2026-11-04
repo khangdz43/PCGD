@@ -5269,6 +5269,35 @@ h2 {
     font-weight: 400;
 }
 
+.account-management-table .account-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.account-management-table .account-name {
+    color: #263b59;
+    font-weight: 700;
+}
+
+.account-management-table .account-name-cell small {
+    color: #667085;
+    font-size: .72rem;
+    line-height: 1.2;
+}
+
+.account-management-table .account-role-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.account-management-table .account-role-cell small {
+    color: #667085;
+    font-size: .72rem;
+    line-height: 1.2;
+}
+
 .account-management-table .table-actions {
     min-width: 180px;
     text-align: center;

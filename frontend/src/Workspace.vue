@@ -5483,11 +5483,6 @@ onMounted(() => void load());
                 v-if="moduleKey === 'users'"
                 class="user-management-toolbar-bottom"
             >
-                <div class="user-management-toolbar-summary">
-                    <span class="record-count"
-                        >{{ rows.length }} / {{ totalRecords }} bản ghi</span
-                    >
-                </div>
                 <button
                     v-if="canCreate"
                     class="primary-button management-tool-button"
@@ -8710,19 +8705,24 @@ onMounted(() => void load());
             }}
         </p>
         <div v-if="moduleKey === 'users'" class="user-pagination-footer">
-            <label class="page-size-control">
-                <span>Mỗi trang</span>
-                <select
-                    v-model.number="userPageSize"
-                    :disabled="busy"
-                    @change="changeUserPageSize"
+            <div class="user-pagination-footer-info">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-model.number="userPageSize"
+                        :disabled="busy"
+                        @change="changeUserPageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                        <option :value="100">100</option>
+                    </select>
+                </label>
+                <span class="record-count"
+                    >{{ rows.length }} / {{ totalRecords }} bản ghi</span
                 >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                    <option :value="100">100</option>
-                </select>
-            </label>
+            </div>
             <div
                 class="pagination-actions compact-pagination"
                 aria-label="Phân trang danh sách"

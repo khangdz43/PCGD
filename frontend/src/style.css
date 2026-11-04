@@ -4187,6 +4187,12 @@ h2 {
     background: #fff;
 }
 
+.user-pagination-footer-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
 .user-pagination-footer .page-size-control {
     display: flex;
     align-items: center;

@@ -17,11 +17,20 @@ class SchoolMergeController extends Controller
     {
         abort_unless(
             $request->user()->hasRole(Role::SYSTEM_ADMIN)
-                || in_array($request->user()->roleScopeLevel(), ['province', 'commune'], true),
+                || in_array($request->user()->roleScopeLevel(), ['global', 'province', 'commune'], true),
             403
         );
 
-        return response()->json(['data' => $this->schoolMerges->availableForMerge($request->user())]);
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'target_code' => ['nullable', 'string', 'max:50'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+
+        return response()->json([
+            'data' => $this->schoolMerges->availableForMerge($request->user(), $filters),
+        ]);
     }
 
     public function store(StoreSchoolMergeRequest $request): JsonResponse

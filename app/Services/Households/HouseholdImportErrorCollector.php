@@ -43,7 +43,7 @@ final class HouseholdImportErrorCollector
 
     public function add(?int $row, string $message): void
     {
-        $encoded = json_encode(['row' => $row, 'message' => $message], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR).PHP_EOL;
+        $encoded = json_encode(['row' => $row, 'message' => $message], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . PHP_EOL;
         $offset = 0;
         while ($offset < strlen($encoded)) {
             $written = fwrite($this->stream, substr($encoded, $offset));
@@ -74,6 +74,16 @@ final class HouseholdImportErrorCollector
     public function hasErrors(): bool
     {
         return $this->errorCount > 0;
+    }
+
+    public function hasErrorsForRow(int $row): bool
+    {
+        $byteIndex = intdiv($row, 8);
+        if ($byteIndex >= strlen($this->rowBitmap)) {
+            return false;
+        }
+
+        return (ord($this->rowBitmap[$byteIndex]) & (1 << ($row % 8))) !== 0;
     }
 
     public function errorCount(): int

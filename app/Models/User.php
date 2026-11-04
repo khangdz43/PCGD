@@ -18,6 +18,10 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'username',
+        'phone',
+        'citizen_id',
+        'date_of_birth',
+        'email',
         'password',
     ];
 
@@ -31,6 +35,7 @@ class User extends Authenticatable
     {
         return [
             'is_active' => 'boolean',
+            'date_of_birth' => 'date',
             'password' => 'hashed',
         ];
     }
@@ -69,6 +74,18 @@ class User extends Authenticatable
     // lấy thôn ng được phân công
     public function managedVillageCodes(): array
     {
+        if (
+            $this->hasPermissionTo(AccessPermission::MANAGE_VILLAGES)
+            || ! collect(AccessPermission::villageScopedPermissions())
+                ->contains(fn (string $permission): bool => $this->hasPermissionTo($permission))
+        ) {
+            return [];
+        }
+
+        if ($this->relationLoaded('villages')) {
+            return $this->villages->pluck('code')->all();
+        }
+
         return $this->villages()->pluck('villages.code')->all();
     }
 
@@ -87,26 +104,31 @@ class User extends Authenticatable
     {
         // role scope level là global , province , .... quyền về phạm vi
         $scopeLevel = $this->roleScopeLevel();
+        if (
+            $scopeLevel === 'global'
+            && in_array($name, AccessPermission::mergePermissions(), true)
+        ) {
+            return false;
+        }
+
         // bắt buộc phải đúng scope theo các từ
         if (
             ! $this->hasRole(Role::SYSTEM_ADMIN)
             && (
-                ! in_array($scopeLevel, ['global', 'province', 'commune', 'village'], true)
+                ! in_array($scopeLevel, ['global', 'province', 'commune'], true)
                 || ! $this->permissionIsAllowedAtScope($name, $scopeLevel)
             )
         ) {
             return false;
         }
-        // tỉnh hoặc trung ương mới được quản lí trường học
         if (
             $name === AccessPermission::MANAGE_SCHOOLS
             && ! $this->hasRole(Role::SYSTEM_ADMIN)
-            && ! in_array($scopeLevel, ['global', 'province'], true)
+            && ! in_array($scopeLevel, ['global', 'province', 'commune'], true)
         ) {
             return false;
         }
-        // pass case admin và tỉnh tức là admin trung ương và tỉnh có chức nangwqli thôn xóm trg học và xem hộ
-        // quyền theo chức năng quản lí thôn xóm trường học
+        // Kiểm tra tiếp quyền quản lý danh mục theo quyền và địa bàn được ủy quyền.
         if ($name === AccessPermission::MANAGE_VILLAGES || $name === AccessPermission::MANAGE_SCHOOLS) {
             return $this->hasPermissionWithinDelegation($name, []);
         }
@@ -123,16 +145,17 @@ class User extends Authenticatable
     // lấy danh sách các role hợp lệ
     public function permissionNames(): array
     {
-        $rolePermissions = $this->roles()
-            ->where('roles.guard_name', config('auth.permission_guard', 'web'))
-            ->with(['permissions', 'creator'])
-            ->get()
+        $this->loadMissing(['roles.permissions', 'roles.creator']);
+        $rolePermissions = $this->roles
+            ->where('guard_name', config('auth.permission_guard', 'web'))
             ->flatMap(fn (Role $role) => $role->permissions
                 ->filter(fn ($permission) => $this->hasPermissionTo($permission->name))
                 ->pluck('name'))
             ->all();
 
-        return AccessPermission::withPrerequisites(array_values(array_unique($rolePermissions)));
+        return AccessPermission::withPrerequisites(
+            AccessPermission::expandLegacyPermissions(array_values(array_unique($rolePermissions)))
+        );
     }
 
     // trả về scope của user
@@ -141,7 +164,7 @@ class User extends Authenticatable
         if ($this->hasRole(Role::SYSTEM_ADMIN)) {
             return 'global';
         }
-        if (in_array($this->scope_level, ['global', 'province', 'commune', 'village'], true)) {
+        if (in_array($this->scope_level, ['global', 'province', 'commune'], true)) {
             return $this->scope_level;
         }
         // lấy ra list scope_level của user này
@@ -153,12 +176,11 @@ class User extends Authenticatable
             ->values();
         // nếu count != 1 trả về null , 1 user chỉ có 1 level thôi
         if ($levels->count() !== 1) {
-            return $levels->isEmpty() && in_array($this->scope_level, ['global', 'province', 'commune', 'village'], true)
+            return $levels->isEmpty() && in_array($this->scope_level, ['global', 'province', 'commune'], true)
                 ? $this->scope_level
                 : null;
         }
 
-        // return $levels->first() === 'school' ? 'village' : $levels->first();
         return $levels->first();
     }
 
@@ -166,6 +188,11 @@ class User extends Authenticatable
     public function canManageSubordinateUsers(): bool
     {
         return $this->hasPermissionTo(AccessPermission::MANAGE_USER_ACCOUNTS);
+    }
+
+    public function canManageAccountGroups(): bool
+    {
+        return $this->hasPermissionTo(AccessPermission::MANAGE_ACCESS_CONTROL);
     }
 
     // kiểm tra quyền qua chuỗi ủy quyền có chính xác k
@@ -177,7 +204,7 @@ class User extends Authenticatable
 
         $scopeLevel = $this->roleScopeLevel();
         if (
-            ! in_array($scopeLevel, ['global', 'province', 'commune', 'village'], true)
+            ! in_array($scopeLevel, ['global', 'province', 'commune'], true)
             || ! $this->permissionIsAllowedAtScope($name, $scopeLevel)
         ) {
             return false;
@@ -188,21 +215,23 @@ class User extends Authenticatable
         }
         $visited[] = $this->id;
 
-        $roles = $this->roles()
-            ->where('roles.guard_name', config('auth.permission_guard', 'web'))
-            ->where('roles.scope_level', $scopeLevel)
-            ->whereHas('permissions', function ($query) use ($name): void {
-                $query->where('permissions.name', $name)
-                    ->where('permissions.guard_name', config('auth.permission_guard', 'web'));
-            })
-            ->with('creator')
-            ->get();
+        $this->loadMissing(['roles.permissions', 'roles.creator']);
+        $rolePermissions = AccessPermission::permissionSources($name);
+        $roles = $this->roles
+            ->where('guard_name', config('auth.permission_guard', 'web'))
+            ->where('scope_level', $scopeLevel)
+            ->filter(fn (Role $role): bool => $role->permissions->contains(
+                fn ($permission): bool => in_array($permission->name, $rolePermissions, true)
+                    && $permission->guard_name === config('auth.permission_guard', 'web')
+            ));
 
         foreach ($roles as $role) {
             $creatorAllowed = $role->creator === null
                 || $role->creator->canDelegateRolePermission($name, $role, $visited);
             $assignerId = $role->pivot->assigned_by;
-            $assigner = $assignerId === null ? null : static::find($assignerId);
+            $assigner = $assignerId === null
+                ? null
+                : ($role->creator?->id === $assignerId ? $role->creator : static::find($assignerId));
             $assignerAllowed = $assignerId === null
                 || ($assigner !== null && $assigner->canDelegateRolePermission($name, $role, $visited));
 

@@ -38,4 +38,36 @@ class VillageMergeController extends Controller
             ),
         ]);
     }
+
+    public function pause(Request $request)
+    {
+        $data = $request->validate([
+            'source_codes' => ['required', 'array', 'min:1'],
+            'source_codes.*' => ['required', 'string', 'max:20', 'distinct'],
+        ]);
+        $pausedCount = $this->villages->pauseIntake(
+            $request->user(),
+            $data['source_codes'],
+        );
+
+        return response()->json([
+            'message' => "Đã tạm dừng nhận phiếu tại {$pausedCount} thôn nguồn.",
+        ]);
+    }
+
+    public function resume(Request $request)
+    {
+        $data = $request->validate([
+            'source_codes' => ['required', 'array', 'min:1'],
+            'source_codes.*' => ['required', 'string', 'max:20', 'distinct'],
+        ]);
+        $resumedCount = $this->villages->resumeIntake(
+            $request->user(),
+            $data['source_codes'],
+        );
+
+        return response()->json([
+            'message' => "Đã mở lại nhận phiếu tại {$resumedCount} thôn.",
+        ]);
+    }
 }

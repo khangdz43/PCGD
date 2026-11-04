@@ -7,13 +7,8 @@ use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
-    public function test_guests_are_redirected_to_the_login_page(): void
+    public function test_guest_cannot_access_the_api_session(): void
     {
-        $response = $this->get('/');
-
-        $response->assertRedirectToRoute('login');
+        $this->getJson('/api/v1/session')->assertUnauthorized();
     }
 }

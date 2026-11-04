@@ -6,6 +6,7 @@ use App\Models\Household;
 use App\Models\Province;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -13,6 +14,8 @@ use Illuminate\Support\Facades\DB;
 
 class HouseholdService
 {
+    public function __construct(private readonly ?VillageService $villages = null) {}
+
     public function defaultFilters(User $user): array
     {
         $filters = ['school_year' => $this->currentSchoolYear()];
@@ -22,11 +25,11 @@ class HouseholdService
                 $filters['province_code'] = $user->province_code;
             }
 
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true) && $user->commune_code !== null) {
+            if ($user->roleScopeLevel() === 'commune' && $user->commune_code !== null) {
                 $filters['commune_code'] = $user->commune_code;
             }
 
-            $managedVillageCodes = $user->roleScopeLevel() === 'village'
+            $managedVillageCodes = $user->roleScopeLevel() === 'commune'
                 ? $user->managedVillageCodes()
                 : [];
             if (count($managedVillageCodes) === 1) {
@@ -105,7 +108,7 @@ class HouseholdService
     {
         $household->load('province', 'commune', 'village');
         $persons = $household->persons()
-            ->with('ethnicity')
+            ->withDetails()
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->get();
@@ -121,7 +124,7 @@ class HouseholdService
 
     public function villagePlaceholder(User $user): string
     {
-        $managedVillageCodes = $user->roleScopeLevel() === 'village'
+        $managedVillageCodes = $user->roleScopeLevel() === 'commune'
             ? $user->managedVillageCodes()
             : [];
 
@@ -137,7 +140,7 @@ class HouseholdService
             $household->province_code = $user->province_code;
             $household->commune_code = $user->commune_code;
             $villageCodes = $user->managedVillageCodes();
-            if ($user->roleScopeLevel() === 'village' && count($villageCodes) === 1) {
+            if ($user->roleScopeLevel() === 'commune' && count($villageCodes) === 1) {
                 $household->village_code = $villageCodes[0];
             }
         }
@@ -152,7 +155,13 @@ class HouseholdService
         DataAccessScope::assertHouseholdLocation($user, $data);
         $data['household_code'] = $this->nextHouseholdCode($data['school_year']);
 
-        return Household::create($data);
+        return DB::transaction(function () use ($data): Household {
+            if (filled($data['village_code'] ?? null)) {
+                $this->villageService()->assertAcceptsHouseholds($data['village_code'], true);
+            }
+
+            return Household::create($data);
+        });
     }
 
     public function update(Household $household, User $user, array $data): void
@@ -161,6 +170,7 @@ class HouseholdService
         $data['school_year'] = $household->school_year;
 
         DB::transaction(function () use ($household, $data): void {
+            $this->lockOpenVillages([$household->village_code, $data['village_code'] ?? null]);
             $household->update($data);
             $household->persons()->where('relationship_with_head', 'Chủ hộ')->update([
                 'first_name' => $data['head_first_name'],
@@ -171,9 +181,12 @@ class HouseholdService
 
     public function delete(Household $household, User $user): void
     {
-        $household->deleted_by = $user->id;
-        $household->save();
-        $household->delete();
+        DB::transaction(function () use ($household, $user): void {
+            $this->lockOpenVillages([$household->village_code]);
+            $household->deleted_by = $user->id;
+            $household->save();
+            $household->delete();
+        });
     }
 
     public function deleteMany(User $user, array $ids): int
@@ -184,12 +197,31 @@ class HouseholdService
         abort_unless($accessibleHouseholds->count() === count($ids), 404);
 
         return DB::transaction(function () use ($accessibleHouseholds, $user): int {
+            $this->lockOpenVillages($accessibleHouseholds->pluck('village_code')->all());
             foreach ($accessibleHouseholds as $household) {
                 $this->delete($household, $user);
             }
 
             return $accessibleHouseholds->count();
         });
+    }
+
+    private function lockOpenVillages(array $villageCodes): void
+    {
+        $villageCodes = array_values(array_unique(array_filter(
+            $villageCodes,
+            fn ($villageCode): bool => $villageCode !== null && $villageCode !== ''
+        )));
+        sort($villageCodes);
+
+        foreach ($villageCodes as $villageCode) {
+            $this->villageService()->assertAcceptsHouseholds($villageCode, true);
+        }
+    }
+
+    private function villageService(): VillageService
+    {
+        return $this->villages ?? app(VillageService::class);
     }
 
     public function nextHouseholdCode(?string $schoolYear = null): string

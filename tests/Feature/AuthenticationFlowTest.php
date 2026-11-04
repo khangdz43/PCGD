@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -19,6 +21,10 @@ class AuthenticationFlowTest extends TestCase
             $table->id();
             $table->string('name');
             $table->string('username')->unique();
+            $table->string('citizen_id', 12)->nullable();
+            $table->date('date_of_birth')->nullable();
+            $table->string('email')->nullable()->unique();
+            $table->string('phone', 20)->nullable();
             $table->string('password');
             $table->boolean('is_active')->default(true);
             $table->string('province_code')->nullable();
@@ -74,7 +80,14 @@ class AuthenticationFlowTest extends TestCase
             'username' => 'api-user',
             'password' => Hash::make('Correct-password-1'),
             'is_active' => true,
+            'scope_level' => 'global',
         ])->fresh();
+        $role = Role::create([
+            'name' => 'Nhóm người dùng trung ương',
+            'guard_name' => 'web',
+            'scope_level' => 'global',
+        ]);
+        $user->roles()->attach($role);
 
         $this->get('/api/v1/csrf-cookie')->assertNoContent();
 
@@ -87,6 +100,7 @@ class AuthenticationFlowTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.user.id', $user->id)
             ->assertJsonPath('data.user.username', 'api-user')
+            ->assertJsonPath('data.user.role_name', 'Nhóm người dùng trung ương')
             ->assertJsonMissingPath('data.access_token')
             ->assertJsonMissingPath('data.refresh_token');
 
@@ -94,7 +108,13 @@ class AuthenticationFlowTest extends TestCase
 
         $this->getJson('/api/v1/session')
             ->assertOk()
-            ->assertJsonPath('data.user.id', $user->id);
+            ->assertJsonPath('data.user.id', $user->id)
+            ->assertJsonPath('data.user.scope_level_label', 'Toàn hệ thống')
+            ->assertJsonPath('data.user.scope_area', 'Toàn hệ thống')
+            ->assertJsonPath(
+                'data.user.school_year',
+                (now()->month >= 8 ? now()->year : now()->year - 1).'-'.((now()->month >= 8 ? now()->year : now()->year - 1) + 1),
+            );
 
         Auth::forgetGuards();
         $this->getJson('/api/v1/session')
@@ -144,14 +164,251 @@ class AuthenticationFlowTest extends TestCase
             'username' => 'api-user',
             'password' => Hash::make('Correct-password-1'),
         ]);
-        $user->forceFill(['is_active' => false])->save();
-        $user->refresh();
+        $user->forceFill(['is_active' => true])->save();
 
         $this->actingAs($user, 'web')
+            ->getJson('/api/v1/session')
+            ->assertOk();
+
+        $user->forceFill(['is_active' => false])->save();
+
+        $this->actingAs($user->fresh(), 'web')
             ->getJson('/api/v1/session')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'FORBIDDEN');
 
         $this->assertGuest('web');
+    }
+
+    public function test_system_admin_can_get_national_dashboard_overview_and_other_users_cannot(): void
+    {
+        Schema::create('provinces', function (Blueprint $table): void {
+            $table->string('code')->primary();
+            $table->string('name');
+        });
+        Schema::create('communes', function (Blueprint $table): void {
+            $table->string('code')->primary();
+            $table->string('province_code');
+        });
+        Schema::create('villages', function (Blueprint $table): void {
+            $table->string('code')->primary();
+            $table->string('commune_code');
+        });
+        Schema::create('schools', function (Blueprint $table): void {
+            $table->id();
+            $table->string('code');
+            $table->string('name')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->string('province_code')->nullable();
+            $table->string('commune_code')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+        Schema::create('households', function (Blueprint $table): void {
+            $table->id();
+            $table->string('school_year')->nullable();
+            $table->string('province_code')->nullable();
+            $table->timestamp('deleted_at')->nullable();
+        });
+        Schema::create('persons', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('household_id');
+            $table->timestamp('deleted_at')->nullable();
+        });
+
+        DB::table('provinces')->insert([
+            ['code' => 'P01', 'name' => 'Tỉnh Một'],
+            ['code' => 'P02', 'name' => 'Tỉnh Hai'],
+        ]);
+        DB::table('communes')->insert(['code' => 'C01', 'province_code' => 'P01']);
+        DB::table('villages')->insert(['code' => 'V01', 'commune_code' => 'C01']);
+        DB::table('schools')->insert([
+            'code' => 'S01',
+            'name' => 'Trường Một',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ]);
+
+        $schoolYear = (new \App\Services\Households\HouseholdService)->currentSchoolYear();
+        DB::table('households')->insert([
+            ['school_year' => $schoolYear, 'province_code' => 'P01'],
+            ['school_year' => $schoolYear, 'province_code' => 'P01'],
+            ['school_year' => '2020-2021', 'province_code' => 'P02'],
+        ]);
+        DB::table('persons')->insert([
+            ['household_id' => 1],
+            ['household_id' => 1],
+            ['household_id' => 2],
+            ['household_id' => 3],
+        ]);
+
+        $user = User::create([
+            'name' => 'Quản trị hệ thống',
+            'username' => 'central-admin',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $user->forceFill(['is_active' => true])->save();
+        $this->actingAs($user, 'web')
+            ->getJson('/api/v1/dashboard/overview')
+            ->assertForbidden();
+
+        $systemRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'guard_name' => 'web',
+            'scope_level' => 'global',
+        ]);
+        $user->roles()->attach($systemRole);
+        $user->unsetRelation('roles');
+
+        $this->getJson('/api/v1/dashboard/overview')
+            ->assertOk()
+            ->assertJsonPath('data.school_year', $schoolYear)
+            ->assertJsonPath('data.totals.provinces', 2)
+            ->assertJsonPath('data.totals.communes', 1)
+            ->assertJsonPath('data.totals.villages', 1)
+            ->assertJsonPath('data.totals.schools', 1)
+            ->assertJsonPath('data.totals.active_users', 1)
+            ->assertJsonPath('data.totals.households', 2)
+            ->assertJsonPath('data.totals.persons', 3)
+            ->assertJsonPath('data.provinces.0.name', 'Tỉnh Một')
+            ->assertJsonPath('data.provinces.0.households', 2)
+            ->assertJsonPath('data.school_years.0', $schoolYear);
+
+        $this->getJson('/api/v1/dashboard/overview?school_year=2020-2021')
+            ->assertOk()
+            ->assertJsonPath('data.school_year', '2020-2021')
+            ->assertJsonPath('data.totals.households', 1)
+            ->assertJsonPath('data.totals.persons', 1)
+            ->assertJsonPath('data.provinces.0.name', 'Tỉnh Hai')
+            ->assertJsonPath('data.provinces.0.households', 1);
+
+        $this->getJson('/api/v1/dashboard/overview?school_year=not-a-school-year')
+            ->assertUnprocessable();
+    }
+
+    public function test_authenticated_user_can_update_basic_account_information(): void
+    {
+        $user = User::create([
+            'name' => 'Người dùng cũ',
+            'username' => 'profile-user',
+            'email' => 'old@example.test',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $user->forceFill(['is_active' => true])->save();
+
+        $this->actingAs($user, 'web')
+            ->patchJson('/api/v1/account', [
+                'name' => 'Người dùng mới',
+                'email' => 'new@example.test',
+                'phone' => '0912345678',
+                'citizen_id' => '123456789012',
+                'date_of_birth' => '1990-04-15',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.user.name', 'Người dùng mới')
+            ->assertJsonPath('data.user.email', 'new@example.test')
+            ->assertJsonPath('data.user.phone', '0912345678')
+            ->assertJsonPath('data.user.citizen_id', '123456789012')
+            ->assertJsonPath('data.user.date_of_birth', '1990-04-15');
+
+        $this->assertDatabaseHas('users', [
+            'id' => $user->id,
+            'name' => 'Người dùng mới',
+            'email' => 'new@example.test',
+            'phone' => '0912345678',
+            'citizen_id' => '123456789012',
+            'date_of_birth' => '1990-04-15 00:00:00',
+        ]);
+    }
+
+    public function test_account_profile_rejects_invalid_or_duplicate_citizen_id_and_future_birth_date(): void
+    {
+        $user = User::create([
+            'name' => 'Người dùng API',
+            'username' => 'profile-user',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $user->forceFill(['is_active' => true])->save();
+        User::create([
+            'name' => 'Người dùng khác',
+            'username' => 'another-user',
+            'citizen_id' => '123456789012',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+
+        $this->actingAs($user, 'web')
+            ->patchJson('/api/v1/account', [
+                'name' => 'Người dùng API',
+                'citizen_id' => '123456789012',
+                'date_of_birth' => now()->addDay()->toDateString(),
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'citizen_id');
+
+        $this->patchJson('/api/v1/account', [
+            'name' => 'Người dùng API',
+            'citizen_id' => '1234',
+            'date_of_birth' => now()->addDay()->toDateString(),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonFragment(['field' => 'date_of_birth']);
+    }
+
+    public function test_account_profile_rejects_an_email_used_by_another_user(): void
+    {
+        $user = User::create([
+            'name' => 'Người dùng API',
+            'username' => 'profile-user',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $user->forceFill(['is_active' => true])->save();
+        User::create([
+            'name' => 'Người dùng khác',
+            'username' => 'another-user',
+            'email' => 'used@example.test',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+
+        $this->actingAs($user, 'web')
+            ->patchJson('/api/v1/account', [
+                'name' => 'Người dùng API',
+                'email' => 'used@example.test',
+                'phone' => '',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'email');
+    }
+
+    public function test_authenticated_user_can_change_password_only_after_validating_current_and_new_passwords(): void
+    {
+        $user = User::create([
+            'name' => 'Người dùng API',
+            'username' => 'password-user',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $user->forceFill(['is_active' => true])->save();
+
+        $this->actingAs($user, 'web')
+            ->patchJson('/api/v1/account/password', [
+                'current_password' => 'incorrect',
+                'password' => 'New-password-123',
+                'password_confirmation' => 'New-password-123',
+            ])
+            ->assertUnprocessable();
+
+        $this->patchJson('/api/v1/account/password', [
+            'current_password' => 'Correct-password-1',
+            'password' => 'short',
+            'password_confirmation' => 'short',
+        ])->assertUnprocessable();
+
+        $this->patchJson('/api/v1/account/password', [
+            'current_password' => 'Correct-password-1',
+            'password' => 'New-password-123',
+            'password_confirmation' => 'New-password-123',
+        ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Đổi mật khẩu thành công.');
+
+        self::assertTrue(Hash::check('New-password-123', $user->fresh()->password));
     }
 }

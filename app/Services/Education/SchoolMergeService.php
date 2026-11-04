@@ -3,22 +3,66 @@
 namespace App\Services\Education;
 
 use App\Models\Role;
+use App\Models\ImportLog;
 use App\Models\School;
 use App\Models\SchoolMergeHistory;
 use App\Models\User;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 class SchoolMergeService
 {
-    public function availableForMerge(User $user): Collection
+    public function availableForMerge(User $user, array $filters = []): LengthAwarePaginator
     {
-        $query = School::query()->withCount('educations');
+        $query = School::query()->select([
+            'id',
+            'code',
+            'name',
+            'type',
+            'is_active',
+            'level',
+            'province_code',
+            'commune_code',
+        ]);
         $this->constrainToUserArea($query, $user);
+        $targetCode = $filters['target_code'] ?? null;
+        $query->where('is_active', filled($targetCode) ? false : true);
+        $query->whereIn('level', $this->levelsForUser($user));
+        if (filled($targetCode)) {
+            $targetQuery = School::query()->where('code', $targetCode);
+            $this->constrainToUserArea($targetQuery, $user);
+            $target = $targetQuery->first();
 
-        return $query->orderBy('province_code')->orderBy('commune_code')->orderBy('name')->get();
+            if ($target === null || ! $target->is_active) {
+                $query->whereRaw('1 = 0');
+            } else {
+                $query->whereIn('level', $this->sourceLevelsForTarget($target))
+                    ->where('code', '!=', $target->code);
+                if ($target->type !== 'multi_level') {
+                    $query->where('type', 'single_level');
+                }
+            }
+        }
+
+        if (filled($filters['q'] ?? null)) {
+            $search = trim((string) $filters['q']);
+            $query->where(function (Builder $builder) use ($search): void {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            });
+        }
+
+        return $query
+            ->orderBy('province_code')
+            ->orderBy('commune_code')
+            ->orderBy('name')
+            ->orderBy('id')
+            ->paginate(min(max((int) ($filters['per_page'] ?? 30), 1), 100))
+            ->withQueryString();
     }
 
     public function merge(User $user, array $sourceCodes, string $targetCode, ?string $decisionNumber = null): int
@@ -46,6 +90,8 @@ class SchoolMergeService
             }
 
             $this->assertCompatible($user, $target, $sources);
+            $this->lockImportAreas($schools);
+            $this->assertNoActiveImports($schools);
 
             $sourceCodes = $sources->pluck('code')->all();
             $sourceNames = $sources->pluck('name')->all();
@@ -79,10 +125,6 @@ class SchoolMergeService
                 'merged_by' => $user->id,
             ]);
 
-            foreach ($sources as $source) {
-                $source->delete();
-            }
-
             return $educationCount;
         });
     }
@@ -96,66 +138,174 @@ class SchoolMergeService
             ->pluck('current_class');
 
         foreach ($classes as $class) {
-            $normalized = $this->normalizeClass($class);
-            if (isset($occupiedClasses[$normalized])) {
-                $baseName = $class.'_'.$source->code;
-                $renamed = $baseName;
-                $suffix = 2;
-                while (isset($occupiedClasses[$this->normalizeClass($renamed)])) {
-                    $renamed = $baseName.'_'.$suffix;
-                    $suffix++;
-                }
-                if (mb_strlen($renamed) > 50) {
-                    throw ValidationException::withMessages([
-                        'source_truong_ids' => "Không thể chuẩn hóa tên lớp {$class} vì vượt quá 50 ký tự.",
-                    ]);
-                }
-
-                DB::table('person_educations')
-                    ->where('school_code', $source->code)
-                    ->where('current_class', $class)
-                    ->update(['current_class' => $renamed]);
-                $normalized = $this->normalizeClass($renamed);
+            $baseName = $class.'_'.$source->code;
+            $renamed = $baseName;
+            $suffix = 2;
+            while (isset($occupiedClasses[$this->normalizeClass($renamed)])) {
+                $renamed = $baseName.'_'.$suffix;
+                $suffix++;
+            }
+            if (mb_strlen($renamed) > 50) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => "Không thể chuẩn hóa tên lớp {$class} vì vượt quá 50 ký tự.",
+                ]);
             }
 
-            $occupiedClasses[$normalized] = true;
+            DB::table('person_educations')
+                ->where('school_code', $source->code)
+                ->where('current_class', $class)
+                ->update(['current_class' => $renamed]);
+
+            $occupiedClasses[$this->normalizeClass($renamed)] = true;
         }
     }
 
     private function assertCompatible(User $user, School $target, Collection $sources): void
     {
-        $schools = collect([$target])->concat($sources);
-        foreach ($schools as $school) {
-            $this->assertScope($user, $school);
-            if (
-                $school->province_code !== $target->province_code
-                || $school->level !== $target->level
-            ) {
-                throw ValidationException::withMessages([
-                    'source_truong_ids' => 'Chỉ được gộp trường cùng tỉnh và cùng cấp học.',
-                ]);
-            }
-
-            if (
-                $user->roleScopeLevel() === 'commune'
-                && $school->commune_code !== $target->commune_code
-            ) {
-                throw ValidationException::withMessages([
-                    'source_truong_ids' => 'Các trường phải thuộc cùng xã trong phạm vi quản lý.',
-                ]);
-            }
-        }
-
-        $allowedLevels = match ($user->roleScopeLevel()) {
-            'commune' => ['MN', 'TH', 'THCS'],
-            'province' => ['THPT', 'GDTX'],
-            default => ['MN', 'TH', 'THCS', 'THPT', 'GDTX'],
-        };
-        if (! in_array($target->level, $allowedLevels, true)) {
+        if (! $target->is_active) {
             throw ValidationException::withMessages([
-                'source_truong_ids' => 'Cấp quản lý hiện tại không được phép gộp loại trường này.',
+                'target_truong_id' => 'Trường đích phải đang hoạt động.',
             ]);
         }
+
+        foreach ($sources as $source) {
+            if ($source->is_active) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Phải ngừng hoạt động tất cả trường nguồn trước khi gộp.',
+                ]);
+            }
+        }
+
+        $schools = collect([$target])->concat($sources);
+        $allowedLevels = $this->levelsForUser($user);
+
+        foreach ($schools as $school) {
+            $this->assertScope($user, $school);
+            if (blank($school->province_code)) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Trường phải được gán tỉnh trước khi gộp.',
+                ]);
+            }
+            if (
+                $school->province_code !== $target->province_code
+            ) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Các trường phải thuộc cùng tỉnh.',
+                ]);
+            }
+
+            if (! in_array($school->level, $allowedLevels, true)) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Cấp quản lý hiện tại không được phép gộp loại trường này.',
+                ]);
+            }
+
+            if (($school->level === 'MN') !== ($target->level === 'MN')) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Trường Mầm non chỉ được gộp với trường Mầm non; các cấp phổ thông không gộp với Mầm non.',
+                ]);
+            }
+
+            if (! in_array($school->level, $this->sourceLevelsForTarget($target), true)) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => $target->type === 'multi_level'
+                        ? 'Trường đích liên cấp chỉ nhận trường cùng cấp hoặc cấp phổ thông thấp hơn.'
+                        : 'Trường đích một cấp chỉ nhận trường nguồn cùng cấp.',
+                ]);
+            }
+
+            if ($target->type !== 'multi_level' && $school->type !== 'single_level') {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Trường đích một cấp chỉ nhận trường nguồn một cấp cùng cấp.',
+                ]);
+            }
+
+            if (
+                $target->level !== 'THPT'
+                && $school->level !== 'THPT'
+                && (blank($target->commune_code)
+                    || $school->commune_code !== $target->commune_code)
+            ) {
+                throw ValidationException::withMessages([
+                    'source_truong_ids' => 'Trường Mầm non, Tiểu học và THCS chỉ được gộp trong cùng một xã; trường THPT được gộp trong cùng tỉnh.',
+                ]);
+            }
+        }
+    }
+
+    private function assertNoActiveImports(Collection $schools): void
+    {
+        [$communeCodes, $provinceCodes] = $this->importAreas($schools);
+
+        $villageCodes = $communeCodes->isEmpty()
+            ? collect()
+            : DB::table('villages')
+                ->whereIn('commune_code', $communeCodes)
+                ->pluck('code');
+        $schoolCodes = $schools->pluck('code')->all();
+
+        $activeImportExists = ImportLog::query()
+            ->whereIn('status', ['PENDING', 'PROCESSING'])
+            ->where(function (Builder $query) use ($communeCodes, $villageCodes, $provinceCodes, $schoolCodes): void {
+                if ($communeCodes->isNotEmpty()) {
+                    $query->whereIn('context->commune_code', $communeCodes);
+                }
+                if ($villageCodes->isNotEmpty()) {
+                    $query->orWhereIn('context->village_code', $villageCodes);
+                }
+                if ($provinceCodes->isNotEmpty()) {
+                    $query->orWhereIn('context->province_code', $provinceCodes);
+                }
+                $query->orWhereExists(function (QueryBuilder $educationQuery) use ($schoolCodes): void {
+                    $educationQuery->selectRaw('1')
+                        ->from('person_educations')
+                        ->whereColumn('person_educations.import_log_id', 'import_logs.id')
+                        ->whereIn('person_educations.school_code', $schoolCodes);
+                });
+            })
+            ->exists();
+
+        if ($activeImportExists) {
+            throw ValidationException::withMessages([
+                'source_truong_ids' => 'Không thể gộp khi còn tệp import đang chờ hoặc xử lý tại địa bàn của các trường đã chọn.',
+            ]);
+        }
+    }
+
+    private function lockImportAreas(Collection $schools): void
+    {
+        [$communeCodes] = $this->importAreas($schools);
+        if ($communeCodes->isEmpty()) {
+            return;
+        }
+
+        DB::table('communes')
+            ->whereIn('code', $communeCodes)
+            ->orderBy('code')
+            ->lockForUpdate()
+            ->get(['code']);
+    }
+
+    private function importAreas(Collection $schools): array
+    {
+        $communeCodes = $schools->pluck('commune_code')->filter()->unique()->values();
+        $provinceCodes = $schools
+            ->filter(fn (School $school): bool => blank($school->commune_code))
+            ->pluck('province_code')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($provinceCodes->isNotEmpty()) {
+            $communeCodes = $communeCodes
+                ->merge(DB::table('communes')
+                    ->whereIn('province_code', $provinceCodes)
+                    ->pluck('code'))
+                ->unique()
+                ->values();
+        }
+
+        return [$communeCodes, $provinceCodes];
     }
 
     private function assertScope(User $user, School $school): void
@@ -165,6 +315,7 @@ class SchoolMergeService
         }
 
         $allowed = match ($user->roleScopeLevel()) {
+            'global' => true,
             'province' => $user->province_code !== null
                 && $school->province_code === $user->province_code,
             'commune' => $user->province_code !== null
@@ -184,9 +335,37 @@ class SchoolMergeService
         }
 
         match ($user->roleScopeLevel()) {
+            'global' => null,
             'province' => $query->where('province_code', $user->province_code),
             'commune' => $query->where('commune_code', $user->commune_code),
             default => $query->whereRaw('1 = 0'),
+        };
+    }
+
+    private function levelsForUser(User $user): array
+    {
+        return match ($user->roleScopeLevel()) {
+            'commune' => ['MN', 'TH', 'THCS'],
+            'province', 'global' => ['MN', 'TH', 'THCS', 'THPT'],
+            default => [],
+        };
+    }
+
+    private function sourceLevelsForTarget(School $target): array
+    {
+        if ($target->level === 'MN') {
+            return ['MN'];
+        }
+
+        if ($target->type !== 'multi_level') {
+            return [$target->level];
+        }
+
+        return match ($target->level) {
+            'TH' => ['TH'],
+            'THCS' => ['TH', 'THCS'],
+            'THPT' => ['TH', 'THCS', 'THPT'],
+            default => [$target->level],
         };
     }
 

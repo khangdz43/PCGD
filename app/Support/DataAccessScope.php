@@ -20,12 +20,7 @@ final class DataAccessScope
             'province' => $user->province_code
                 ? $query->where('province_code', $user->province_code)
                 : $query->whereRaw('1 = 0'),
-            'commune' => $user->commune_code
-                ? $query->where('commune_code', $user->commune_code)
-                : $query->whereRaw('1 = 0'),
-            'village' => $user->managedVillageCodes() !== []
-                ? $query->whereIn('village_code', $user->managedVillageCodes())
-                : $query->whereRaw('1 = 0'),
+            'commune' => self::communeHouseholds($query, $user),
             default => $query->whereRaw('1 = 0'),
         };
     }
@@ -39,8 +34,10 @@ final class DataAccessScope
         $inLocation = match ($user->roleScopeLevel()) {
             'global' => true,
             'province' => $user->province_code !== null && $household->province_code === $user->province_code,
-            'commune' => $user->commune_code !== null && $household->commune_code === $user->commune_code,
-            'village' => in_array($household->village_code, $user->managedVillageCodes(), true),
+            'commune' => $user->commune_code !== null
+                && $household->commune_code === $user->commune_code
+                && ($user->managedVillageCodes() === []
+                    || in_array($household->village_code, $user->managedVillageCodes(), true)),
             default => false,
         };
 
@@ -58,14 +55,26 @@ final class DataAccessScope
             'province' => $user->province_code !== null && $data['province_code'] === $user->province_code,
             'commune' => $user->commune_code !== null
                 && $data['province_code'] === $user->province_code
-                && $data['commune_code'] === $user->commune_code,
-            'village' => $user->managedVillageCodes() !== []
-                && $data['province_code'] === $user->province_code
                 && $data['commune_code'] === $user->commune_code
-                && in_array($data['village_code'] ?? null, $user->managedVillageCodes(), true),
+                && ($user->managedVillageCodes() === []
+                    || in_array($data['village_code'] ?? null, $user->managedVillageCodes(), true)),
             default => false,
         };
 
         abort_unless($allowed, 403);
+    }
+
+    private static function communeHouseholds(Builder $query, User $user): Builder
+    {
+        if (! $user->commune_code) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $query->where('commune_code', $user->commune_code);
+        $villageCodes = $user->managedVillageCodes();
+
+        return $villageCodes === []
+            ? $query
+            : $query->whereIn('village_code', $villageCodes);
     }
 }

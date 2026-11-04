@@ -17,7 +17,7 @@ class SchoolService
 {
     public function schoolsForProvince(string $provinceCode, ?string $communeCode, User $user): Collection
     {
-        $query = School::query()->where('province_code', $provinceCode);
+        $query = School::query()->where('province_code', $provinceCode)->where('is_active', true);
         if (filled($communeCode)) {
             $query->where('commune_code', $communeCode);
         }
@@ -34,6 +34,7 @@ class SchoolService
     {
         $query = School::with('province', 'commune');
         $this->constrainToUserArea($query, $user);
+        $query->whereIn('level', $this->levelsForUser($user));
 
         if (filled($filters['q'] ?? null)) {
             $search = trim((string) $filters['q']);
@@ -53,6 +54,15 @@ class SchoolService
             ->orderBy('name')
             ->paginate(min(max((int) ($filters['per_page'] ?? 10), 1), 100))
             ->withQueryString();
+    }
+
+    public function levelsForUser(User $user): array
+    {
+        return match ($user->roleScopeLevel()) {
+            'global', 'province' => ['MN', 'TH', 'THCS', 'THPT'],
+            'commune' => ['MN', 'TH', 'THCS'],
+            default => [],
+        };
     }
 
     public function provincesFor(User $user): Collection
@@ -79,6 +89,7 @@ class SchoolService
     public function create(User $user, array $data): School
     {
         $this->assertScope($user, $data);
+        $data['is_active'] = filter_var($data['is_active'] ?? true, FILTER_VALIDATE_BOOLEAN);
 
         return DB::transaction(function () use ($data): School {
             Province::query()
@@ -99,6 +110,9 @@ class SchoolService
     public function update(User $user, School $school, array $data): void
     {
         $this->assertScope($user, $data);
+        if (array_key_exists('is_active', $data)) {
+            $data['is_active'] = filter_var($data['is_active'], FILTER_VALIDATE_BOOLEAN);
+        }
 
         DB::transaction(function () use ($data, $school): void {
             Province::query()
@@ -181,7 +195,7 @@ class SchoolService
             $query->whereRaw('1 = 0');
         }
 
-        if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
+        if ($user->roleScopeLevel() === 'commune') {
             $query->where('commune_code', $user->commune_code);
         }
     }

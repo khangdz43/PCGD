@@ -9,8 +9,8 @@ export type ModuleKey =
     | 'roles'
     | 'users'
     | 'account'
-    | 'imports'
-    | 'exports'
+    | 'import-file'
+    | 'import-history'
     | 'trash'
     | 'merge'
     | 'school-merge';
@@ -18,6 +18,7 @@ export type ModuleKey =
 const props = defineProps<{
     activeModule: ModuleKey;
     permissions: string[];
+    scopeLevel: string | null;
 }>();
 const emit = defineEmits<{ select: [module: ModuleKey] }>();
 
@@ -34,35 +35,36 @@ const groups = computed(() => [
         id: 'system',
         label: 'Hệ thống',
         items: [
-            { key: 'users' as const, label: 'Tài khoản & phân quyền', icon: 'users', permission: 'manage-user-accounts' },
-            { key: 'roles' as const, label: 'Nhóm người dùng', icon: 'shield', permission: 'manage-access-control' },
+            { key: 'users' as const, label: 'Tài khoản & phân quyền', icon: 'users', permission: 'view-users' },
+            { key: 'roles' as const, label: 'Nhóm người dùng', icon: 'shield', permission: 'view-roles' },
         ].filter(item => props.permissions.includes(item.permission)),
     },
     {
         id: 'catalog',
         label: 'Danh mục',
         items: [
-            { key: 'villages' as const, label: 'Thôn / xóm', icon: 'map', permission: 'manage-villages' },
-            { key: 'schools' as const, label: 'Trường học', icon: 'school', permission: 'manage-schools' },
+            { key: 'villages' as const, label: 'Thôn / xóm', icon: 'map', permission: 'view-villages' },
+            { key: 'schools' as const, label: 'Trường học', icon: 'school', permission: 'view-schools' },
         ].filter(item => props.permissions.includes(item.permission)),
     },
     {
         id: 'business',
         label: 'Nghiệp vụ',
         items: [
-            { key: 'households' as const, label: 'Phiếu điều tra', icon: 'clipboard', permission: 'view-households' },
-            { key: 'imports' as const, label: 'Import từ Excel', icon: 'file', permission: 'import-households' },
-            { key: 'exports' as const, label: 'Xuất Excel', icon: 'file', permission: 'export-households' },
-        ].filter(item => props.permissions.includes(item.permission)),
+            { key: 'households' as const, label: 'Phiếu điều tra', icon: 'clipboard', permission: 'view-households', actionPermission: 'view-households' },
+        ].filter(item => props.permissions.includes(item.permission) || props.permissions.includes(item.actionPermission)),
     },
     {
         id: 'special',
-        label: 'Xử lý đặc biệt',
+        label: 'Tiện ích',
         items: [
-            { key: 'merge' as const, label: 'Gộp thôn / xóm', icon: 'merge', permission: 'manage-villages' },
-            { key: 'school-merge' as const, label: 'Gộp trường học', icon: 'merge', permission: 'manage-schools' },
-            { key: 'trash' as const, label: 'Thùng rác', icon: 'trash', permission: 'delete-households' },
-        ].filter(item => props.permissions.includes(item.permission)),
+            { key: 'merge' as const, label: 'Gộp thôn / xóm', icon: 'merge', permission: 'view-village-merges' },
+            { key: 'school-merge' as const, label: 'Gộp trường học', icon: 'merge', permission: 'view-school-merges' },
+            { key: 'trash' as const, label: 'Thùng rác', icon: 'trash', permission: 'view-trash' },
+        ].filter(item =>
+            props.permissions.includes(item.permission) &&
+            !(props.scopeLevel === 'global' && ['merge', 'school-merge'].includes(item.key)),
+        ),
     },
 ]);
 
@@ -138,7 +140,6 @@ function toggleGroup(id: string): void {
                             <svg v-else viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18m-2 0-.9 14H5.9L5 6m4 0V4h6v2m-5 4v6m4-6v6" /></svg>
                         </span>
                         <span v-if="!collapsed">{{ item.label }}</span>
-                        <span v-if="!collapsed && item.key === 'school-merge'" class="nav-soon">API</span>
                     </button>
                 </div>
             </section>

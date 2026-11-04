@@ -14,7 +14,7 @@ class StoreSchoolMergeRequest extends FormRequest
 
         return $user !== null
             && ($user->hasRole(Role::SYSTEM_ADMIN)
-                || in_array($user->roleScopeLevel(), ['province', 'commune'], true));
+                || in_array($user->roleScopeLevel(), ['global', 'province', 'commune'], true));
     }
 
     public function rules(): array
@@ -24,12 +24,17 @@ class StoreSchoolMergeRequest extends FormRequest
             'source_truong_ids.*' => [
                 'required',
                 'string',
-                'max:20',
+                'max:50',
                 'distinct',
                 Rule::notIn([$this->input('target_truong_id')]),
-                Rule::exists('schools', 'code'),
+                Rule::exists('schools', 'code')->whereNull('deleted_at'),
             ],
-            'target_truong_id' => ['required', 'string', 'max:20', Rule::exists('schools', 'code')],
+            'target_truong_id' => [
+                'required',
+                'string',
+                'max:50',
+                Rule::exists('schools', 'code')->whereNull('deleted_at'),
+            ],
             'qd_sap_nhap' => ['nullable', 'string', 'max:100'],
         ];
     }

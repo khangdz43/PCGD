@@ -30,7 +30,7 @@ class RoleManagementServiceTest extends TestCase
 
         self::assertSame(
             'commune',
-            (new RoleManagementService)->defaultScopeLevel($actor, ['province', 'commune', 'village']),
+            (new RoleManagementService)->defaultScopeLevel($actor, ['province', 'commune']),
         );
     }
 
@@ -42,11 +42,11 @@ class RoleManagementServiceTest extends TestCase
 
         self::assertSame(
             'province',
-            (new RoleManagementService)->defaultScopeLevel($actor, ['province', 'village']),
+            (new RoleManagementService)->defaultScopeLevel($actor, ['province']),
         );
     }
 
-    public function test_system_admin_can_manage_only_central_roles_and_global_roles_they_did_not_create(): void
+    public function test_system_admin_can_manage_only_roles_they_created(): void
     {
         $service = new RoleManagementService;
         $admin = Mockery::mock(User::class);
@@ -57,22 +57,26 @@ class RoleManagementServiceTest extends TestCase
             new Role(['name' => Role::SYSTEM_ADMIN, 'guard_name' => 'web']),
         ));
 
-        $admin = Mockery::mock(User::class);
-        $admin->shouldReceive('hasRole')->twice()->with(Role::SYSTEM_ADMIN)->andReturnTrue();
+        $adminModel = new User;
+        $adminModel->setRawAttributes(['id' => 12]);
+        $admin = Mockery::mock($adminModel)->makePartial();
+        $admin->shouldReceive('hasRole')->zeroOrMoreTimes()->with(Role::SYSTEM_ADMIN)->andReturnTrue();
         self::assertTrue($service->canManageRole(
             $admin,
-            new Role(['name' => 'province-role', 'guard_name' => 'web', 'scope_level' => 'province']),
+            new Role([
+                'name' => 'province-role',
+                'guard_name' => 'web',
+                'scope_level' => 'province',
+                'created_by' => 12,
+            ]),
         ));
-
-        $admin = Mockery::mock(User::class);
-        $admin->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnTrue();
         self::assertFalse($service->canManageRole(
             $admin,
             new Role([
                 'name' => 'created-role',
                 'guard_name' => 'web',
                 'scope_level' => 'province',
-                'created_by' => 12,
+                'created_by' => 99,
             ]),
         ));
     }
@@ -96,6 +100,7 @@ class RoleManagementServiceTest extends TestCase
         $actor = Mockery::mock($actor)->makePartial();
         $actor->shouldReceive('hasRole')->with(Role::SYSTEM_ADMIN)->zeroOrMoreTimes()->andReturnFalse();
         $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('commune');
+        $actor->shouldReceive('canManageAccountGroups')->zeroOrMoreTimes()->andReturnFalse();
 
         $service = new RoleManagementService;
 

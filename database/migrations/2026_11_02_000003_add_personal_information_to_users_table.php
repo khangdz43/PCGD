@@ -8,24 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (Schema::hasColumn('users', 'email')) {
-            return;
-        }
-
         Schema::table('users', function (Blueprint $table): void {
-            $table->string('email')->nullable()->unique()->after('username');
+            $table->string('citizen_id', 12)->nullable()->unique();
+            $table->date('date_of_birth')->nullable();
+            $table->string('email')->nullable()->unique();
         });
     }
 
     public function down(): void
     {
-        if (! Schema::hasColumn('users', 'email')) {
-            return;
-        }
-
         Schema::table('users', function (Blueprint $table): void {
-            $table->dropUnique('users_email_unique');
-            $table->dropColumn('email');
+            $table->dropUnique(['citizen_id']);
+            $table->dropUnique(['email']);
+            $table->dropColumn(['citizen_id', 'date_of_birth', 'email']);
         });
     }
 };

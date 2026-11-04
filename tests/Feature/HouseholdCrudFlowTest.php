@@ -10,6 +10,7 @@ use App\Models\Person;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Households\HouseholdImportErrorCollector;
+use App\Services\Households\HouseholdImportHistoryService;
 use App\Services\Households\HouseholdImportProcessingService;
 use App\Support\AccessPermission;
 use Illuminate\Database\Schema\Blueprint;
@@ -40,7 +41,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('households.store'), [
+            ->postJson(route('api.households.store'), [
                 'school_year' => $this->currentSchoolYear(),
                 'head_first_name' => 'An',
                 'head_last_name' => 'Nguyễn',
@@ -50,11 +51,8 @@ class HouseholdCrudFlowTest extends TestCase
                 'residence_type' => 'THUONG_TRU',
                 'address' => 'Số 1',
             ])
-            ->assertRedirect(route('households.members.create', [
-                Household::query()->first(),
-                'is_head' => 1,
-            ]))
-            ->assertSessionHas('status');
+            ->assertCreated()
+            ->assertJsonPath('data.id', Household::query()->value('id'));
 
         $this->assertDatabaseHas('households', [
             'household_code' => '01',
@@ -71,8 +69,7 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
 
         $this->actingAs($user)
-            ->from(route('households.create'))
-            ->post(route('households.store'), [
+            ->postJson(route('api.households.store'), [
                 'school_year' => $this->currentSchoolYear(),
                 'head_first_name' => 'An',
                 'head_last_name' => 'Nguyễn',
@@ -81,8 +78,8 @@ class HouseholdCrudFlowTest extends TestCase
                 'village_code' => 'V02',
                 'residence_type' => 'THUONG_TRU',
             ])
-            ->assertRedirect(route('households.create'))
-            ->assertSessionHasErrors('commune_code');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'commune_code');
 
         $this->assertDatabaseCount('households', 0);
     }
@@ -92,7 +89,7 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::VIEW_HOUSEHOLDS]);
 
         $this->actingAs($user)
-            ->get(route('households.create'))
+            ->get(route('api.households.create'))
             ->assertForbidden();
     }
 
@@ -102,18 +99,19 @@ class HouseholdCrudFlowTest extends TestCase
         $household = $this->createHousehold(['school_year' => '2025-2026']);
 
         $this->actingAs($user)
-            ->put(route('households.update', $household), [
+            ->putJson(route('api.households.update', $household), [
                 'household_code' => $household->household_code,
-                'school_year' => $this->currentSchoolYear(),
+                'school_year' => $household->school_year,
                 'head_first_name' => 'Bình',
                 'head_last_name' => 'Trần',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
                 'village_code' => 'V01',
                 'residence_type' => 'TAM_TRU',
+                'address' => null,
+                'residence_status' => null,
             ])
-            ->assertRedirect(route('households.show', $household))
-            ->assertSessionHas('success');
+            ->assertOk();
 
         $this->assertDatabaseHas('households', [
             'id' => $household->id,
@@ -134,7 +132,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->get(route('households.show', $household))
+            ->get(route('api.households.show', $household))
             ->assertNotFound();
     }
 
@@ -144,14 +142,13 @@ class HouseholdCrudFlowTest extends TestCase
         $household = $this->createHousehold();
 
         $this->actingAs($viewer)
-            ->delete(route('households.destroy', $household))
+            ->delete(route('api.households.destroy', $household))
             ->assertForbidden();
 
         $deleter = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
         $this->actingAs($deleter)
-            ->delete(route('households.destroy', $household))
-            ->assertRedirect(route('households.index'))
-            ->assertSessionHas('success');
+            ->deleteJson(route('api.households.destroy', $household))
+            ->assertOk();
 
         $this->assertSoftDeleted('households', ['id' => $household->id]);
         $this->assertDatabaseHas('households', [
@@ -167,16 +164,17 @@ class HouseholdCrudFlowTest extends TestCase
         $second = $this->createHousehold(['household_code' => '02']);
 
         $this->actingAs($user)
-            ->delete(route('households.bulk-destroy'), ['household_ids' => []])
-            ->assertSessionHasErrors('household_ids');
+            ->deleteJson(route('api.households.destroy-many'), ['household_ids' => []])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'household_ids');
 
-        $this->delete(route('households.bulk-destroy'), [
+        $this->deleteJson(route('api.households.destroy-many'), [
             'household_ids' => [$first->id, $second->id],
             'school_year' => '2025-2026',
             'page' => 2,
         ])
-            ->assertRedirect(route('households.index', ['school_year' => '2025-2026', 'page' => 2]))
-            ->assertSessionHas('success');
+            ->assertOk()
+            ->assertJsonPath('data.deleted_count', 2);
 
         $this->assertDatabaseHas('households', ['id' => $first->id]);
         $this->assertDatabaseHas('households', ['id' => $second->id]);
@@ -202,8 +200,8 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->delete(route('households.destroy', $household))
-            ->assertRedirect(route('households.index'));
+            ->deleteJson(route('api.households.destroy', $household))
+            ->assertOk();
 
         $this->assertSoftDeleted('households', ['id' => $household->id]);
         $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
@@ -229,80 +227,47 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']))
+        $this->getJson(route('api.trash.index', ['type' => 'household', 'q' => 'TRASH-01']))
             ->assertOk()
-            ->assertSee('TRASH-01')
-            ->assertSee('Họ và tên')
-            ->assertSee('Ngày sinh')
-            ->assertSee('Thời gian xóa')
-            ->assertSee('Nguyễn Chủ')
-            ->assertSee('04/03/1982')
-            ->assertSee('2 thành viên')
-            ->assertSee('id="select-all-trash-items"', false)
-            ->assertSee('name="household_ids[]"', false)
-            ->assertSee('Khôi phục đã chọn')
-            ->assertSee('Xóa vĩnh viễn đã chọn')
-            ->assertSee('Xem hộ')
-            ->assertSee('id="trash-filter-form"', false)
-            ->assertSee('id="trash-results"', false)
-            ->assertDontSee('fa-regular fa-user')
-            ->assertDontSee('fa-filter')
-            ->assertDontSee('aria-label="Đường dẫn trang"', false)
-            ->assertDontSee('<h1 class="h5 mb-0">Thùng rác - Phiếu điều tra</h1>', false);
-        $this->get(route('utilities.trash.index', ['type' => 'household', 'q' => 'TRASH-01']), [
-            'X-Requested-With' => 'XMLHttpRequest',
-            'Accept' => 'text/html',
-        ])
+            ->assertJsonFragment([
+                'household_code' => 'TRASH-01',
+                'head_name' => 'Nguyễn Chủ',
+            ]);
+        $this->getJson(route('api.trash.households.show', $household->id))
             ->assertOk()
-            ->assertHeader('X-Trash-Results', '1')
-            ->assertSee('TRASH-01')
-            ->assertSee('id="trash-bulk-form"', false)
-            ->assertDontSee('<!DOCTYPE html>', false);
-        $this->get(route('utilities.trash.households.show', $household->id))
+            ->assertJsonFragment(['household_code' => 'TRASH-01'])
+            ->assertJsonFragment(['first_name' => 'Thành viên cần khôi phục'])
+            ->assertJsonFragment(['current_class' => '12A1']);
+        $this->getJson(route('api.trash.index', ['type' => 'person']))
             ->assertOk()
-            ->assertSee('Chi tiết hộ TRASH-01')
-            ->assertSee('Chủ')
-            ->assertSee('Nguyễn')
-            ->assertSee('Thành viên cần khôi phục')
-            ->assertDontSee('aria-label="Đường dẫn trang"', false)
-            ->assertSee('Quay lại thùng rác')
-            ->assertSee('Danh sách thành viên và thông tin học tập')
-            ->assertSee('2025-2026')
-            ->assertSee('12A1')
-            ->assertSee('Sơ cấp')
-            ->assertSee('Đang học')
-            ->assertSee('Hoàn thành XMC');
-        $this->get(route('utilities.trash.index', ['type' => 'person']))
-            ->assertOk()
-            ->assertDontSee('Thành viên cần khôi phục');
+            ->assertJsonMissingPath('data.items.0.record.person_name');
 
-        $this->patch(route('utilities.trash.households.restore', $household->id))
-            ->assertRedirect();
+        $this->patchJson(route('api.trash.households.restore', $household->id))
+            ->assertOk();
         $this->assertDatabaseHas('households', ['id' => $household->id, 'deleted_at' => null, 'deleted_by' => null]);
         $this->assertSame(2, $household->fresh()->persons()->count());
 
-        $this->deleteJson(route('households.members.destroy', [$household, $member->id]))
+        $this->deleteJson(route('api.households.persons.destroy', [$household, $member->id]))
             ->assertOk();
         $this->assertSoftDeleted('persons', ['id' => $member->id]);
-        $this->get(route('utilities.trash.index', ['type' => 'person', 'q' => 'Thành viên cần khôi phục']))
+        $this->getJson(route('api.trash.index', ['type' => 'person', 'q' => 'Thành viên cần khôi phục']))
             ->assertOk()
-            ->assertSee('Thành viên cần khôi phục')
-            ->assertSee('name="person_ids[]"', false);
+            ->assertJsonPath('data.items.0.record.person_name', 'Nguyễn Thành viên cần khôi phục');
 
-        $this->patch(route('utilities.trash.persons.restore', $member->id))
-            ->assertRedirect();
+        $this->patchJson(route('api.trash.persons.restore', $member->id))
+            ->assertOk();
         $this->assertDatabaseHas('persons', ['id' => $member->id, 'deleted_at' => null, 'deleted_by' => null]);
 
-        $this->deleteJson(route('households.members.destroy', [$household, $member->id]))
+        $this->deleteJson(route('api.households.persons.destroy', [$household, $member->id]))
             ->assertOk();
-        $this->delete(route('utilities.trash.persons.destroy', $member->id))
-            ->assertRedirect();
+        $this->deleteJson(route('api.trash.persons.destroy', $member->id))
+            ->assertOk();
         $this->assertDatabaseMissing('persons', ['id' => $member->id]);
 
-        $this->delete(route('households.destroy', $household))
-            ->assertRedirect(route('households.index'));
-        $this->delete(route('utilities.trash.households.destroy', $household->id))
-            ->assertRedirect();
+        $this->deleteJson(route('api.households.destroy', $household))
+            ->assertOk();
+        $this->deleteJson(route('api.trash.households.destroy', $household->id))
+            ->assertOk();
         $this->assertDatabaseMissing('households', ['id' => $household->id]);
         $this->assertDatabaseMissing('persons', ['id' => $head->id]);
     }
@@ -316,13 +281,13 @@ class HouseholdCrudFlowTest extends TestCase
         $head->deleted_by = $user->id;
         $head->save();
         $head->delete();
-        $this->actingAs($user)->delete(route('households.destroy', $household));
+        $this->actingAs($user)->deleteJson(route('api.households.destroy', $household));
 
-        $this->post(route('utilities.trash.bulk'), [
+        $this->postJson(route('api.trash.batch-operations.store'), [
             'operation' => 'restore',
             'household_ids' => [$household->id],
             'person_ids' => [$head->id],
-        ])->assertRedirect();
+        ])->assertOk();
 
         $this->assertDatabaseHas('households', ['id' => $household->id, 'deleted_at' => null]);
         $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
@@ -331,16 +296,51 @@ class HouseholdCrudFlowTest extends TestCase
         $head->deleted_by = $user->id;
         $head->save();
         $head->delete();
-        $this->delete(route('households.destroy', $household));
-        $this->post(route('utilities.trash.bulk'), [
+        $this->deleteJson(route('api.households.destroy', $household));
+        $this->postJson(route('api.trash.batch-operations.store'), [
             'operation' => 'force_delete',
             'household_ids' => [$household->id],
             'person_ids' => [$head->id],
-        ])->assertRedirect();
+        ])->assertOk();
 
         $this->assertDatabaseMissing('households', ['id' => $household->id]);
         $this->assertDatabaseMissing('persons', ['id' => $head->id]);
         $this->assertDatabaseMissing('persons', ['id' => $member->id]);
+    }
+
+    public function test_api_trash_returns_compact_records_and_fifty_items_per_page(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
+        $household = $this->createHousehold([
+            'household_code' => 'COMPACT-TRASH',
+            'head_first_name' => 'Lan',
+            'head_last_name' => 'Nguyễn',
+        ]);
+        $person = $this->createPerson($household, [
+            'first_name' => 'Minh',
+            'last_name' => 'Trần',
+        ]);
+        $person->deleted_by = $user->id;
+        $person->save();
+        $person->delete();
+
+        $response = $this->actingAs($user)
+            ->getJson(route('api.trash.index'))
+            ->assertOk()
+            ->assertJsonPath('meta.per_page', 50)
+            ->assertJsonFragment([
+                'household_code' => 'COMPACT-TRASH',
+                'person_name' => 'Trần Minh',
+            ])
+            ->assertJsonMissingPath('data.provinces')
+            ->assertJsonMissingPath('data.items.0.record.persons');
+
+        $this->assertLessThan(5000, strlen($response->getContent()));
+
+        $this->actingAs($user)
+            ->getJson(route('api.trash.index', ['include_filters' => 1]))
+            ->assertOk()
+            ->assertJsonStructure(['data' => ['provinces', 'communes', 'villages']]);
     }
 
     public function test_trash_requires_delete_permission_and_respects_the_users_area(): void
@@ -359,15 +359,15 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($viewer)
-            ->get(route('utilities.trash.index'))
+            ->get(route('api.trash.index'))
             ->assertForbidden();
 
         $this->actingAs($insideAreaUser)
-            ->get(route('utilities.trash.index'))
+            ->get(route('api.trash.index'))
             ->assertOk()
             ->assertDontSee('OUTSIDE-TRASH');
 
-        $this->patch(route('utilities.trash.households.restore', $outsideArea->id))
+        $this->patch(route('api.trash.households.restore', $outsideArea->id))
             ->assertNotFound();
     }
 
@@ -377,12 +377,9 @@ class HouseholdCrudFlowTest extends TestCase
         $household = $this->createHousehold();
 
         $this->actingAs($user)
-            ->post(route('households.members.store', $household), $this->personPayload('Con'))
-            ->assertRedirect(route('households.members.create', [
-                $household,
-                'is_head' => 1,
-            ]))
-            ->assertSessionHas('warning');
+            ->postJson(route('api.households.persons.store', $household), $this->personPayload('Con'))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Cần nhập hồ sơ chủ hộ trước khi thêm thành viên khác.');
 
         $this->assertDatabaseCount('persons', 0);
     }
@@ -396,9 +393,8 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
-            ->assertRedirect(route('households.show', $household))
-            ->assertSessionHas('success');
+            ->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
+            ->assertCreated();
 
         $this->assertDatabaseHas('persons', [
             'household_id' => $household->id,
@@ -407,9 +403,8 @@ class HouseholdCrudFlowTest extends TestCase
             'relationship_with_head' => 'Chủ hộ',
         ]);
 
-        $this->post(route('households.members.store', $household) . '?is_head=1', $this->personPayload(null))
-            ->assertRedirect(route('households.show', $household))
-            ->assertSessionHas('warning');
+        $this->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
+            ->assertUnprocessable();
 
         $this->assertDatabaseCount('persons', 1);
     }
@@ -423,8 +418,8 @@ class HouseholdCrudFlowTest extends TestCase
         $payload['education']['current_class'] = '12A1';
 
         $this->actingAs($user)
-            ->post(route('households.members.store', $household), $payload)
-            ->assertRedirect(route('households.show', $household));
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertCreated();
 
         $this->assertDatabaseHas('person_educations', [
             'current_class' => '12A1',
@@ -444,12 +439,9 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->from(route('households.members.create', $household))
-            ->post(route('households.members.store', $household), $this->personPayload('Con', '1979-12-31'))
-            ->assertRedirect(route('households.members.create', $household))
-            ->assertSessionHasErrors([
-                'relationship_with_head' => 'Người có quan hệ Con phải nhỏ tuổi hơn chủ hộ.',
-            ]);
+            ->postJson(route('api.households.persons.store', $household), $this->personPayload('Con', '1979-12-31'))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Người có quan hệ Con phải nhỏ tuổi hơn chủ hộ.');
 
         $this->assertDatabaseCount('persons', 1);
     }
@@ -462,7 +454,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->createPerson($household, ['relationship_with_head' => 'Con']);
 
         $this->actingAs($user)
-            ->deleteJson(route('households.members.destroy', [$household, $head->id]))
+            ->deleteJson(route('api.households.persons.destroy', [$household, $head->id]))
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Hãy xóa các thành viên khác trước khi xóa hồ sơ chủ hộ.');
 
@@ -470,8 +462,9 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseCount('persons', 2);
     }
 
-    public function test_import_status_shows_processing_progress_and_full_success(): void
+    public function test_import_status_shows_processing_progress_and_partial_completion(): void
     {
+        Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $processing = $this->createImportLog($user, [
             'status' => 'PROCESSING',
@@ -480,23 +473,26 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->getJson(route('households.import.status', $processing))
+            ->getJson('/api/v1/household-imports/' . $processing->id)
             ->assertOk()
-            ->assertExactJson([
-                'status' => 'PROCESSING',
-                'progress' => 90,
-                'processed_rows' => 9,
-                'total_rows' => 10,
-                'success_rows' => 0,
-                'error_rows' => 0,
-                'has_error_file' => false,
-            ]);
+            ->assertJsonPath('data.status', 'PROCESSING')
+            ->assertJsonPath('data.progress', 90)
+            ->assertJsonPath('data.processed_rows', 9)
+            ->assertJsonPath('data.total_rows', 10)
+            ->assertJsonPath('data.has_error_file', false);
 
-        $processing->update(['status' => 'SUCCESS', 'processed_rows' => 10]);
-        $this->getJson(route('households.import.status', $processing))
+        $errorFilePath = 'household-imports/partial/error-source.xlsx';
+        Storage::disk('local')->put($errorFilePath, 'errors');
+        $processing->update([
+            'status' => 'PARTIAL',
+            'processed_rows' => 10,
+            'error_file_path' => $errorFilePath,
+        ]);
+        $this->getJson('/api/v1/household-imports/' . $processing->id)
             ->assertOk()
-            ->assertJsonPath('progress', 100)
-            ->assertJsonPath('status', 'SUCCESS');
+            ->assertJsonPath('data.progress', 100)
+            ->assertJsonPath('data.status', 'PARTIAL')
+            ->assertJsonPath('data.has_error_file', true);
     }
 
     public function test_import_statuses_can_be_checked_in_one_request_for_owned_imports_only(): void
@@ -524,22 +520,22 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->getJson(route('households.import.statuses', [
+            ->getJson(route('api.households.import.statuses', [
                 'ids' => [$processing->id, $completed->id, $foreign->id, $queued->id],
             ]))
             ->assertOk()
-            ->assertJsonCount(3, 'statuses')
-            ->assertJsonPath('statuses.' . $processing->id . '.status', 'PROCESSING')
-            ->assertJsonPath('statuses.' . $processing->id . '.progress', 90)
-            ->assertJsonPath('statuses.' . $completed->id . '.status', 'SUCCESS')
-            ->assertJsonPath('statuses.' . $completed->id . '.progress', 100)
-            ->assertJsonMissingPath('statuses.' . $foreign->id)
-            ->assertJsonPath('statuses.' . $queued->id . '.queue_position', 2)
-            ->assertJsonPath('statuses.' . $queued->id . '.queue_total', 3);
+            ->assertJsonCount(3, 'data.statuses')
+            ->assertJsonPath('data.statuses.' . $processing->id . '.status', 'PROCESSING')
+            ->assertJsonPath('data.statuses.' . $processing->id . '.progress', 90)
+            ->assertJsonPath('data.statuses.' . $completed->id . '.status', 'SUCCESS')
+            ->assertJsonPath('data.statuses.' . $completed->id . '.progress', 100)
+            ->assertJsonMissingPath('data.statuses.' . $foreign->id)
+            ->assertJsonPath('data.statuses.' . $queued->id . '.queue_position', 2)
+            ->assertJsonPath('data.statuses.' . $queued->id . '.queue_total', 3);
 
-        $this->get(route('households.import-history'))
+        $this->getJson(route('api.households.import-history'))
             ->assertOk()
-            ->assertSee('Đang chờ 2/3');
+            ->assertJsonPath('data.queue_total', 3);
 
         self::assertSame('PENDING', $firstQueued->fresh()->status);
         self::assertSame('PENDING', $lastQueued->fresh()->status);
@@ -557,14 +553,39 @@ class HouseholdCrudFlowTest extends TestCase
         $foreign = $this->createImportLog($otherUser, ['status' => 'FAILED']);
 
         $this->actingAs($user)
-            ->getJson(route('households.import.status', $foreign))
+            ->getJson(route('api.households.import.status', $foreign))
             ->assertNotFound();
 
-        $this->get(route('households.import.download', $owned))
+        $this->get(route('api.household-imports.file', $owned))
             ->assertStatus(409);
 
-        $this->deleteJson(route('households.import.destroy', $owned))
+        $this->deleteJson(route('api.household-imports.destroy', $owned))
             ->assertStatus(409);
+    }
+
+    public function test_missing_error_workbook_download_creates_a_quick_xls_report(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $filePath = 'household-imports/failed/malformed.xls';
+        Storage::disk('local')->put($filePath, 'invalid workbook data');
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'malformed.xls',
+            'file_path' => $filePath,
+            'status' => 'FAILED',
+        ]);
+
+        $errorFilePath = app(HouseholdImportHistoryService::class)
+            ->errorFilePath($importLog);
+
+        self::assertTrue(Storage::disk('local')->exists($errorFilePath));
+        self::assertSame($errorFilePath, $importLog->fresh()->error_file_path);
+        $workbook = IOFactory::load(Storage::disk('local')->path($errorFilePath));
+        self::assertStringContainsString(
+            'Không thể tạo file lỗi',
+            (string) $workbook->getActiveSheet()->getCell('A1')->getValue(),
+        );
+        $workbook->disconnectWorksheets();
     }
 
     public function test_import_history_can_be_removed_without_deleting_imported_households(): void
@@ -595,11 +616,10 @@ class HouseholdCrudFlowTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $page = $this->actingAs($user)->get(route('households.import-history'));
-        $page->assertOk()->assertSee('Xóa lịch sử');
-        self::assertSame(4, substr_count($page->getContent(), 'data-delete-import-history action='));
+        $page = $this->actingAs($user)->getJson(route('api.households.import-history'));
+        $page->assertOk()->assertJsonCount(4, 'data.imports');
 
-        $this->deleteJson(route('households.import.destroy', $successful))
+        $this->deleteJson(route('api.household-imports.destroy', $successful))
             ->assertOk()
             ->assertJsonPath('message', 'Đã xóa lịch sử tải file');
 
@@ -608,12 +628,12 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::disk('local')->assertMissing($successful->file_path);
         Storage::disk('local')->assertMissing($successful->error_file_path);
 
-        $this->deleteJson(route('households.import.destroy', $failed))
+        $this->deleteJson(route('api.household-imports.destroy', $failed))
             ->assertOk();
         $this->assertDatabaseMissing('import_logs', ['id' => $failed->id]);
         Storage::disk('local')->assertMissing($failed->file_path);
 
-        $this->deleteJson(route('households.import.destroy', $deleted))
+        $this->deleteJson(route('api.household-imports.destroy', $deleted))
             ->assertOk();
         $this->assertDatabaseMissing('import_logs', ['id' => $deleted->id]);
     }
@@ -633,7 +653,7 @@ class HouseholdCrudFlowTest extends TestCase
             IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
             $spreadsheet->disconnectWorksheets();
 
-            $response = $this->actingAs($user)->postJson(route('households.import.store'), [
+            $response = $this->actingAs($user)->postJson(route('api.household-imports.store'), [
                 'file' => new UploadedFile(
                     $xlsxPath,
                     'households.xlsx',
@@ -648,23 +668,19 @@ class HouseholdCrudFlowTest extends TestCase
             ]);
 
             $response->assertAccepted()
-                ->assertSessionHas(
-                    'info',
-                    'File đã được tải lên thành công và đang được hệ thống xử lý. Bạn có thể tiếp tục công việc khác; hệ thống sẽ thông báo khi hoàn tất.'
-                )
-                ->assertJsonPath('status_url', route(
-                    'households.import.status',
+                ->assertJsonPath('data.status_url', route(
+                    'api.households.import.status',
                     ImportLog::query()->first(),
                     false,
                 ))
-                ->assertJsonPath('history_url', route(
-                    'households.import-history',
+                ->assertJsonPath('data.history_url', route(
+                    'api.households.import-history',
                     ['import_id' => ImportLog::query()->first()->id],
                     false,
                 ));
-            $this->get(route('households.import-history'))
+            $this->getJson(route('api.households.import-history'))
                 ->assertOk()
-                ->assertSee('đang được hệ thống xử lý');
+                ->assertJsonPath('data.imports.0.status', 'PENDING');
             $this->assertDatabaseHas('import_logs', [
                 'user_id' => $user->id,
                 'file_name' => 'households.xlsx',
@@ -685,6 +701,90 @@ class HouseholdCrudFlowTest extends TestCase
                 unlink($xlsxPath);
             }
         }
+    }
+
+    public function test_import_keeps_valid_rows_and_exports_only_invalid_rows(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $filePath = tempnam(sys_get_temp_dir(), 'pcgd-partial-import-');
+        $xlsxPath = $filePath . '.xlsx';
+        rename($filePath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setCellValue('O2', 'Số phiếu');
+            $sheet->setCellValue('AY2', 'Ghi chú');
+            foreach ([5 => ['GOOD', 'Kinh'], 6 => ['BAD', '']] as $row => [$code, $ethnicity]) {
+                $sheet->setCellValue("C{$row}", 'Nguyễn');
+                $sheet->setCellValue("D{$row}", 'An');
+                $sheet->setCellValue("E{$row}", 1);
+                $sheet->setCellValue("F{$row}", 1);
+                $sheet->setCellValue("G{$row}", 2010);
+                $sheet->setCellValue("I{$row}", $ethnicity);
+                $sheet->setCellValue("L{$row}", 'Nguyễn');
+                $sheet->setCellValue("M{$row}", 'An');
+                $sheet->setCellValue("O{$row}", $code);
+                $sheet->setCellValue("P{$row}", 'Thường trú');
+                $sheet->setCellValue("AV{$row}", 'Chủ hộ');
+            }
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $storedPath = 'household-imports/partial/source.xlsx';
+            Storage::disk('local')->put($storedPath, file_get_contents($xlsxPath));
+            $importLog = $this->createImportLog($user, [
+                'file_name' => 'source.xlsx',
+                'file_path' => $storedPath,
+                'context' => [
+                    'school_year' => $this->currentSchoolYear(),
+                    'province_code' => 'P01',
+                    'commune_code' => 'C01',
+                    'village_code' => 'V01',
+                ],
+            ]);
+
+            app(HouseholdImportProcessingService::class)->process(
+                $importLog,
+                $user,
+                new UploadedFile($xlsxPath, 'source.xlsx', null, null, true),
+            );
+
+            self::assertSame('PARTIAL', $importLog->fresh()->status);
+            $this->assertDatabaseHas('households', ['household_code' => 'GOOD']);
+            $this->assertDatabaseMissing('households', ['household_code' => 'BAD']);
+            $this->assertDatabaseHas('import_logs', [
+                'id' => $importLog->id,
+                'status' => 'PARTIAL',
+                'success_rows' => 1,
+                'error_rows' => 1,
+            ]);
+            self::assertNotNull($importLog->fresh()->error_file_path);
+
+            $errorWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
+            $errorSheet = $errorWorkbook->getActiveSheet();
+            self::assertSame('BAD', $errorSheet->getCell('O5')->getValue());
+            self::assertSame(5, $errorSheet->getHighestDataRow());
+            self::assertStringContainsString('dân tộc', strtolower((string) $errorSheet->getCell('A5')->getValue()));
+            $errorWorkbook->disconnectWorksheets();
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
+    public function test_import_form_route_is_not_captured_by_the_import_status_route(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_IMPORTS]);
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/household-imports/form')
+            ->assertOk()
+            ->assertJsonPath('data.provinces.0.code', 'P01')
+            ->assertJsonPath('data.province_code', 'P01')
+            ->assertJsonPath('data.commune_code', 'C01');
     }
 
     public function test_completed_import_jobs_are_not_processed_again_when_retried(): void
@@ -732,39 +832,37 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
 
         $this->actingAs($user)
-            ->get(route('villages.create'))
+            ->getJson(route('api.villages.create'))
             ->assertOk()
-            ->assertSee('Mã được tự tạo theo địa bàn và tên thôn khi lưu.')
-            ->assertDontSee('name="code"', false);
+            ->assertJsonPath('data.province_code', 'P01')
+            ->assertJsonPath('data.commune_code', 'C01');
 
         $this->actingAs($user)
-            ->post(route('villages.store'), [
+            ->postJson(route('api.villages.store'), [
                 'name' => 'Thôn Ba',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
-            ->assertRedirect(route('villages.index'))
-            ->assertSessionHas('success');
+            ->assertCreated();
 
         $village = DB::table('villages')->where('name', 'Thôn Ba')->first();
         $this->assertNotNull($village);
         $this->assertDatabaseHas('villages', [
-            'code' => 'C01_THON_BA',
+            'code' => 'C01_001',
             'name' => 'Thôn Ba',
             'commune_code' => 'C01',
         ]);
 
-        $this->patch(route('villages.update', $village->code), [
+        $this->putJson(route('api.villages.update', $village->code), [
             'name' => 'Thôn Ba đã sửa',
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
-            ->assertRedirect(route('villages.index'))
-            ->assertSessionHas('success');
+            ->assertOk();
 
-        $this->assertDatabaseHas('villages', ['code' => 'C01_THON_BA', 'name' => 'Thôn Ba đã sửa']);
+        $this->assertDatabaseHas('villages', ['code' => 'C01_001', 'name' => 'Thôn Ba đã sửa']);
 
-        $this->post(route('villages.store'), [
+        $this->postJson(route('api.villages.store'), [
             'name' => 'Thôn ngoài vùng',
             'province_code' => 'P02',
             'commune_code' => 'C02',
@@ -774,39 +872,82 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseMissing('villages', ['name' => 'Thôn ngoài vùng']);
     }
 
-    public function test_village_name_must_be_unique_in_a_commune_and_generated_codes_handle_slug_collisions(): void
+    public function test_village_status_can_be_changed_from_its_edit_form(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+        $this->createImportLog($user, [
+            'context' => ['village_code' => 'V01'],
+            'status' => 'PROCESSING',
+        ]);
+        $payload = [
+            'name' => 'Thôn Một',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+            'operational_status' => 'paused',
+        ];
+
+        $this->actingAs($user)
+            ->putJson('/api/v1/villages/V01', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'operational_status');
+        $this->assertDatabaseHas('villages', [
+            'code' => 'V01',
+            'intake_paused_at' => null,
+        ]);
+
+        ImportLog::query()->update(['status' => 'SUCCESS']);
+        $this->putJson('/api/v1/villages/V01', $payload)->assertOk();
+        $this->assertDatabaseHas('villages', [
+            'code' => 'V01',
+            'intake_paused_by' => $user->id,
+        ]);
+
+        $this->putJson('/api/v1/villages/V01', [
+            ...$payload,
+            'operational_status' => 'active',
+        ])->assertOk();
+        $this->assertDatabaseHas('villages', [
+            'code' => 'V01',
+            'intake_paused_at' => null,
+            'intake_paused_by' => null,
+        ]);
+        $this->getJson('/api/v1/communes/C01/villages')
+            ->assertOk()
+            ->assertJsonPath('data.0.code', 'V01')
+            ->assertJsonPath('data.0.name', 'Thôn Một')
+            ->assertJsonPath('data.0.operational_status', 'active')
+            ->assertJsonCount(1, 'data');
+    }
+
+    public function test_village_name_must_be_unique_in_a_commune_and_generated_codes_use_sequential_numbers(): void
     {
         $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
 
         $this->actingAs($user)
-            ->post(route('villages.store'), [
+            ->postJson(route('api.villages.store'), [
                 'name' => 'Thôn 1',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
-            ->assertRedirect(route('villages.index'))
-            ->assertSessionHas('success');
+            ->assertCreated();
 
-        $this->from(route('villages.create'))->post(route('villages.store'), [
+        $this->postJson(route('api.villages.store'), [
             'name' => 'Thôn 1',
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
-            ->assertRedirect(route('villages.create'))
-            ->assertSessionHasErrors([
-                'name' => 'Tên thôn/xóm đã tồn tại trong xã này.',
-            ]);
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'name');
 
-        $this->from(route('villages.create'))->post(route('villages.store'), [
+        $this->postJson(route('api.villages.store'), [
             'name' => 'Thôn-1',
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
-            ->assertRedirect(route('villages.index'))
-            ->assertSessionHas('success');
+            ->assertCreated();
 
-        $this->assertDatabaseHas('villages', ['code' => 'C01_THON_1', 'name' => 'Thôn 1']);
-        $this->assertDatabaseHas('villages', ['code' => 'C01_THON_1_2', 'name' => 'Thôn-1']);
+        $this->assertDatabaseHas('villages', ['code' => 'C01_001', 'name' => 'Thôn 1']);
+        $this->assertDatabaseHas('villages', ['code' => 'C01_002', 'name' => 'Thôn-1']);
     }
 
     public function test_village_merge_is_limited_to_commune_managers_and_their_commune(): void
@@ -818,17 +959,14 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $communeManager = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+        $communeManager = $this->userWithPermissions([AccessPermission::VIEW_VILLAGE_MERGES]);
 
         $this->actingAs($communeManager)
-            ->get(route('utilities.villages.merge'))
+            ->getJson('/api/v1/village-merges')
             ->assertOk()
-            ->assertSee('Thôn Một')
-            ->assertSee('Thôn Ba')
-            ->assertSee('name="source_codes[]"', false)
-            ->assertSee('name="target_code"', false)
-            ->assertDontSee('Thôn Hai')
-            ->assertDontSee('Lưu ý:');
+            ->assertJsonFragment(['name' => 'Thôn Một'])
+            ->assertJsonFragment(['name' => 'Thôn Ba'])
+            ->assertJsonMissing(['name' => 'Thôn Hai']);
 
         $systemAdmin = $this->userWithPermissions([], 'global');
         $systemAdminRole = Role::create([
@@ -839,11 +977,43 @@ class HouseholdCrudFlowTest extends TestCase
         $systemAdmin->roles()->attach($systemAdminRole);
 
         $this->actingAs($systemAdmin)
-            ->get(route('utilities.villages.merge'))
+            ->getJson('/api/v1/village-merges')
+            ->assertForbidden();
+
+        $this->actingAs($systemAdmin)
+            ->getJson('/api/v1/school-merges')
             ->assertForbidden();
     }
 
-    public function test_commune_manager_can_merge_villages_and_preserve_households_and_village_account_access(): void
+    public function test_global_accounts_cannot_view_or_create_merges_even_if_assigned_merge_permissions(): void
+    {
+        $user = $this->userWithPermissions([
+            AccessPermission::VIEW_VILLAGE_MERGES,
+            AccessPermission::CREATE_VILLAGE_MERGES,
+            AccessPermission::VIEW_SCHOOL_MERGES,
+            AccessPermission::CREATE_SCHOOL_MERGES,
+        ], 'global');
+
+        foreach (AccessPermission::mergePermissions() as $permission) {
+            $this->assertFalse($user->hasPermissionTo($permission));
+            $this->assertNotContains($permission, $user->permissionNames());
+        }
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/village-merges')
+            ->assertForbidden();
+        $this->actingAs($user)
+            ->postJson('/api/v1/village-merges', [])
+            ->assertForbidden();
+        $this->actingAs($user)
+            ->getJson('/api/v1/school-merges')
+            ->assertForbidden();
+        $this->actingAs($user)
+            ->postJson('/api/v1/school-merges', [])
+            ->assertForbidden();
+    }
+
+    public function test_commune_manager_can_merge_villages_and_preserve_households_and_assigned_village_access(): void
     {
         DB::table('villages')->insert([
             'code' => 'V03',
@@ -852,7 +1022,10 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+        $user = $this->userWithPermissions([
+            AccessPermission::VIEW_VILLAGE_MERGES,
+            AccessPermission::CREATE_VILLAGE_MERGES,
+        ]);
         $activeHousehold = $this->createHousehold([
             'household_code' => '02',
             'village_code' => 'V03',
@@ -870,15 +1043,24 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('utilities.villages.merge.store'), [
+            ->postJson('/api/v1/village-merges/pause', [
                 'source_codes' => ['V03'],
-                'target_code' => 'V01',
             ])
-            ->assertRedirect(route('utilities.villages.merge'))
-            ->assertSessionHas('success', 'Đã gộp 1 thôn nguồn vào thôn đích và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã tạm dừng nhận phiếu tại 1 thôn nguồn.');
+
+        $this->postJson('/api/v1/village-merges', [
+            'source_codes' => ['V03'],
+            'target_code' => 'V01',
+        ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã gộp 1 thôn nguồn vào thôn đích và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
 
         $this->assertDatabaseHas('villages', ['code' => 'V01']);
-        $this->assertDatabaseMissing('villages', ['code' => 'V03']);
+        $this->assertDatabaseHas('villages', [
+            'code' => 'V03',
+            'merged_into_code' => 'V01',
+        ]);
         $this->assertDatabaseHas('households', [
             'id' => $activeHousehold->id,
             'village_code' => 'V01',
@@ -918,27 +1100,170 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);
+        $user = $this->userWithPermissions([AccessPermission::CREATE_VILLAGE_MERGES]);
 
         $this->actingAs($user)
-            ->from(route('utilities.villages.merge'))
-            ->post(route('utilities.villages.merge.store'), [
+            ->postJson('/api/v1/village-merges', [
                 'source_codes' => ['V01'],
                 'target_code' => 'V01',
             ])
-            ->assertRedirect(route('utilities.villages.merge'))
-            ->assertSessionHasErrors('source_codes.0');
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'source_codes.0');
 
-        $this->post(route('utilities.villages.merge.store'), [
-            'source_codes' => ['V02'],
-            'target_code' => 'V01',
-        ])
-            ->assertRedirect(route('utilities.villages.merge'))
-            ->assertSessionHasErrors('source_codes.0');
+        $this->postJson('/api/v1/village-merges', [
+                'source_codes' => ['V02'],
+                'target_code' => 'V01',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'source_codes.0');
 
         $this->assertDatabaseHas('villages', ['code' => 'V01']);
         $this->assertDatabaseHas('villages', ['code' => 'V02']);
         $this->assertDatabaseHas('villages', ['code' => 'V03']);
+    }
+
+    public function test_merged_village_can_be_deleted_from_the_village_catalog(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn đã gộp',
+            'commune_code' => 'C01',
+            'merged_into_code' => 'V01',
+            'merged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->userWithPermissions([AccessPermission::DELETE_VILLAGES]);
+
+        $this->actingAs($user)
+            ->deleteJson('/api/v1/villages/V03')
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
+
+        $this->assertDatabaseMissing('villages', ['code' => 'V03']);
+        $this->assertDatabaseHas('villages', ['code' => 'V01']);
+    }
+
+    public function test_village_merge_waits_for_active_imports_and_paused_villages_reject_new_households(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn Ba',
+            'commune_code' => 'C01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->userWithPermissions([
+            AccessPermission::CREATE_VILLAGE_MERGES,
+            AccessPermission::CREATE_HOUSEHOLDS,
+        ]);
+        $importLog = $this->createImportLog($user, [
+            'context' => [
+                'school_year' => $this->currentSchoolYear(),
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'village_code' => 'V03',
+            ],
+            'status' => 'PROCESSING',
+        ]);
+
+        $pauseResponse = $this->actingAs($user)
+            ->postJson('/api/v1/village-merges/pause', [
+                'source_codes' => ['V03'],
+            ]);
+        $pauseResponse->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'source_codes');
+        $this->assertDatabaseHas('villages', [
+            'code' => 'V03',
+            'intake_paused_at' => null,
+        ]);
+
+        $importLog->update(['status' => 'SUCCESS']);
+        $this->postJson('/api/v1/village-merges/pause', [
+            'source_codes' => ['V03'],
+        ])->assertOk();
+
+        $this->postJson('/api/v1/households', [
+            'school_year' => $this->currentSchoolYear(),
+            'head_first_name' => 'Bình',
+            'head_last_name' => 'Trần',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+            'village_code' => 'V03',
+            'residence_type' => 'THUONG_TRU',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'village_code');
+
+        $this->assertDatabaseCount('households', 0);
+    }
+
+    public function test_paused_village_blocks_household_and_person_changes_until_resumed(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn Ba',
+            'commune_code' => 'C01',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $household = $this->createHousehold(['village_code' => 'V03']);
+        $person = $this->createPerson($household);
+        $user = $this->userWithPermissions([
+            AccessPermission::CREATE_VILLAGE_MERGES,
+            AccessPermission::UPDATE_HOUSEHOLDS,
+            AccessPermission::DELETE_HOUSEHOLDS,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/v1/village-merges/pause', [
+                'source_codes' => ['V03'],
+            ])
+            ->assertOk();
+
+        $updatePayload = [
+            'household_code' => $household->household_code,
+            'school_year' => $household->school_year,
+            'head_first_name' => 'Bình',
+            'head_last_name' => 'Trần',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+            'village_code' => 'V01',
+            'address' => 'Số 2',
+            'residence_type' => 'THUONG_TRU',
+            'residence_status' => null,
+        ];
+        $this->putJson("/api/v1/households/{$household->id}", $updatePayload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'village_code');
+
+        $this->deleteJson("/api/v1/households/{$household->id}/persons/{$person->id}")
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'village_code');
+
+        $this->assertDatabaseHas('households', [
+            'id' => $household->id,
+            'village_code' => 'V03',
+            'deleted_at' => null,
+        ]);
+        $this->assertDatabaseHas('persons', [
+            'id' => $person->id,
+            'deleted_at' => null,
+        ]);
+
+        $this->postJson('/api/v1/village-merges/resume', [
+            'source_codes' => ['V03'],
+        ])->assertOk();
+
+        $this->putJson("/api/v1/households/{$household->id}", $updatePayload)->assertOk();
+        $this->deleteJson("/api/v1/households/{$household->id}/persons/{$person->id}")->assertOk();
+
+        $this->assertDatabaseHas('households', [
+            'id' => $household->id,
+            'village_code' => 'V01',
+            'deleted_at' => null,
+        ]);
+        $this->assertSoftDeleted('persons', ['id' => $person->id]);
     }
 
     public function test_province_manager_can_create_and_update_schools_only_in_their_province(): void
@@ -946,37 +1271,34 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::MANAGE_SCHOOLS], 'province');
 
         $this->actingAs($user)
-            ->get(route('schools.create'))
+            ->getJson(route('api.schools.create'))
             ->assertOk()
-            ->assertSee('id="code"', false)
-            ->assertSee('readonly', false)
-            ->assertDontSee('name="code"', false)
-            ->assertSee('Mã sẽ tự hiện khi nhập tên trường; mã chính thức được xác định khi lưu.');
+            ->assertJsonPath('data.provinces.0.code', 'P01');
 
         $this->actingAs($user)
-            ->post(route('schools.store'), [
+            ->postJson(route('api.schools.store'), [
                 'code' => '',
                 'name' => 'Trường Một',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
-            ->assertRedirect(route('schools.index'))
-            ->assertSessionHas('success');
+            ->assertCreated();
 
         $school = DB::table('schools')->where('name', 'Trường Một')->first();
         $this->assertNotNull($school);
         $this->assertSame('P01_C01M', $school->code);
         $this->assertSame('P01', $school->province_code);
 
-        $this->put(route('schools.update', $school->id), [
+        $this->putJson(route('api.schools.update', $school->id), [
             'name' => 'Trường Một đã sửa',
+            'type' => 'single_level',
             'level' => 'THCS',
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
-            ->assertRedirect(route('schools.index'))
-            ->assertSessionHas('success');
+            ->assertOk();
 
         $this->assertDatabaseHas('schools', [
             'id' => $school->id,
@@ -984,28 +1306,26 @@ class HouseholdCrudFlowTest extends TestCase
             'level' => 'THCS',
         ]);
 
-        $this->from(route('schools.create'))
-            ->post(route('schools.store'), [
+        $this->postJson(route('api.schools.store'), [
                 'code' => 'P01_C01M',
                 'name' => 'Trường Một đã sửa',
+                'type' => 'single_level',
                 'level' => 'THCS',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
-            ->assertRedirect(route('schools.create'))
-            ->assertSessionHasErrors([
-                'name' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
-            ]);
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'name');
 
-        $this->post(route('schools.store'), [
+        $this->postJson(route('api.schools.store'), [
             'code' => 'P01_C01M',
             'name' => 'Trường Một đã sửa',
+            'type' => 'single_level',
             'level' => 'TH',
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
-            ->assertRedirect(route('schools.index'))
-            ->assertSessionHas('success');
+            ->assertCreated();
 
         $this->assertDatabaseHas('schools', [
             'code' => 'P01_C01MDS',
@@ -1013,14 +1333,14 @@ class HouseholdCrudFlowTest extends TestCase
             'level' => 'TH',
         ]);
 
-        $this->post(route('schools.store'), [
+        $this->postJson(route('api.schools.store'), [
             'name' => 'Trường Tự Động',
+            'type' => 'single_level',
             'level' => 'TH',
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
-            ->assertRedirect(route('schools.index'))
-            ->assertSessionHas('success');
+            ->assertCreated();
 
         $this->assertDatabaseHas('schools', [
             'code' => 'P01_C01TD',
@@ -1028,15 +1348,63 @@ class HouseholdCrudFlowTest extends TestCase
             'level' => 'TH',
         ]);
 
-        $this->post(route('schools.store'), [
+        $this->postJson(route('api.schools.store'), [
             'code' => 'P02_C02NT',
             'name' => 'Trường ngoài tỉnh',
+            'type' => 'single_level',
             'level' => 'TH',
             'province_code' => 'P02',
             'commune_code' => 'C02',
         ])->assertForbidden();
 
         $this->assertDatabaseMissing('schools', ['code' => 'S04']);
+    }
+
+    public function test_multi_level_schools_can_only_use_thcs_or_thpt(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::MANAGE_SCHOOLS], 'province');
+
+        $response = $this->actingAs($user)
+            ->postJson('/api/v1/schools', [
+                'name' => 'Trường liên cấp tiểu học',
+                'type' => 'multi_level',
+                'level' => 'TH',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+            ]);
+        $response
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'level')
+            ->assertJsonPath('error.details.0.issue', 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.');
+
+        $this->actingAs($user)
+            ->postJson('/api/v1/schools', [
+                'name' => 'Trường liên cấp THCS',
+                'type' => 'multi_level',
+                'level' => 'THCS',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+            ])
+            ->assertCreated();
+
+        $school = DB::table('schools')->where('name', 'Trường liên cấp THCS')->first();
+        $this->assertNotNull($school);
+
+        $this->putJson("/api/v1/schools/{$school->id}", [
+                'name' => 'Trường liên cấp THCS',
+                'type' => 'multi_level',
+                'level' => 'TH',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'level')
+            ->assertJsonPath('error.details.0.issue', 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.');
+
+        $this->assertDatabaseHas('schools', [
+            'id' => $school->id,
+            'level' => 'THCS',
+        ]);
     }
 
     public function test_school_cannot_be_deleted_while_person_education_uses_it(): void
@@ -1062,10 +1430,9 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->delete(route('schools.destroy', $schoolId))
-            ->assertSessionHasErrors([
-                'school' => 'Không thể xóa trường học vì đang có hồ sơ nhân khẩu sử dụng trường này.',
-            ]);
+            ->deleteJson(route('api.schools.destroy', $schoolId))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'school');
         $this->assertDatabaseHas('schools', ['id' => $schoolId]);
         $this->assertDatabaseHas('person_educations', [
             'id' => $educationId,
@@ -1074,10 +1441,9 @@ class HouseholdCrudFlowTest extends TestCase
 
         DB::table('person_educations')->where('id', $educationId)->delete();
         $this->actingAs($user)
-            ->delete(route('schools.destroy', $schoolId))
-            ->assertRedirect(route('schools.index'))
-            ->assertSessionHas('success');
-        $this->assertDatabaseMissing('schools', ['id' => $schoolId]);
+            ->deleteJson(route('api.schools.destroy', $schoolId))
+            ->assertOk();
+        $this->assertSoftDeleted('schools', ['id' => $schoolId]);
     }
 
     public function test_geography_and_school_lookups_are_limited_to_the_users_area(): void
@@ -1105,21 +1471,23 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([AccessPermission::VIEW_HOUSEHOLDS]);
 
         $this->actingAs($user)
-            ->getJson('/api/provinces/P01/communes')
+            ->getJson('/api/v1/provinces/P01/communes')
             ->assertOk()
-            ->assertExactJson([['code' => 'C01', 'name' => 'Xã Một']]);
+            ->assertJsonPath('data.0.code', 'C01')
+            ->assertJsonCount(1, 'data');
 
-        $this->getJson('/api/provinces/P01/schools')
+        $this->getJson('/api/v1/provinces/P01/schools')
             ->assertOk()
-            ->assertExactJson([['code' => 'S01', 'name' => 'Trường trong xã']]);
+            ->assertJsonPath('data.0.code', 'S01')
+            ->assertJsonCount(1, 'data');
 
-        $this->getJson('/api/provinces/P02/schools')
+        $this->getJson('/api/v1/provinces/P02/schools')
             ->assertOk()
-            ->assertExactJson([]);
+            ->assertJsonCount(0, 'data');
 
-        $this->getJson('/api/communes/C02/villages')
+        $this->getJson('/api/v1/communes/C02/villages')
             ->assertOk()
-            ->assertExactJson([]);
+            ->assertJsonCount(0, 'data');
     }
 
     public function test_import_completion_notifications_are_persistent_and_scoped_to_the_owner(): void
@@ -1137,6 +1505,11 @@ class HouseholdCrudFlowTest extends TestCase
             'error_rows' => 2,
             'file_path' => 'household-imports/failed/source.xlsx',
         ]);
+        $partial = $this->createImportLog($user, [
+            'status' => 'PARTIAL',
+            'success_rows' => 8,
+            'error_rows' => 2,
+        ]);
         $pending = $this->createImportLog($user, ['status' => 'PROCESSING']);
         $alreadyRead = $this->createImportLog($user, [
             'status' => 'SUCCESS',
@@ -1145,9 +1518,9 @@ class HouseholdCrudFlowTest extends TestCase
         $foreign = $this->createImportLog($otherUser, ['status' => 'FAILED']);
 
         $this->actingAs($user)
-            ->getJson(route('households.import-notifications'))
+            ->getJson('/api/v1/household-import-notifications')
             ->assertOk()
-            ->assertJsonCount(2, 'notifications')
+            ->assertJsonCount(3, 'data.notifications')
             ->assertJsonFragment([
                 'id' => $successful->id,
                 'status' => 'SUCCESS',
@@ -1157,21 +1530,27 @@ class HouseholdCrudFlowTest extends TestCase
                 'id' => $failed->id,
                 'status' => 'FAILED',
                 'action_label' => 'Xem',
+            ])
+            ->assertJsonFragment([
+                'id' => $partial->id,
+                'status' => 'PARTIAL',
+                'message' => 'File "households.xlsx" đã xử lý xong: 8 dòng thành công, 2 dòng lỗi.',
             ]);
 
-        $this->postJson(route('households.import-notifications.acknowledge'), [
-            'ids' => [$successful->id, $failed->id, $pending->id, $foreign->id],
-        ])->assertOk()->assertJsonPath('acknowledged', true);
+        $this->patchJson('/api/v1/household-import-notifications/read', [
+            'ids' => [$successful->id, $failed->id, $partial->id, $pending->id, $foreign->id],
+        ])->assertOk()->assertJsonPath('data.acknowledged', true);
 
         self::assertNotNull($successful->fresh()->notification_read_at);
         self::assertNotNull($failed->fresh()->notification_read_at);
+        self::assertNotNull($partial->fresh()->notification_read_at);
         self::assertNull($pending->fresh()->notification_read_at);
         self::assertNotNull($alreadyRead->fresh()->notification_read_at);
         self::assertNull($foreign->fresh()->notification_read_at);
 
-        $this->getJson(route('households.import-notifications'))
+        $this->getJson('/api/v1/household-import-notifications')
             ->assertOk()
-            ->assertExactJson(['notifications' => []]);
+            ->assertJsonPath('data.notifications', []);
     }
 
     private function createSchema(): void
@@ -1181,6 +1560,9 @@ class HouseholdCrudFlowTest extends TestCase
             $table->unsignedBigInteger('created_by')->nullable();
             $table->string('name');
             $table->string('username')->unique();
+            $table->string('citizen_id', 12)->nullable();
+            $table->date('date_of_birth')->nullable();
+            $table->string('email')->nullable();
             $table->string('password');
             $table->boolean('is_active')->default(true);
             $table->string('province_code')->nullable();
@@ -1239,17 +1621,35 @@ class HouseholdCrudFlowTest extends TestCase
             $table->string('code')->primary();
             $table->string('name');
             $table->string('commune_code');
+            $table->timestamp('intake_paused_at')->nullable();
+            $table->unsignedBigInteger('intake_paused_by')->nullable();
+            $table->string('merged_into_code')->nullable();
+            $table->timestamp('merged_at')->nullable();
             $table->timestamps();
             $table->unique(['commune_code', 'name'], 'uq_villages_commune_name');
+        });
+        Schema::create('village_merge_histories', function (Blueprint $table): void {
+            $table->id();
+            $table->string('commune_code');
+            $table->json('source_codes');
+            $table->json('source_names');
+            $table->string('target_code');
+            $table->string('target_name');
+            $table->string('reason')->nullable();
+            $table->unsignedBigInteger('merged_by')->nullable();
+            $table->timestamps();
         });
         Schema::create('schools', function (Blueprint $table): void {
             $table->id();
             $table->string('code')->unique();
             $table->string('name')->nullable();
+            $table->string('type')->nullable();
+            $table->boolean('is_active')->default(true);
             $table->string('level')->nullable();
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->timestamps();
+            $table->softDeletes();
         });
         Schema::create('ethnicities', function (Blueprint $table): void {
             $table->string('code')->primary();

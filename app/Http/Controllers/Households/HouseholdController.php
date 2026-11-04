@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Households;
 
 use App\Http\Controllers\Controller;
 use App\Models\Household;
+use App\Models\Ethnicity;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Households\HouseholdService;
@@ -33,6 +34,7 @@ class HouseholdController extends Controller
             'village_code',
             'school_year',
             'school_code',
+            'per_page',
         ]));
         $provinces = $this->households->provincesFor($user);
         $villagePlaceholder = $this->households->villagePlaceholder($user);
@@ -92,11 +94,14 @@ class HouseholdController extends Controller
         /** @var User $user */
         $user = request()->user();
         $provinces = $this->households->provincesFor($user);
+        ['persons' => $persons] = $this->households->details($household);
 
         return response()->json([
             'household' => $household,
             'provinces' => $provinces,
             'school_years' => $this->households->schoolYears(),
+            'persons' => $persons,
+            'ethnicities' => Ethnicity::orderBy('name')->get(['code', 'name']),
         ]);
     }
 
@@ -151,7 +156,10 @@ class HouseholdController extends Controller
             ],
             'village_code' => [
                 ...$optionalPresence,
-                Rule::exists('villages', 'code')->where('commune_code', $request->input('commune_code')),
+                Rule::exists('villages', 'code')
+                    ->where('commune_code', $request->input('commune_code'))
+                    ->whereNull('merged_into_code')
+                    ->whereNull('intake_paused_at'),
             ],
         ];
 
@@ -160,10 +168,10 @@ class HouseholdController extends Controller
             if ($user->province_code) {
                 $locationRules['province_code'][] = Rule::in([$user->province_code]);
             }
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true) && $user->commune_code) {
+            if ($user->roleScopeLevel() === 'commune' && $user->commune_code) {
                 $locationRules['commune_code'][] = Rule::in([$user->commune_code]);
             }
-            if ($user->roleScopeLevel() === 'village') {
+            if ($user->roleScopeLevel() === 'commune' && $user->managedVillageCodes() !== []) {
                 $locationRules['village_code'][] = Rule::in($user->managedVillageCodes());
             }
         }

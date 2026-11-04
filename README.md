@@ -44,17 +44,17 @@ php artisan migrate
 php artisan app:create-admin
 ```
 
-Lệnh `app:create-admin` hỏi tên, email và mật khẩu tương tác; mật khẩu phải có ít nhất 12 ký tự và không được lưu sẵn trong mã nguồn. Tài khoản này có quyền quản trị toàn hệ thống và khởi tạo các quyền nghiệp vụ. Trước khi tạo tài khoản tỉnh, Trung ương tạo một nhóm quyền cấp Tỉnh phù hợp; các tài khoản tỉnh/xã tự tạo nhóm quyền cấp dưới trong phạm vi của mình.
+Lệnh `app:create-admin` hỏi tên, tên đăng nhập và mật khẩu tương tác; mật khẩu phải có ít nhất 12 ký tự và không được lưu sẵn trong mã nguồn. Tài khoản này có quyền quản trị toàn hệ thống và khởi tạo các quyền nghiệp vụ. Trước khi tạo tài khoản tỉnh, Trung ương tạo một nhóm quyền cấp Tỉnh phù hợp; các tài khoản tỉnh/xã tự tạo nhóm quyền cấp dưới trong phạm vi của mình.
 
 ## Mô hình phân quyền
 
-- Nhóm người dùng áp dụng đúng một cấp địa bàn và tài khoản phải được gán nhóm cùng cấp. Trung ương chỉ tạo tài khoản cấp tỉnh; quản trị viên tỉnh chỉ tạo tài khoản cấp xã; quản trị viên xã chỉ tạo tài khoản cấp thôn/xóm. Không được nhảy qua cấp dưới và không tạo thêm tài khoản cùng cấp.
+- Nhóm người dùng và tài khoản chỉ có các cấp Trung ương, tỉnh và xã. Trung ương tạo tài khoản cấp tỉnh; quản trị viên tỉnh tạo tài khoản cấp xã; quản trị viên xã tạo tài khoản cán bộ cấp xã với nhóm quyền ít hơn. Chỉ tài khoản có quyền phiếu điều tra/nhân khẩu, nhập/xuất hoặc thùng rác mới bị giới hạn theo các thôn được giao; nhóm quản lý thôn/xóm và nhóm không có các quyền nghiệp vụ này mặc định áp dụng toàn xã.
 - Mỗi tỉnh chỉ có một tài khoản quản trị tỉnh đang hoạt động; mỗi xã chỉ có một tài khoản quản trị xã đang hoạt động. Tài khoản đã thu hồi quyền đăng nhập không chiếm chỗ, nên có thể tạo quản trị thay thế.
 - Khi tạo tài khoản, cấp hoạt động được giới hạn theo phân cấp và địa bàn quản lý. Trung ương tạo nhóm cấp Tỉnh để khởi tạo tài khoản tỉnh; mỗi tài khoản tỉnh/xã tự tạo nhóm quyền dùng riêng cho cấp dưới trực tiếp. Tài khoản địa phương chỉ thấy nhóm đang được gán cho mình và các nhóm do chính tài khoản đó tạo; nhóm của tài khoản khác không được dùng chung.
-- Quyền nhóm được giới hạn theo chức năng đã triển khai và cấp áp dụng: cấp tỉnh quản lý trường học, nhóm quyền và tài khoản, không quản trị phiếu/nhân khẩu; cấp xã quản lý thôn/xóm và phiếu/nhân khẩu; cấp thôn/xóm chỉ có các quyền phiếu/nhân khẩu được giao chi tiết. Tài khoản tỉnh có thể tạo nhóm cấp xã với quyền nghiệp vụ của cấp xã nhưng không nhận các quyền đó cho tài khoản tỉnh.
+- Quyền nhóm được giới hạn theo chức năng đã triển khai và cấp áp dụng: cấp tỉnh quản lý trường học từ Mầm non đến THPT, nhóm quyền và tài khoản; nhóm quản trị xã chính được cấp quyền quản lý trường học từ Mầm non đến THCS cùng quyền quản lý thôn/xóm, tài khoản, phiếu và nhân khẩu. Tài khoản xã chỉ được tạo nhóm có quyền nằm trong quyền của mình; giới hạn thôn chỉ thu hẹp dữ liệu, không tạo cấp tài khoản/nhóm riêng.
 - Vai trò không đúng cấp tài khoản không được gán; nhóm toàn hệ thống chỉ dành cho quản trị Trung ương. Quyền ngoài cấp bị chặn cả ở biểu mẫu lẫn khi kiểm tra quyền lúc chạy.
 - Quyền quản lý nhóm/tài khoản chỉ được giao cho cấp dưới khi người quản lý được cấp quyền tương ứng; việc tạo tài khoản và phân công địa bàn vẫn bị giới hạn trong phạm vi được giao.
-- Nhóm quyền nghiệp vụ không được tạo sẵn dùng chung. Mỗi tài khoản quản lý tự tạo nhóm phù hợp với nghiệp vụ và cấp dưới mình phụ trách.
+- Nhóm quản trị tỉnh/xã mặc định do hệ thống tạo được khóa sửa/xóa nhưng vẫn xem và gán cho tài khoản; các nhóm nghiệp vụ do người quản lý tự tạo vẫn có thể chỉnh sửa trong phạm vi được cấp.
 - Các chức năng chưa được triển khai trong ứng dụng như phê duyệt/báo cáo liên cấp không được thêm thành quyền giả lập.
 - Tạo, sửa, xóa, nhập và xuất phiếu yêu cầu quyền xem phiếu; khi gán các quyền này, hệ thống tự gán kèm quyền xem. Quyền xem riêng không cấp quyền thao tác khác.
 - Danh mục thôn/xóm và trường học có quyền quản lý riêng; quyền quản lý danh mục cũ được chuyển thành cả hai quyền khi nâng cấp.
@@ -77,4 +77,4 @@ php artisan test
 php artisan db:seed --class=AccessControlTestAccountsSeeder
 ```
 
-Các tài khoản có email `pcgd-test-*@example.test`; seeder chỉ tạo/cập nhật các tài khoản mang tiền tố này và không tự chạy trong `DatabaseSeeder`. Hãy thu hồi hoặc xóa các tài khoản test sau khi kiểm tra xong.
+Các tài khoản có tên đăng nhập `pcgd-test-*`; seeder chỉ tạo/cập nhật các tài khoản mang tiền tố này và không tự chạy trong `DatabaseSeeder`. Hãy thu hồi hoặc xóa các tài khoản test sau khi kiểm tra xong.

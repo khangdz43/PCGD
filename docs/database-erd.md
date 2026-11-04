@@ -1,6 +1,6 @@
 # Sơ đồ cơ sở dữ liệu PCGD
 
-Sơ đồ Mermaid dưới đây mô tả các bảng nghiệp vụ, phân quyền và các bảng hạ tầng Laravel đang được dự án sử dụng.
+Sơ đồ Mermaid dưới đây mô tả các bảng trong cơ sở dữ liệu PCGD hiện tại, gồm bảng nghiệp vụ, phân quyền và các bảng hạ tầng Laravel. Các cơ sở dữ liệu khác trên cùng máy chủ không thuộc sơ đồ này.
 
 ```mermaid
 erDiagram
@@ -8,12 +8,16 @@ erDiagram
         bigint id PK
         varchar name
         varchar username UK
+        varchar phone
+        varchar citizen_id UK
+        date date_of_birth
+        varchar email UK
         varchar password
         boolean is_active
         varchar scope_level
         varchar province_code FK
         varchar commune_code FK
-        bigint created_by
+        bigint created_by FK
         varchar remember_token
         timestamp created_at
         timestamp updated_at
@@ -32,6 +36,19 @@ erDiagram
         text user_agent
         longtext payload
         int last_activity
+    }
+
+    personal_access_tokens {
+        bigint id PK
+        varchar tokenable_type
+        bigint tokenable_id
+        text name
+        varchar token UK
+        text abilities
+        timestamp last_used_at
+        timestamp expires_at
+        timestamp created_at
+        timestamp updated_at
     }
 
     cache {
@@ -137,6 +154,7 @@ erDiagram
         int error_rows
         varchar status
         timestamp created_at
+        timestamp notification_read_at
     }
 
     provinces {
@@ -158,6 +176,10 @@ erDiagram
         varchar code PK
         varchar name
         varchar commune_code FK
+        timestamp intake_paused_at
+        bigint intake_paused_by FK
+        varchar merged_into_code FK
+        timestamp merged_at
         timestamp created_at
         timestamp updated_at
     }
@@ -166,9 +188,38 @@ erDiagram
         bigint id PK
         varchar code UK
         varchar name
+        varchar type "single_level | multi_level"
         varchar level
         varchar province_code FK
         varchar commune_code FK
+        timestamp deleted_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    school_merge_histories {
+        bigint id PK
+        varchar province_code
+        varchar commune_code
+        json source_codes
+        json source_names
+        varchar target_code
+        varchar target_name
+        varchar qd_sap_nhap
+        bigint merged_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    village_merge_histories {
+        bigint id PK
+        varchar commune_code
+        json source_codes
+        json source_names
+        varchar target_code
+        varchar target_name
+        varchar reason
+        bigint merged_by FK
         timestamp created_at
         timestamp updated_at
     }
@@ -207,8 +258,9 @@ erDiagram
         varchar last_name
         date dob
         varchar dob_str
-        varchar gender
+        enum gender
         varchar ethnicity_code FK
+        varchar ethnicity
         varchar religion
         varchar priority_type
         varchar relationship_with_head
@@ -228,7 +280,7 @@ erDiagram
         varchar school_year
         varchar academic_block
         varchar current_class
-        varchar school_code FK
+        varchar school_code
         varchar graduation_level
         boolean is_complementary
         varchar graduation_year
@@ -238,9 +290,10 @@ erDiagram
         varchar finished_year
         varchar dropped_class
         varchar dropped_year
+        varchar completed_class
         varchar literacy_current_class
         varchar literacy_completed_class
-        tinyint literacy_relapse_level
+        varchar literacy_relapse_level
         varchar learning_capacity
         timestamp created_at
         timestamp updated_at
@@ -266,11 +319,14 @@ erDiagram
     }
 
     users ||--o{ users : creates
+    users o|--o{ villages : pauses intake at
     users ||--o{ roles : creates
     users ||--o{ model_has_roles : assigns
     users ||--o{ model_has_roles : receives
     users ||--o{ import_logs : uploads
     users ||--o{ user_villages : assigned
+    users ||--o{ school_merge_histories : merges
+    users ||--o{ village_merge_histories : merges
 
     roles ||--o{ role_has_permissions : grants
     permissions ||--o{ role_has_permissions : included
@@ -294,7 +350,6 @@ erDiagram
     households ||--o{ persons : has
     ethnicities o|--o{ persons : classifies
     persons ||--o{ person_educations : studies
-    schools o|--o{ person_educations : attends
     persons ||--o| person_disabilities : records
 ```
 
@@ -306,7 +361,14 @@ erDiagram
 - `permissions` có unique constraint trên `(name, guard_name)`.
 - `role_has_permissions` là bảng nối nhiều-nhiều giữa `roles` và `permissions`.
 - `model_has_roles` là bảng gán role polymorphic: `model_id` kết hợp với `model_type` xác định model nhận role; `assigned_by` lưu người cấp.
-- `user_villages` là bảng nối nhiều-nhiều giữa tài khoản và thôn/xóm.
+- `users.scope_level` và `roles.scope_level` chỉ nhận các cấp nghiệp vụ `global`, `province`, `commune`; giới hạn thôn của tài khoản cấp xã được lưu riêng trong `user_villages`.
+- `user_villages` là bảng nối nhiều-nhiều giữa tài khoản cấp xã và các thôn/xóm được giao; danh sách này chỉ giới hạn tài khoản có quyền phiếu điều tra/nhân khẩu, nhập/xuất hoặc thùng rác. Nhóm quản lý thôn/xóm và nhóm không có các quyền đó áp dụng toàn xã; danh sách trống cũng nghĩa là toàn xã.
+- `villages.intake_paused_at` và `intake_paused_by` lưu trạng thái tạm dừng nhận phiếu; `merged_into_code` và `merged_at` lưu thôn đích và thời điểm gộp. Thôn nguồn vẫn được giữ lại để tra cứu.
+- Khi thôn tạm dừng, thao tác tạo/sửa/xóa phiếu và nhân khẩu, khôi phục/xóa vĩnh viễn trong thùng rác, cùng import phiếu đều bị khóa. Chỉ có thể gộp thôn sau khi các thôn nguồn đã tạm dừng và không còn import đang chờ/xử lý.
+- `personal_access_tokens` lưu token theo quan hệ polymorphic `tokenable_type`/`tokenable_id`; không có khóa ngoại đến `users`.
+- `school_merge_histories` và `village_merge_histories` lưu thông tin các lần gộp; chỉ `merged_by` có khóa ngoại đến `users`. Các mã tỉnh/xã/thôn/trường và mã nguồn/đích trong bảng lịch sử không được ràng buộc bằng khóa ngoại.
+- `person_educations.school_code` có chỉ mục nhưng không có khóa ngoại đến `schools`.
+- `persons.ethnicity` vẫn còn trong cơ sở dữ liệu bên cạnh `ethnicity_code`.
 - Trigger `persons_one_head_before_insert` và `persons_one_head_before_update` đảm bảo mỗi hộ tối đa một nhân khẩu có `relationship_with_head = 'Chủ hộ'`.
 - Phiếu/hộ và nhân khẩu dùng xóa mềm; `deleted_at` lưu thời điểm xóa, `deleted_by` lưu tài khoản thực hiện.
 - Xóa vĩnh viễn hộ sẽ xóa nhân khẩu liên quan; xóa vĩnh viễn nhân khẩu sẽ xóa dữ liệu học tập và khuyết tật.
@@ -315,4 +377,4 @@ erDiagram
 - `sessions.user_id` được đánh index nhưng không có foreign key trong migration Laravel.
 - `model_has_roles.model_id` và `model_type` không có foreign key vì đây là quan hệ polymorphic.
 - Bảng `model_has_permissions` không còn được sử dụng; migration ngày `2026-10-12` đã xóa bảng này.
-- Trường phân quyền `users.created_by` được ứng dụng và kiểm thử sử dụng. Hãy đối chiếu cột này với schema đang chạy nếu môi trường chưa áp dụng migration tạo cột.
+- Bảng `api_token_sessions` không có trong cơ sở dữ liệu hiện tại.

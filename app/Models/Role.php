@@ -21,6 +21,13 @@ class Role extends Model
         'commune_code',
     ];
 
+    protected function casts(): array
+    {
+        return [
+            'is_system' => 'boolean',
+        ];
+    }
+
     public function permissions(): BelongsToMany
     {
         return $this->belongsToMany(Permission::class, 'role_has_permissions');

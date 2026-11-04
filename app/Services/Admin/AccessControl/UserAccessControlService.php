@@ -29,7 +29,13 @@ class UserAccessControlService
         return $query->get(['code', 'name']);
     }
 
-    public function indexData(User $actor, array $filter, Collection $provinces, int $perPage = 10): array
+    public function indexData(
+        User $actor,
+        array $filter,
+        Collection $provinces,
+        int $perPage = 10,
+        bool $includeOrganizationData = true,
+    ): array
     {
         $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
         $showOrganizationTree = $includeOrganizationData && (
@@ -81,6 +87,7 @@ class UserAccessControlService
             $actor->roleScopeLevel() === 'commune' ? $actor->commune_code : null
         );
         $villageCode = $filter['village_code'] ?? null;
+        $scopeLevel = $filter['scope_level'] ?? null;
         $query = $this->manageableUsers($actor)
             ->with(['roles.permissions', 'villages', 'commune', 'province']);
 
@@ -103,6 +110,16 @@ class UserAccessControlService
         if (filled($villageCode)) {
             $query->whereHas('villages', fn (Builder $villages) => $villages->where('villages.code', $villageCode));
         }
+        if (filled($scopeLevel)) {
+            $query->where(function (Builder $accounts) use ($scopeLevel): void {
+                $accounts->where('users.scope_level', $scopeLevel)
+                    ->orWhere(function (Builder $legacyAccounts) use ($scopeLevel): void {
+                        $legacyAccounts->whereNull('users.scope_level')
+                            ->whereHas('roles', fn (Builder $roles) => $roles
+                                ->where('roles.scope_level', $scopeLevel));
+                    });
+            });
+        }
 
         if (filled($filter['q'] ?? null)) {
             $search = trim((string) $filter['q']);
@@ -120,7 +137,8 @@ class UserAccessControlService
 
         $search = trim((string) ($filter['q'] ?? ''));
         $roleId = $filter['role_id'] ?? null;
-        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode) || filled($roleId) || $search !== '';
+        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode)
+            || filled($scopeLevel) || filled($roleId) || $search !== '';
         $managementPriority = DB::table('model_has_roles as account_model_roles')
             ->join('roles as account_roles', 'account_roles.id', '=', 'account_model_roles.role_id')
             ->join('role_has_permissions as account_role_permissions', 'account_role_permissions.role_id', '=', 'account_roles.id')
@@ -365,6 +383,7 @@ class UserAccessControlService
             $actor->roleScopeLevel() === 'commune' ? $actor->commune_code : null
         );
         $villageCode = $filters['village_code'] ?? null;
+        $scopeLevel = $filters['scope_level'] ?? null;
         $accounts = $this->manageableUsers($actor);
 
         if (filled($provinceCode)) {
@@ -376,6 +395,16 @@ class UserAccessControlService
         if (filled($villageCode)) {
             $accounts->whereHas('villages', fn (Builder $villages) => $villages
                 ->where('villages.code', $villageCode));
+        }
+        if (filled($scopeLevel)) {
+            $accounts->where(function (Builder $query) use ($scopeLevel): void {
+                $query->where('users.scope_level', $scopeLevel)
+                    ->orWhere(function (Builder $legacyAccounts) use ($scopeLevel): void {
+                        $legacyAccounts->whereNull('users.scope_level')
+                            ->whereHas('roles', fn (Builder $roles) => $roles
+                                ->where('roles.scope_level', $scopeLevel));
+                    });
+            });
         }
 
         $accountIds = $accounts->select('users.id');
@@ -529,19 +558,14 @@ class UserAccessControlService
     private function addStatusManagementFlags(User $actor, SupportCollection $users): void
     {
         $targetLevels = $this->statusTargetLevels($actor);
-        $canChangeStatus = $actor->hasRole(Role::SYSTEM_ADMIN)
+        $canManageAccounts = $actor->hasRole(Role::SYSTEM_ADMIN)
             || $actor->can('update-users')
             || $actor->can('delete-users');
         foreach ($users as $user) {
             $targetLevel = $user->roleScopeLevel();
-            $assignableRoleIds = in_array($targetLevel, $targetLevels, true)
-                && $canManageAccounts
-                && ! $actor->hasRole(Role::SYSTEM_ADMIN)
-                ? $this->availableRoles($actor, [$targetLevel])->modelKeys()
-                : null;
             $canChangeStatus = in_array($targetLevel, $targetLevels, true)
                 && $canManageAccounts
-                && $this->statusTargetIsManageable($actor, $user, $targetLevel, $assignableRoleIds);
+                && $this->statusTargetIsManageable($actor, $user, $targetLevel);
             $user->setAttribute('can_change_account_status', $canChangeStatus);
         }
     }
@@ -556,8 +580,7 @@ class UserAccessControlService
     private function statusTargetIsManageable(
         User $actor,
         User $target,
-        string $targetLevel,
-        ?array $assignableRoleIds
+        string $targetLevel
     ): bool {
         if ($target->created_by !== $actor->id) {
             return false;
@@ -848,6 +871,11 @@ class UserAccessControlService
                 });
             });
         }
+
+        $query->whereDoesntHave('roles', fn (Builder $roles) => $roles
+            ->whereNotNull('roles.created_by')
+            ->where('roles.created_by', '!=', $actor->id));
+
         if ($actor->roleScopeLevel() === 'commune' && $actor->managedVillageCodes() !== []) {
             $villageCodes = $actor->managedVillageCodes();
             $query->whereHas('villages', fn (Builder $villages) => $villages

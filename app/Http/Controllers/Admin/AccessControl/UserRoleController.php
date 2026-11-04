@@ -22,9 +22,11 @@ class UserRoleController extends Controller
     {
         $actor = $request->user();
         $provinces = $this->users->provincesForFilter($actor);
+        $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
         $filter = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
             'role_id' => ['nullable', 'integer', Rule::exists('roles', 'id')],
+            'scope_level' => ['nullable', 'string', Rule::in($accountLevels)],
             'province_code' => ['nullable', 'string', Rule::in($provinces->pluck('code')->all())],
             'commune_code' => [
                 'nullable',
@@ -79,6 +81,7 @@ class UserRoleController extends Controller
                     'code' => $province->code,
                     'name' => $province->name,
                 ])->values(),
+                'account_scope_levels' => $accountLevels,
                 'actor_scope_level' => $actor->roleScopeLevel(),
                 'can_edit_account_configurations' => $this->users->canEditUserConfigurations($actor),
                 'selected_filters' => [
@@ -88,6 +91,7 @@ class UserRoleController extends Controller
                     ),
                     'village_code' => $filter['village_code'] ?? null,
                     'role_id' => $filter['role_id'] ?? null,
+                    'scope_level' => $filter['scope_level'] ?? null,
                 ],
             ],
             'Lấy danh sách tài khoản thành công.',

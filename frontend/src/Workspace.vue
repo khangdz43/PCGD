@@ -157,8 +157,10 @@ const userFilterProvince = ref("");
 const userFilterCommune = ref("");
 const userFilterVillage = ref("");
 const userFilterRole = ref("");
+const userFilterScopeLevel = ref("");
 const userFilterQuery = ref("");
 const userFilterRoles = ref<Row[]>([]);
+const userAccountScopeLevels = ref<string[]>([]);
 const userFiltersInitialized = ref(false);
 let syncingVillageOptions = false;
 const currentActorScopeLevel = ref<string | null>(null);
@@ -549,19 +551,20 @@ const householdCreationPageActive = computed(
         (configurationFormOpen.value ||
             isHouseholdCreateContinuationPage.value),
 );
-const showUserProvinceFilter = computed(
-    () =>
-        currentActorScopeLevel.value === "global" && provinces.value.length > 1,
-);
 const showUserCommuneFilter = computed(
     () =>
         currentActorScopeLevel.value === "province" &&
-        userFilterCommunes.value.length > 1,
+        userFilterCommunes.value.length > 0,
 );
 const showUserVillageFilter = computed(
     () =>
         currentActorScopeLevel.value === "commune" &&
-        userFilterVillages.value.length > 1,
+        userFilterVillages.value.length > 0,
+);
+const showUserProvinceFilter = computed(
+    () =>
+        currentActorScopeLevel.value === "global" &&
+        provinces.value.length > 0,
 );
 const showSchoolProvinceFilter = computed(() => provinces.value.length > 1);
 const showSchoolCommuneFilter = computed(
@@ -2204,25 +2207,20 @@ async function loadUserFilterCommunes(code: string): Promise<void> {
         : [];
 }
 
+async function changeUserProvince(): Promise<void> {
+    userFilterCommune.value = "";
+    userFilterVillage.value = "";
+    userFilterRole.value = "";
+    currentPage.value = 1;
+    await load();
+}
+
 async function loadUserFilterVillages(code: string): Promise<void> {
     userFilterVillages.value = code
         ? await getLocationOptions<Row>(
               `/communes/${encodeURIComponent(code)}/villages`,
           )
         : [];
-}
-
-async function changeUserProvince(): Promise<void> {
-    userFilterCommune.value = "";
-    userFilterVillage.value = "";
-    userFilterVillages.value = [];
-    currentPage.value = 1;
-    try {
-        await loadUserFilterCommunes(userFilterProvince.value);
-        await load();
-    } catch (cause) {
-        error.value = errorMessage(cause);
-    }
 }
 
 async function changeUserCommune(): Promise<void> {
@@ -2242,6 +2240,15 @@ async function changeUserVillage(): Promise<void> {
 }
 
 async function changeUserRole(): Promise<void> {
+    currentPage.value = 1;
+    await load();
+}
+
+async function changeUserScopeLevel(): Promise<void> {
+    userFilterRole.value = "";
+    if (userFilterScopeLevel.value === "global") {
+        userFilterProvince.value = "";
+    }
     currentPage.value = 1;
     await load();
 }
@@ -2453,6 +2460,8 @@ async function load(): Promise<void> {
                             : {}),
                         ...(props.moduleKey === "users"
                             ? {
+                                  scope_level:
+                                      userFilterScopeLevel.value || undefined,
                                   province_code:
                                       userFilterProvince.value || undefined,
                                   commune_code:
@@ -2603,6 +2612,11 @@ async function load(): Promise<void> {
             }
             if (props.moduleKey === "users") {
                 userFilterRoles.value = asRows(data.roles);
+                userAccountScopeLevels.value = Array.isArray(data.account_scope_levels)
+                    ? data.account_scope_levels.filter(
+                          (level): level is string => typeof level === "string",
+                      )
+                    : [];
                 currentActorScopeLevel.value =
                     typeof data.actor_scope_level === "string"
                         ? data.actor_scope_level
@@ -2626,6 +2640,9 @@ async function load(): Promise<void> {
                     );
                     userFilterRole.value = String(
                         selectedFilters.role_id ?? "",
+                    );
+                    userFilterScopeLevel.value = String(
+                        selectedFilters.scope_level ?? "",
                     );
                     if (currentActorScopeLevel.value === "global") {
                         userFilterCommune.value = "";
@@ -5419,20 +5436,20 @@ onMounted(() => void load());
             }"
         >
             <div v-if="moduleKey === 'users'" class="user-location-filters">
-                <label v-if="showUserProvinceFilter">
-                    <span>Tỉnh</span>
+                <label v-if="userAccountScopeLevels.length > 1">
+                    <span>Cấp quản lý</span>
                     <select
-                        v-model="userFilterProvince"
-                        aria-label="Lọc theo tỉnh / thành phố"
-                        @change="changeUserProvince"
+                        v-model="userFilterScopeLevel"
+                        aria-label="Lọc theo cấp quản lý"
+                        @change="changeUserScopeLevel"
                     >
-                        <option value="">Tất cả địa bàn</option>
+                        <option value="">Tất cả cấp quản lý</option>
                         <option
-                            v-for="province in provinces"
-                            :key="String(province.code)"
-                            :value="String(province.code)"
+                            v-for="level in userAccountScopeLevels"
+                            :key="level"
+                            :value="level"
                         >
-                            {{ province.name }}
+                            {{ scopeLabels[level] || level }}
                         </option>
                     </select>
                 </label>
@@ -5453,11 +5470,29 @@ onMounted(() => void load());
                         </option>
                     </select>
                 </label>
-                <label v-if="showUserCommuneFilter">
-                    <span>Xã</span>
+                <label v-if="showUserProvinceFilter">
+                    <span>Phạm vi</span>
+                    <select
+                        v-model="userFilterProvince"
+                        aria-label="Lọc theo phạm vi"
+                        :disabled="userFilterScopeLevel === 'global'"
+                        @change="changeUserProvince"
+                    >
+                        <option value="">Cả nước</option>
+                        <option
+                            v-for="province in provinces"
+                            :key="String(province.code)"
+                            :value="String(province.code)"
+                        >
+                            {{ province.name }}
+                        </option>
+                    </select>
+                </label>
+                <label v-else-if="showUserCommuneFilter">
+                    <span>Phạm vi</span>
                     <select
                         v-model="userFilterCommune"
-                        aria-label="Lọc theo xã / phường"
+                        aria-label="Lọc theo phạm vi xã / phường"
                         :disabled="!userFilterProvince"
                         @change="changeUserCommune"
                     >
@@ -5471,11 +5506,11 @@ onMounted(() => void load());
                         </option>
                     </select>
                 </label>
-                <label v-if="showUserVillageFilter">
-                    <span>Thôn</span>
+                <label v-else-if="showUserVillageFilter">
+                    <span>Phạm vi</span>
                     <select
                         v-model="userFilterVillage"
-                        aria-label="Lọc theo thôn / xóm"
+                        aria-label="Lọc theo phạm vi thôn / xóm"
                         :disabled="!userFilterCommune"
                         @change="changeUserVillage"
                     >

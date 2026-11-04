@@ -3913,7 +3913,8 @@ h2 {
 
 .user-location-filters {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
+    width: 100%;
     min-width: 0;
     align-items: end;
     gap: 8px;
@@ -4943,6 +4944,10 @@ h2 {
 @media (max-width: 1100px) {
     .management-toolbar {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .user-location-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .management-toolbar-actions {

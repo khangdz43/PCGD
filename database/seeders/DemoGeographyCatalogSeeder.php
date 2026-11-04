@@ -114,6 +114,7 @@ class DemoGeographyCatalogSeeder extends Seeder
                 $schools[] = [
                     'code' => $schoolCode,
                     'name' => self::SCHOOL_LEVELS[$level] . ' ' . $placeName,
+                    'type' => 'single_level',
                     'level' => $level,
                     'province_code' => $commune->province_code,
                     'commune_code' => $code,

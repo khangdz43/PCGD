@@ -11,12 +11,15 @@ use App\Models\Province;
 use App\Models\Role;
 use App\Models\School;
 use App\Models\User;
+use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
 class HouseholdPersonService
 {
+    public function __construct(private readonly ?VillageService $villages = null) {}
+
     public function headFor(Household $household): ?Person
     {
         return $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
@@ -77,10 +80,10 @@ class HouseholdPersonService
         $disability ??= new PersonDisability;
 
         $provinceQuery = Province::query()->orderBy('name');
-        $schoolQuery = School::query()->orderBy('name');
+        $schoolQuery = School::query()->where('is_active', true)->orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             $provinceQuery->where('code', $user->province_code);
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
+            if ($user->roleScopeLevel() === 'commune') {
                 $schoolQuery->where('commune_code', $user->commune_code);
             } else {
                 $schoolQuery->where('province_code', $user->province_code);
@@ -127,6 +130,7 @@ class HouseholdPersonService
         [$personData, $educationData, $disabilityData] = $this->splitFormData($data);
 
         return DB::transaction(function () use ($household, $personData, $educationData, $disabilityData): Person {
+            $this->lockOpenVillages([$household->village_code]);
             $person = $household->persons()->create($personData);
             $person->educations()->create($educationData);
             $person->disability()->create($disabilityData);
@@ -146,6 +150,7 @@ class HouseholdPersonService
         if ($isHouseholdHead) {
             $personData['relationship_with_head'] = 'Chủ hộ';
             DB::transaction(function () use ($person, $household, $personData, $education, $educationData, $disabilityData): void {
+                $this->lockOpenVillages([$household->village_code]);
                 $person->update($personData);
                 $household->update([
                     'head_first_name' => $personData['first_name'],
@@ -157,7 +162,8 @@ class HouseholdPersonService
             return;
         }
 
-        DB::transaction(function () use ($person, $education, $personData, $educationData, $disabilityData): void {
+        DB::transaction(function () use ($person, $household, $education, $personData, $educationData, $disabilityData): void {
+            $this->lockOpenVillages([$household->village_code]);
             $person->update($personData);
             $this->saveEducationAndDisability($person, $education, $educationData, $disabilityData);
         });
@@ -165,19 +171,22 @@ class HouseholdPersonService
 
     public function delete(Person $person, Household $household, User $user): ?bool
     {
-        $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
-        if (
-            $isHouseholdHead
-            && $household->persons()->where('relationship_with_head', '!=', 'Chủ hộ')->exists()
-        ) {
-            return null;
-        }
+        return DB::transaction(function () use ($person, $household, $user): ?bool {
+            $this->lockOpenVillages([$household->village_code]);
+            $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
+            if (
+                $isHouseholdHead
+                && $household->persons()->whereKeyNot($person->getKey())->exists()
+            ) {
+                return null;
+            }
 
-        $person->deleted_by = $user->id;
-        $person->save();
-        $person->delete();
+            $person->deleted_by = $user->id;
+            $person->save();
+            $person->delete();
 
-        return $isHouseholdHead;
+            return $isHouseholdHead;
+        });
     }
 
     public function findManyForDeletion(User $user, array $personIds): Collection
@@ -209,12 +218,36 @@ class HouseholdPersonService
     public function deleteMany(Collection $persons, User $user): void
     {
         DB::transaction(function () use ($persons, $user): void {
+            $householdCodes = Household::withTrashed()
+                ->whereIn('id', $persons->pluck('household_id')->unique())
+                ->pluck('village_code')
+                ->all();
+            $this->lockOpenVillages($householdCodes);
+
             foreach ($persons as $person) {
                 $person->deleted_by = $user->id;
                 $person->save();
                 $person->delete();
             }
         });
+    }
+
+    private function lockOpenVillages(array $villageCodes): void
+    {
+        $villageCodes = array_values(array_unique(array_filter(
+            $villageCodes,
+            fn ($villageCode): bool => $villageCode !== null && $villageCode !== ''
+        )));
+        sort($villageCodes);
+
+        foreach ($villageCodes as $villageCode) {
+            $this->villageService()->assertAcceptsHouseholds($villageCode, true);
+        }
+    }
+
+    private function villageService(): VillageService
+    {
+        return $this->villages ?? app(VillageService::class);
     }
 
     public function splitFormData(array $data): array

@@ -19,16 +19,13 @@ class MergeHistoryController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        abort_unless(
-            $user->hasRole(Role::SYSTEM_ADMIN)
-                || $user->can('manage-schools')
-                || $user->can('manage-villages'),
-            403
-        );
+        $canViewVillageMerges = $user->hasRole(Role::SYSTEM_ADMIN) || $user->can('view-village-merges');
+        $canViewSchoolMerges = $user->hasRole(Role::SYSTEM_ADMIN) || $user->can('view-school-merges');
+        abort_unless($canViewVillageMerges || $canViewSchoolMerges, 403);
 
         $histories = collect()
-            ->concat($this->villageHistories($user))
-            ->concat($this->schoolHistories($user))
+            ->concat($canViewVillageMerges ? $this->villageHistories($user) : collect())
+            ->concat($canViewSchoolMerges ? $this->schoolHistories($user) : collect())
             ->sortByDesc('created_at')
             ->values();
         $perPage = 20;

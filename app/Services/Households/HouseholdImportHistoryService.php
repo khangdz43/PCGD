@@ -5,7 +5,7 @@ namespace App\Services\Households;
 use App\Models\ImportLog;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Throwable;
 
@@ -21,33 +21,20 @@ class HouseholdImportHistoryService
 
         $sourcePath = Storage::disk('local')->path($importLog->file_path);
         $errorFilePath = dirname($importLog->file_path).'/error-'.basename($importLog->file_path);
-        $spreadsheet = IOFactory::load($sourcePath);
-
-        $sheet = null;
-        foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
-            if ($worksheet->getSheetState() !== 'visible') {
-                continue;
-            }
-            $highestColumn = Coordinate::columnIndexFromString($worksheet->getHighestDataColumn());
-            if ($highestColumn >= 15 && $worksheet->getHighestDataRow() >= 5) {
-                $sheet = $worksheet;
-                break;
-            }
-        }
-        $sheet ??= $spreadsheet->getActiveSheet();
-
-        $messagesByCell = [
-            'A1' => ['Không thể tạo file ghi chú lỗi tự động. Vui lòng kiểm tra nhật ký xử lý.'],
-        ];
-
-        foreach ($messagesByCell as $cell => $messages) {
-            $sheet->setCellValue($cell, implode(' | ', array_unique($messages)));
-            $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
-            $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
-        }
-        $sheet->getColumnDimension('A')->setWidth(45);
-
+        $spreadsheet = new Spreadsheet;
         try {
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Ket qua loi');
+            $sheet->setCellValue('A1', 'Không thể tạo file lỗi từ tệp gốc.');
+            $sheet->setCellValue('A2', 'Vui lòng kiểm tra định dạng và cấu trúc file Excel, sau đó tải lại tệp.');
+            $sheet->setCellValue('A4', 'Tên tệp');
+            $sheet->setCellValue('B4', $importLog->file_name);
+            $sheet->setCellValue('A5', 'Thời gian nhập');
+            $sheet->setCellValue('B5', $importLog->created_at?->format('d/m/Y H:i:s'));
+            $sheet->getStyle('A1:A2')->getFont()->getColor()->setARGB('FFDC3545');
+            $sheet->getColumnDimension('A')->setWidth(42);
+            $sheet->getColumnDimension('B')->setWidth(64);
+
             $writerType = strtolower(pathinfo($sourcePath, PATHINFO_EXTENSION)) === 'xls' ? 'Xls' : 'Xlsx';
             IOFactory::createWriter($spreadsheet, $writerType)
                 ->save(Storage::disk('local')->path($errorFilePath));

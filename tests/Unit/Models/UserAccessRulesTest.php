@@ -41,13 +41,14 @@ class UserAccessRulesTest extends TestCase
         self::assertFalse($user->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
     }
 
-    public function test_village_scope_cannot_manage_schools_or_villages(): void
+    public function test_village_scope_is_not_a_supported_account_scope(): void
     {
         $user = new User;
         $user->setRawAttributes(['scope_level' => 'village']);
         $user->setRelation('roles', new Collection);
 
-        self::assertFalse($user->hasPermissionTo(AccessPermission::MANAGE_SCHOOLS));
+        self::assertNull($user->roleScopeLevel());
+        self::assertFalse($user->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         self::assertFalse($user->hasPermissionTo(AccessPermission::MANAGE_VILLAGES));
     }
 

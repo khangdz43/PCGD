@@ -12,15 +12,16 @@ final class DelegatedAccess
     private const CHILD_LEVELS = [
         'global' => ['province'],
         'province' => ['commune'],
-        'commune' => ['village'],
-        'village' => [],
+        'commune' => [],
     ];
     // check quyền quản lí tk cấp nào của user hiện tịa
     public static function manageableAccountLevels(User $actor): array
     {
         // ko đúng ném 403
         abort_unless(
-            $actor->hasRole(Role::SYSTEM_ADMIN) || $actor->canManageSubordinateUsers(),
+            $actor->hasRole(Role::SYSTEM_ADMIN)
+                || $actor->canManageSubordinateUsers()
+                || $actor->can('view-users'),
             403
         );
         
@@ -38,7 +39,7 @@ final class DelegatedAccess
         }
         return self::managedLevels($actor);
     }
-    // check có admin của tỉnh xã đó chưa vì 1 tỉnh xả có 1 thôi
+    // Chỉ tài khoản quản trị chính đang hoạt động mới chiếm suất của địa bàn.
     public static function hasActiveTerritorialAdmin(
         string $scopeLevel,
         array $scope,
@@ -49,6 +50,7 @@ final class DelegatedAccess
         }
 
         $query = User::query()->where('is_active', true);
+        self::constrainToPrimaryAdminRole($query, $scopeLevel);
 
         if ($ignoreUserId !== null) {
             $query->where('id', '!=', $ignoreUserId);
@@ -80,7 +82,7 @@ final class DelegatedAccess
             })
             ->exists();
     }
-    // mã địa bàn đã có chủ tịch xã tỉnh
+    // Mã địa bàn đã có tài khoản quản trị chính đang hoạt động.
     public static function occupiedTerritorialCodes(string $scopeLevel, ?int $ignoreUserId = null): array
     {
         if (! in_array($scopeLevel, ['province', 'commune'], true)) {
@@ -94,6 +96,7 @@ final class DelegatedAccess
             ->where(function ($builder) use ($scopeLevel): void {
                 self::constrainToTerritorialLevel($builder, $scopeLevel);
             });
+        self::constrainToPrimaryAdminRole($query, $scopeLevel);
 
         if ($ignoreUserId !== null) {
             $query->where('id', '!=', $ignoreUserId);
@@ -122,8 +125,6 @@ final class DelegatedAccess
             return filled($scope['province_code'] ?? null)
                 && match ($targetLevel) {
                     'province' => ($scope['commune_code'] ?? null) === null && $villageCodes === [],
-                    'commune' => filled($scope['commune_code'] ?? null) && $villageCodes === [],
-                    'village' => filled($scope['commune_code'] ?? null) && $villageCodes !== [],
                     default => false,
                 };
         }
@@ -152,18 +153,13 @@ final class DelegatedAccess
         }
 
         if ($targetLevel === 'commune') {
-            return $villageCodes === [];
+            $actorVillages = $actor->managedVillageCodes();
+
+            return $actorVillages === []
+                || ($villageCodes !== [] && array_diff($villageCodes, $actorVillages) === []);
         }
 
-        if ($targetLevel !== 'village' || $villageCodes === []) {
-            return false;
-        }
-
-        if ($actor->roleScopeLevel() === 'village') {
-            return array_diff($villageCodes, $actor->managedVillageCodes()) === [];
-        }
-
-        return true;
+        return false;
     }
     // check role cụ thể có thuộc về scope mà user hiện tại qunar lí ko
     public static function roleBelongsToActorArea(User $actor, Role $role): bool
@@ -199,7 +195,7 @@ final class DelegatedAccess
 
         return [
             'province_code' => $actor->province_code,
-            'commune_code' => in_array($actor->roleScopeLevel(), ['commune', 'village'], true)
+            'commune_code' => $actor->roleScopeLevel() === 'commune'
                 ? $actor->commune_code
                 : null,
         ];
@@ -211,8 +207,7 @@ final class DelegatedAccess
             return $target->province_code !== null
                 && match ($targetLevel) {
                     'province' => $target->commune_code === null && $target->managedVillageCodes() === [],
-                    'commune' => $target->commune_code !== null && $target->managedVillageCodes() === [],
-                    'village' => $target->commune_code !== null && $target->managedVillageCodes() !== [],
+                    'commune' => $target->commune_code !== null,
                     default => false,
                 };
         }
@@ -231,7 +226,7 @@ final class DelegatedAccess
         if ($actor->roleScopeLevel() === 'province') {
             return match ($targetLevel) {
                 'province' => $target->commune_code === null && $target->managedVillageCodes() === [],
-                'commune' => $target->commune_code !== null && $target->managedVillageCodes() === [],
+                'commune' => $target->commune_code !== null,
                 default => false,
             };
         }
@@ -241,13 +236,14 @@ final class DelegatedAccess
         }
 
         if ($targetLevel === 'commune') {
-            return $target->managedVillageCodes() === [];
+            $actorVillages = $actor->managedVillageCodes();
+            $targetVillages = $target->managedVillageCodes();
+
+            return $actorVillages === []
+                || ($targetVillages !== [] && array_diff($targetVillages, $actorVillages) === []);
         }
 
-        return $targetLevel === 'village'
-            && $target->managedVillageCodes() !== []
-            && ($actor->roleScopeLevel() !== 'village'
-                || array_diff($target->managedVillageCodes(), $actor->managedVillageCodes()) === []);
+        return false;
     }
     // return cấp cs thể quản lí của user htai
     private static function managedLevels(User $actor): array
@@ -269,5 +265,29 @@ final class DelegatedAccess
                 $legacy->whereNull('scope_level')
                     ->whereHas('roles', fn ($roles) => $roles->where('roles.scope_level', $scopeLevel));
             });
+    }
+
+    private static function constrainToPrimaryAdminRole(Builder $query, string $scopeLevel): void
+    {
+        $adminPermission = match ($scopeLevel) {
+            'province' => AccessPermission::permissionSources(AccessPermission::MANAGE_SCHOOLS),
+            'commune' => AccessPermission::permissionSources(AccessPermission::MANAGE_VILLAGES),
+            default => null,
+        };
+        if ($adminPermission === null) {
+            return;
+        }
+
+        $query->whereHas('roles', function (Builder $roles) use ($scopeLevel, $adminPermission): void {
+            $roles->where('roles.scope_level', $scopeLevel)
+                ->where('roles.guard_name', 'web')
+                ->whereHas('permissions', fn (Builder $permissions) => $permissions
+                    ->whereIn('permissions.name', $adminPermission))
+                ->whereHas('permissions', fn (Builder $permissions) => $permissions
+                    ->whereIn(
+                        'permissions.name',
+                        AccessPermission::permissionSources(AccessPermission::MANAGE_USER_ACCOUNTS)
+                    ));
+        });
     }
 }

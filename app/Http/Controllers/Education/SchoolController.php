@@ -40,6 +40,9 @@ class SchoolController extends Controller
         return response()->json([
             'schools' => $schools,
             'provinces' => $provinces,
+            'school_levels' => $this->schools->levelsForUser($user),
+            'actor_scope_level' => $user->roleScopeLevel(),
+            'commune_code' => $user->commune_code,
         ]);
     }
 
@@ -62,10 +65,15 @@ class SchoolController extends Controller
     {
         $data = $request->validate($this->rules($request, true), [
             'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+            'level.in' => 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.',
         ]);
-        $this->schools->create($request->user(), $data);
+        $school = $this->schools->create($request->user(), $data);
+        $school->load('province', 'commune');
 
-        return response()->json(['message' => 'Thêm trường học thành công.'], 201);
+        return response()->json([
+            'message' => 'Thêm trường học thành công.',
+            'school' => $school,
+        ], 201);
     }
 
     public function edit(int $id, Request $request)
@@ -82,10 +90,15 @@ class SchoolController extends Controller
         $school = $this->schools->findAccessible($user, $id);
         $data = $request->validate($this->rules($request, false, $school), [
             'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+            'level.in' => 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.',
         ]);
         $this->schools->update($user, $school, $data);
+        $school->refresh()->load('province', 'commune');
 
-        return response()->json(['message' => 'Cập nhật trường học thành công.']);
+        return response()->json([
+            'message' => 'Cập nhật trường học thành công.',
+            'school' => $school,
+        ]);
     }
 
     public function destroy(int $id, Request $request)
@@ -99,7 +112,11 @@ class SchoolController extends Controller
     private function rules(Request $request, bool $creating = false, ?School $school = null): array
     {
         $requiredOnUpdate = $creating ? [] : ['present'];
-        $levelRules = [...$requiredOnUpdate, 'nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])];
+        $allowedLevels = $this->schools->levelsForUser($request->user());
+        if ($request->input('type') === 'multi_level') {
+            $allowedLevels = array_values(array_intersect($allowedLevels, ['THCS', 'THPT']));
+        }
+        $levelRules = [...$requiredOnUpdate, 'nullable', Rule::in($allowedLevels)];
         $provinceRules = [...$requiredOnUpdate, 'nullable', 'exists:provinces,code'];
         $communeRules = [
             ...$requiredOnUpdate,
@@ -118,6 +135,8 @@ class SchoolController extends Controller
                     ->where('level', $request->input('level'))
                     ->ignore($school?->id),
             ],
+            'type' => ['required', Rule::in(['single_level', 'multi_level'])],
+            'is_active' => ['sometimes', 'boolean'],
             'level' => $levelRules,
             'province_code' => $provinceRules,
             'commune_code' => $communeRules,
@@ -129,4 +148,5 @@ class SchoolController extends Controller
 
         return $rules;
     }
+
 }

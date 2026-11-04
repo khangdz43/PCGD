@@ -5,6 +5,7 @@ namespace App\Services\Households;
 use App\Models\Household;
 use App\Models\Person;
 use App\Models\User;
+use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,6 +14,8 @@ use Illuminate\Validation\ValidationException;
 
 class HouseholdTrashService
 {
+    public function __construct(private readonly ?VillageService $villages = null) {}
+
     public function paginate(User $user, array $filters): array
     {
         $households = Household::onlyTrashed()
@@ -61,50 +64,45 @@ class HouseholdTrashService
             ->fromSub($query, 'trash_items')
             ->orderByDesc('deleted_at')
             ->orderByDesc('id')
-            ->paginate(min(max((int) ($filters['per_page'] ?? 15), 1), 100))
+            ->paginate(min(max((int) ($filters['per_page'] ?? 50), 1), 100))
             ->withQueryString();
 
         $pageItems = $items->getCollection();
         $householdIds = $pageItems->where('item_type', 'household')->pluck('id');
         $personIds = $pageItems->where('item_type', 'person')->pluck('id');
 
-        $householdRecords = Household::withTrashed()
-            ->with([
-                'province',
-                'commune',
-                'village',
-                'deletedBy',
-                'persons' => fn ($persons) => $persons
-                    ->withoutGlobalScope('active_household')
-                    ->withTrashed()
-                    ->select('id', 'household_id', 'first_name', 'last_name', 'dob', 'relationship_with_head'),
-            ])
-            ->withCount(['persons' => fn (Builder $persons): Builder => $persons
-                ->withoutGlobalScope('active_household')
-                ->withTrashed()])
-            ->whereIn('id', $householdIds)
-            ->get()
-            ->keyBy('id');
-        $personRecords = Person::withTrashed()
-            ->with([
-                'household' => fn ($household) => $household->withTrashed()
-                    ->with(['province', 'commune', 'village']),
-                'deletedBy',
-            ])
+        $personRecords = Person::withoutGlobalScope('active_household')
+            ->withTrashed()
             ->whereIn('id', $personIds)
-            ->get()
+            ->get(['id', 'household_id', 'first_name', 'last_name'])
+            ->keyBy('id');
+        $relatedHouseholdIds = $householdIds
+            ->merge($personRecords->pluck('household_id'))
+            ->unique()
+            ->values();
+        $householdRecords = Household::withTrashed()
+            ->whereIn('id', $relatedHouseholdIds)
+            ->get(['id', 'household_code', 'head_first_name', 'head_last_name'])
             ->keyBy('id');
 
         $pageItems->transform(function (object $item) use ($householdRecords, $personRecords): object {
-            $item->record = $item->item_type === 'household'
-                ? $householdRecords->get($item->id)
-                : $personRecords->get($item->id);
-            $item->headPerson = $item->item_type === 'household'
-                ? $item->record?->persons->firstWhere('relationship_with_head', 'Chủ hộ')
-                    ?? $item->record?->persons->first(fn (Person $person): bool =>
-                        trim($person->last_name.' '.$person->first_name)
-                        === trim($item->record->head_last_name.' '.$item->record->head_first_name))
-                : null;
+            if ($item->item_type === 'household') {
+                $household = $householdRecords->get($item->id);
+                $item->record = $household === null ? null : [
+                    'household_code' => $household->household_code,
+                    'head_name' => trim($household->head_last_name.' '.$household->head_first_name),
+                ];
+
+                return $item;
+            }
+
+            $person = $personRecords->get($item->id);
+            $household = $person === null ? null : $householdRecords->get($person->household_id);
+            $item->record = [
+                'household_code' => $household?->household_code,
+                'head_name' => $household === null ? null : trim($household->head_last_name.' '.$household->head_first_name),
+                'person_name' => $person === null ? null : trim($person->last_name.' '.$person->first_name),
+            ];
 
             return $item;
         });
@@ -116,15 +114,19 @@ class HouseholdTrashService
     {
         $household = DataAccessScope::households(Household::onlyTrashed(), $user)
             ->findOrFail($id);
-        $household->deleted_by = null;
-        $household->save();
-        $household->restore();
+        DB::transaction(function () use ($household): void {
+            $this->lockOpenVillagesForHouseholds([$household->id]);
+            $household->deleted_by = null;
+            $household->save();
+            $household->restore();
+        });
     }
 
     public function permanentlyDeleteHousehold(User $user, int $id): void
     {
         $household = DataAccessScope::households(Household::onlyTrashed(), $user)->findOrFail($id);
         DB::transaction(function () use ($household): void {
+            $this->lockOpenVillagesForHouseholds([$household->id]);
             Person::withoutGlobalScope('active_household')
                 ->withTrashed()
                 ->where('household_id', $household->id)
@@ -136,16 +138,22 @@ class HouseholdTrashService
     public function restorePerson(User $user, int $id): void
     {
         $person = $this->trashedPersons($user)->findOrFail($id);
-        $this->assertCanRestorePerson($person);
-
-        $person->deleted_by = null;
-        $person->save();
-        $person->restore();
+        DB::transaction(function () use ($person): void {
+            $this->lockOpenVillagesForHouseholds([$person->household_id]);
+            $this->assertCanRestorePerson($person);
+            $person->deleted_by = null;
+            $person->save();
+            $person->restore();
+        });
     }
 
     public function permanentlyDeletePerson(User $user, int $id): void
     {
-        $this->trashedPersons($user)->findOrFail($id)->forceDelete();
+        $person = $this->trashedPersons($user)->findOrFail($id);
+        DB::transaction(function () use ($person): void {
+            $this->lockOpenVillagesForHouseholds([$person->household_id]);
+            $person->forceDelete();
+        });
     }
 
     public function restoreMany(User $user, array $householdIds, array $personIds): int
@@ -163,6 +171,10 @@ class HouseholdTrashService
         }
 
         return DB::transaction(function () use ($households, $persons): int {
+            $this->lockOpenVillagesForHouseholds([
+                ...$households->modelKeys(),
+                ...$persons->pluck('household_id')->all(),
+            ]);
             foreach ($households as $household) {
                 $household->deleted_by = null;
                 $household->save();
@@ -186,6 +198,10 @@ class HouseholdTrashService
         abort_unless($persons->count() === count($personIds), 404);
 
         return DB::transaction(function () use ($households, $persons): int {
+            $this->lockOpenVillagesForHouseholds([
+                ...$households->modelKeys(),
+                ...$persons->pluck('household_id')->all(),
+            ]);
             foreach ($households as $household) {
                 Person::withoutGlobalScope('active_household')
                     ->withTrashed()
@@ -193,6 +209,7 @@ class HouseholdTrashService
                     ->forceDelete();
                 $household->forceDelete();
             }
+
             foreach ($persons as $person) {
                 if (! $households->contains('id', $person->household_id)) {
                     $person->forceDelete();
@@ -201,6 +218,26 @@ class HouseholdTrashService
 
             return $households->count() + $persons->count();
         });
+    }
+
+    private function lockOpenVillagesForHouseholds(array $householdIds): void
+    {
+        $villageCodes = Household::withTrashed()
+            ->whereIn('id', array_unique($householdIds))
+            ->pluck('village_code')
+            ->filter(fn ($villageCode): bool => $villageCode !== null && $villageCode !== '')
+            ->unique()
+            ->sort()
+            ->values();
+
+        foreach ($villageCodes as $villageCode) {
+            $this->villageService()->assertAcceptsHouseholds($villageCode, true);
+        }
+    }
+
+    private function villageService(): VillageService
+    {
+        return $this->villages ?? app(VillageService::class);
     }
 
     public function householdForDetails(User $user, int $id): Household
@@ -212,7 +249,7 @@ class HouseholdTrashService
                 'village',
                 'persons' => fn ($persons) => $persons->withoutGlobalScope('active_household')
                     ->withTrashed()
-                    ->with(['ethnicity', 'educations.school', 'disability']),
+                    ->withDetails(),
             ])
             ->findOrFail($id);
     }

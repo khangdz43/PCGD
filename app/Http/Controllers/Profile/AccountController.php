@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Profile;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Profile\UpdateAccountProfileRequest;
 use App\Http\Requests\Profile\UpdateAccountPasswordRequest;
 use App\Services\Profile\AccountProfileService;
 use Illuminate\Http\JsonResponse;
@@ -13,6 +14,16 @@ class AccountController extends Controller
     public function show(Request $request, AccountProfileService $profileService): JsonResponse
     {
         return response()->json($profileService->viewData($request->user()));
+    }
+
+    public function update(
+        UpdateAccountProfileRequest $request,
+        AccountProfileService $profileService,
+    ): JsonResponse {
+        return response()->json($profileService->updateProfile(
+            $request->user(),
+            $request->validated(),
+        ));
     }
 
     public function updatePassword(

@@ -24,7 +24,7 @@ class HouseholdPersonController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $persons = $household->persons()
-            ->with(['ethnicity', 'educations.school', 'disability'])
+            ->withDetails()
             ->orderBy('id')
             ->paginate($filters['per_page'] ?? 15)
             ->withQueryString();
@@ -264,7 +264,7 @@ class HouseholdPersonController extends Controller
                 $schoolProvinceRules[] = Rule::in([$user->province_code]);
             }
 
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
+            if ($user->roleScopeLevel() === 'commune') {
                 $schoolCommuneRules[] = Rule::in([$user->commune_code]);
             }
         }
@@ -273,7 +273,7 @@ class HouseholdPersonController extends Controller
             ->where('province_code', $request->input('school_province_code'))
             ->where('commune_code', $request->input('school_commune_code'));
         if (! $user->hasRole(Role::SYSTEM_ADMIN)
-            && in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
+            && $user->roleScopeLevel() === 'commune') {
             $schoolExistsRule
                 ->where('province_code', $user->province_code)
                 ->where('commune_code', $user->commune_code);

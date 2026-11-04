@@ -29,7 +29,7 @@ class HouseholdImportHistoryController extends Controller
             ->oldest('id')
             ->pluck('id');
         $queuePositions = $pendingImportIds->values()->mapWithKeys(
-            fn (int $id, int $index): array => [$id => $index + 1],
+            fn(int $id, int $index): array => [$id => $index + 1],
         );
         $queueTotal = $pendingImportIds->count();
 
@@ -62,12 +62,12 @@ class HouseholdImportHistoryController extends Controller
         HouseholdImportHistoryService $historyService,
     ): BinaryFileResponse {
         abort_unless($importLog->user_id === $request->user()->id, 404);
-        abort_unless($importLog->status === 'FAILED' && $importLog->file_path !== null, 404);
+        abort_unless(in_array($importLog->status, ['PARTIAL', 'FAILED'], true) && $importLog->file_path !== null, 404);
 
         $errorFilePath = $historyService->errorFilePath($importLog);
 
         $extension = pathinfo($importLog->file_name, PATHINFO_EXTENSION);
-        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME).'-loi'.($extension !== '' ? '.'.$extension : '');
+        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME) . '-loi' . ($extension !== '' ? '.' . $extension : '');
 
         return response()->download(
             Storage::disk('local')->path($errorFilePath),

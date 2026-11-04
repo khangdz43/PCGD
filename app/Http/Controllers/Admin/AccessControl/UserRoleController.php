@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\Admin\AccessControl\UserAccessControlService;
 use App\Support\ApiResponse;
 use App\Support\DelegatedAccess;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -42,6 +43,7 @@ class UserRoleController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
+        $filterRoles = $this->users->rolesForAccountFilter($actor, $filter);
         $data = $this->users->indexData(
             $actor,
             $filter,
@@ -54,6 +56,10 @@ class UserRoleController extends Controller
             'id' => $user->id,
             'name' => $user->name,
             'username' => $user->username,
+            'phone' => $user->phone,
+            'date_of_birth' => $user->date_of_birth?->format('Y-m-d'),
+            'email' => $user->email,
+            'role_name' => $user->roles->pluck('name')->implode(', ') ?: 'Chưa được gán nhóm',
             'scope_level' => $user->roleScopeLevel(),
             'is_active' => $user->is_active,
             'can_change_account_status' => $user->can_change_account_status,
@@ -61,7 +67,27 @@ class UserRoleController extends Controller
         ])->all();
 
         return ApiResponse::success(
-            ['allUsers' => $users],
+            [
+                'allUsers' => $users,
+                'roles' => $filterRoles->map(fn (Role $role): array => [
+                    'id' => $role->id,
+                    'name' => $role->name,
+                ])->values(),
+                'provinces' => $provinces->map(fn ($province): array => [
+                    'code' => $province->code,
+                    'name' => $province->name,
+                ])->values(),
+                'actor_scope_level' => $actor->roleScopeLevel(),
+                'can_edit_account_configurations' => $this->users->canEditUserConfigurations($actor),
+                'selected_filters' => [
+                    'province_code' => $filter['province_code'] ?? $actor->province_code,
+                    'commune_code' => $filter['commune_code'] ?? (
+                        $actor->roleScopeLevel() === 'commune' ? $actor->commune_code : null
+                    ),
+                    'village_code' => $filter['village_code'] ?? null,
+                    'role_id' => $filter['role_id'] ?? null,
+                ],
+            ],
             'Lấy danh sách tài khoản thành công.',
             meta: [
                 'current_page' => $accounts->currentPage(),
@@ -75,28 +101,59 @@ class UserRoleController extends Controller
     public function create(Request $request): JsonResponse
     {
         $actor = $request->user();
+        abort_unless(
+            $actor->can('create-users')
+                && ($actor->hasRole(Role::SYSTEM_ADMIN) || $actor->roleScopeLevel() !== 'global'),
+            403
+        );
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
+        $provinces = $this->users->manageableProvinces($actor);
+        $selectedLocations = $this->users->selectedLocations($actor);
+        $selectedLocations['village_codes'] = [];
+        $selectedLocations['villages'] = [];
 
         return response()->json([
             'user' => new User(['is_active' => true]),
-            'roles' => $this->users->rolesForForm($actor, $accountLevels),
+            'roles' => $this->users->rolesForForm($actor, $accountLevels)
+                ->map(fn (Role $role): array => $role->only([
+                    'id',
+                    'name',
+                    'scope_level',
+                    'assignable_scope_levels',
+                    'is_primary_admin',
+                    'manages_all_villages',
+                    'uses_village_scope',
+                ])),
             'account_levels' => $accountLevels,
-            'account_scope_level' => 'province',
-            'provinces' => $this->users->manageableProvinces($actor),
-            'selected_locations' => $this->users->selectedLocations(),
+            'available_primary_admin_scopes' => [
+                'province' => $provinces->isNotEmpty(),
+                'commune' => $this->users->hasAvailablePrimaryAdminScope($actor, 'commune'),
+            ],
+            'provinces' => $provinces,
+            'selected_locations' => $selectedLocations,
+            'actor_scope_level' => $actor->roleScopeLevel(),
         ]);
     }
 
     public function show(Request $request, User $user): JsonResponse
     {
-        abort_unless($this->users->canManageUser($request->user(), $user), 403);
-        $user->load(['roles', 'province', 'commune', 'villages']);
+        abort_unless($this->users->canViewUser($request->user(), $user), 403);
+        $user->load([
+            'roles' => fn (MorphToMany $roles) => $roles->where('roles.created_by', $request->user()->id),
+            'province',
+            'commune',
+            'villages',
+        ]);
 
         return response()->json([
             'data' => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'username' => $user->username,
+                'phone' => $user->phone,
+                'citizen_id' => $user->citizen_id,
+                'date_of_birth' => $user->date_of_birth?->format('Y-m-d'),
+                'email' => $user->email,
                 'is_active' => $user->is_active,
                 'scope_level' => $user->scope_level,
                 'province' => $user->province?->only(['code', 'name']),
@@ -117,43 +174,90 @@ class UserRoleController extends Controller
     public function store(Request $request): JsonResponse
     {
         $actor = $request->user();
+        abort_unless($actor->can('create-users'), 403);
         $data = $request->validate($this->rules($actor));
         $role = Role::findOrFail($data['role_id']);
         $scopeLevel = $data['scope_level'] ?? 'province';
         $this->users->validateRoleForScope($role, $scopeLevel, $actor);
-        $scope = $request->validate($this->scopeRules($scopeLevel));
+        $scope = $request->validate($this->scopeRules(
+            $scopeLevel,
+            $actor,
+            $this->users->roleManagesAllVillages($role),
+            $this->users->roleUsesVillageScope($role),
+        ));
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
-        $this->users->create($actor, $data, $scope, $scopeLevel, $role);
+        $user = $this->users->create($actor, $data, $scope, $scopeLevel, $role);
 
-        return response()->json(['message' => 'Đã tạo tài khoản và gán quyền truy cập.'], 201);
+        return response()->json([
+            'message' => 'Đã tạo tài khoản và gán quyền truy cập.',
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'username' => $user->username,
+                'phone' => $user->phone,
+                'role_name' => $user->roles->pluck('name')->implode(', '),
+                'role_id' => $role->id,
+                'scope_level' => $user->roleScopeLevel(),
+                'province_code' => $user->province_code,
+                'commune_code' => $user->commune_code,
+                'village_codes' => $user->villages->pluck('code')->all(),
+                'is_active' => $user->is_active,
+                'can_change_account_status' => $this->users->canChangeUserStatus($actor, $user, true)
+                    || $this->users->canChangeUserStatus($actor, $user, false),
+                'can_reset_account_password' => $this->users->canResetUserPassword($actor, $user),
+            ],
+        ], 201);
     }
 
     public function edit(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($this->users->canManageUser($actor, $user), 403);
+        abort_unless($this->users->canEditUserConfiguration($actor, $user), 403);
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
+        $provinces = $this->users->manageableProvinces($actor, $user);
 
         return response()->json([
-            'user' => $user->load(['roles', 'villages']),
-            'roles' => $this->users->rolesForForm($actor, $accountLevels),
+            'user' => $user->load([
+                'roles' => fn (MorphToMany $roles) => $roles->where('roles.created_by', $actor->id),
+                'villages',
+            ]),
+            'roles' => $this->users->rolesForForm($actor, $accountLevels)
+                ->map(fn (Role $role): array => $role->only([
+                    'id',
+                    'name',
+                    'scope_level',
+                    'assignable_scope_levels',
+                    'is_primary_admin',
+                    'manages_all_villages',
+                    'uses_village_scope',
+                ])),
             'account_levels' => $accountLevels,
             'account_scope_level' => $user->scope_level,
-            'provinces' => $this->users->manageableProvinces($actor, $user),
+            'available_primary_admin_scopes' => [
+                'province' => $provinces->isNotEmpty(),
+                'commune' => $this->users->hasAvailablePrimaryAdminScope($actor, 'commune', $user),
+            ],
+            'provinces' => $provinces,
             'selected_locations' => $this->users->selectedLocations($user),
+            'actor_scope_level' => $actor->roleScopeLevel(),
         ]);
     }
 
     public function update(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($this->users->canManageUser($actor, $user), 403);
+        abort_unless($this->users->canEditUserConfiguration($actor, $user), 403);
 
         $data = $request->validate($this->rules($actor, $user));
         $role = Role::findOrFail($data['role_id']);
         $scopeLevel = $data['scope_level'] ?? 'province';
         $this->users->validateRoleForScope($role, $scopeLevel, $actor);
-        $scope = $request->validate($this->scopeRules($scopeLevel));
+        $scope = $request->validate($this->scopeRules(
+            $scopeLevel,
+            $actor,
+            $this->users->roleManagesAllVillages($role),
+            $this->users->roleUsesVillageScope($role),
+        ));
         $this->users->authorizeManagedScope($actor, $scopeLevel, $scope);
         $this->users->update($actor, $user, $data, $scope, $scopeLevel, $role);
 
@@ -163,11 +267,10 @@ class UserRoleController extends Controller
     public function updateStatus(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($this->users->canChangeUserStatus($actor, $user), 403);
-
         $data = $request->validate([
             'is_active' => ['required', 'boolean'],
         ]);
+        abort_unless($this->users->canChangeUserStatus($actor, $user, (bool) $data['is_active']), 403);
 
         if ($actor->is($user) && ! $data['is_active']) {
             return response()->json([
@@ -189,7 +292,6 @@ class UserRoleController extends Controller
     {
         $actor = $request->user();
         abort_unless($this->users->canResetUserPassword($actor, $user), 403);
-        $this->users->resetPassword($user);
         $this->users->resetPassword($user);
 
         return response()->json([
@@ -214,6 +316,23 @@ class UserRoleController extends Controller
                 'max:255',
                 Rule::unique('users', 'username')->ignore($user?->id),
             ],
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20',
+            ],
+            'citizen_id' => [
+                'required',
+                'digits:12',
+                Rule::unique('users', 'citizen_id')->ignore($user?->id),
+            ],
+            'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
+            'email' => [
+                'nullable',
+                'email',
+                'max:255',
+                Rule::unique('users', 'email')->ignore($user?->id),
+            ],
             'password' => [$user ? 'nullable' : 'required', 'confirmed', Password::min(12)],
             'role_id' => [
                 'required',
@@ -225,7 +344,12 @@ class UserRoleController extends Controller
         ];
     }
 
-    private function scopeRules(string $scopeLevel): array
+    private function scopeRules(
+        string $scopeLevel,
+        User $actor,
+        bool $managesAllVillages = false,
+        bool $usesVillageScope = false,
+    ): array
     {
         if ($scopeLevel === 'global') {
             return [
@@ -243,7 +367,7 @@ class UserRoleController extends Controller
             'school_code' => ['prohibited'],
         ];
 
-        if (in_array($scopeLevel, ['commune', 'village'], true)) {
+        if ($scopeLevel === 'commune') {
             $rules['commune_code'] = [
                 'required',
                 'string',
@@ -251,14 +375,20 @@ class UserRoleController extends Controller
             ];
         }
 
-        if ($scopeLevel === 'village') {
-            $rules['village_codes'] = ['required', 'array', 'min:1'];
-            $rules['village_codes.*'] = [
-                'required',
-                'string',
-                'distinct',
-                Rule::exists('villages', 'code')->where('commune_code', request()->input('commune_code')),
-            ];
+        if ($scopeLevel === 'commune' && $actor->roleScopeLevel() === 'commune') {
+            if ($managesAllVillages || ! $usesVillageScope) {
+                unset($rules['village_codes']);
+            } else {
+                $rules['village_codes'] = $actor->managedVillageCodes() === []
+                    ? ['sometimes', 'array']
+                    : ['required', 'array', 'min:1'];
+                $rules['village_codes.*'] = [
+                    'required',
+                    'string',
+                    'distinct',
+                    Rule::exists('villages', 'code')->where('commune_code', request()->input('commune_code')),
+                ];
+            }
         }
 
         return $rules;

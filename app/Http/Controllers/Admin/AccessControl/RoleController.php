@@ -8,6 +8,7 @@ use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\RoleManagementService;
 use App\Support\ApiResponse;
+use App\Support\AccessPermission;
 use App\Support\DelegatedAccess;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,7 @@ class RoleController extends Controller
         $actor = $request->user();
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:100'],
-            'scope_level' => ['nullable', Rule::in(['global', 'province', 'commune', 'village'])],
+            'scope_level' => ['nullable', Rule::in(['global', 'province', 'commune'])],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
@@ -35,6 +36,7 @@ class RoleController extends Controller
                 'name' => $role->name,
                 'description' => $role->description,
                 'scope_level' => $role->scope_level,
+                'is_system' => $role->is_system,
                 'users_count' => $role->users_count,
                 'permissions' => $role->permissions->pluck('name')->values(),
                 'can_manage' => $this->roles->canManageRole($actor, $role),
@@ -52,7 +54,10 @@ class RoleController extends Controller
     public function members(Request $request, Role $role): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($this->roles->canManageRole($actor, $role), 403);
+        abort_unless(
+            $actor->can('view-roles') && $this->roles->canViewRole($actor, $role),
+            403
+        );
         $filters = $request->validate([
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
@@ -103,8 +108,8 @@ class RoleController extends Controller
     public function show(Request $request, Role $role): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($this->roles->canManageRole($actor, $role), 403);
-        $role->load('permissions')->loadCount('users');
+        abort_unless($this->roles->canViewRole($actor, $role), 403);
+        $role->load('permissions');
 
         return response()->json([
             'data' => [
@@ -112,7 +117,8 @@ class RoleController extends Controller
                 'name' => $role->name,
                 'description' => $role->description,
                 'scope_level' => $role->scope_level,
-                'users_count' => $role->users_count,
+                'is_system' => $role->is_system,
+                'users_count' => $this->roles->membersCountFor($actor, $role),
                 'permissions' => $role->permissions->pluck('name')->values(),
                 'can_manage' => $this->roles->canManageRole($actor, $role),
             ],
@@ -122,9 +128,21 @@ class RoleController extends Controller
     public function store(Request $request): JsonResponse
     {
         $actor = $request->user();
-        $this->roles->create($actor, $request->validate($this->rules($actor)));
+        $role = $this->roles->create($actor, $request->validate($this->rules($actor), $this->messages()));
 
-        return response()->json(['message' => 'Đã tạo nhóm người dùng.'], 201);
+        return response()->json([
+            'message' => 'Đã tạo nhóm người dùng.',
+            'data' => [
+                'id' => $role->id,
+                'name' => $role->name,
+                'description' => $role->description,
+                'scope_level' => $role->scope_level,
+                'is_system' => $role->is_system,
+                'users_count' => 0,
+                'permissions' => $role->permissions->pluck('name')->values(),
+                'can_manage' => $this->roles->canManageRole($actor, $role),
+            ],
+        ], 201);
     }
 
     public function edit(Request $request, Role $role): JsonResponse
@@ -136,7 +154,10 @@ class RoleController extends Controller
         $role->load('permissions')->loadCount('users');
         /** @var Collection<int, Permission> $permissions */
         $permissions = $role->name === Role::SYSTEM_ADMIN
-            ? Permission::where('guard_name', 'web')->orderBy('name')->get()
+            ? Permission::where('guard_name', 'web')
+                ->whereNotIn('name', AccessPermission::mergePermissions())
+                ->orderBy('name')
+                ->get()
             : $this->roles->manageablePermissions($actor, $scopeLevels);
         $scopeLevel = old('scope_level', $role->scope_level === 'global'
             ? $this->roles->defaultScopeLevel($actor, $scopeLevels)
@@ -148,7 +169,14 @@ class RoleController extends Controller
                 'name' => $role->name,
                 'description' => $role->description,
                 'scope_level' => $role->scope_level,
-                'permissions' => $role->permissions->pluck('id')->values(),
+                'permissions' => $role->permissions
+                    ->reject(fn (Permission $permission): bool => in_array(
+                        $permission->name,
+                        AccessPermission::mergePermissions(),
+                        true
+                    ))
+                    ->pluck('id')
+                    ->values(),
             ],
             'scope_levels' => $role->name === Role::SYSTEM_ADMIN ? [] : $scopeLevels,
             'permissions' => $permissions->map(fn (Permission $permission): array => [
@@ -164,7 +192,7 @@ class RoleController extends Controller
     {
         $actor = $request->user();
         abort_unless($this->roles->canManageRole($actor, $role), 403);
-        $this->roles->update($actor, $role, $request->validate($this->rules($actor, $role)));
+        $this->roles->update($actor, $role, $request->validate($this->rules($actor, $role), $this->messages()));
 
         return response()->json(['message' => 'Đã cập nhật nhóm người dùng.']);
     }
@@ -202,7 +230,9 @@ class RoleController extends Controller
             'scope_level' => $role?->name === Role::SYSTEM_ADMIN
                 ? ['prohibited']
                 : ['required', Rule::in($manageableLevels)],
-            'permissions' => ['sometimes', 'array'],
+            'permissions' => $role === null
+                ? ['required', 'array', 'min:1']
+                : ['sometimes', 'array'],
             'permissions.*' => [
                 'integer',
                 'distinct',
@@ -212,6 +242,15 @@ class RoleController extends Controller
             ],
             'permission_groups' => ['sometimes', 'array'],
             'permission_groups.*' => [Rule::in(['households'])],
+        ];
+    }
+
+    private function messages(): array
+    {
+        return [
+            'name.unique' => 'Tên nhóm người dùng này đã tồn tại.',
+            'permissions.required' => 'Vui lòng chọn ít nhất một quyền cho nhóm người dùng.',
+            'permissions.min' => 'Vui lòng chọn ít nhất một quyền cho nhóm người dùng.',
         ];
     }
 }

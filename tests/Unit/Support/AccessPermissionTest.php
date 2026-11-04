@@ -14,7 +14,7 @@ class AccessPermissionTest extends TestCase
         $allPermissions = array_values(array_unique(array_merge(
             ...array_map(
                 AccessPermission::permissionsForScope(...),
-                ['global', 'province', 'commune', 'village'],
+                ['global', 'province', 'commune'],
             ),
         )));
 
@@ -45,11 +45,49 @@ class AccessPermissionTest extends TestCase
                 AccessPermission::MANAGE_ACCESS_CONTROL,
                 AccessPermission::MANAGE_USER_ACCOUNTS,
                 AccessPermission::VIEW_ORGANIZATION_ACCOUNTS,
+                AccessPermission::VIEW_USERS,
+                AccessPermission::CREATE_USERS,
+                AccessPermission::UPDATE_USERS,
+                AccessPermission::DELETE_USERS,
+                AccessPermission::VIEW_ROLES,
+                AccessPermission::CREATE_ROLES,
+                AccessPermission::UPDATE_ROLES,
+                AccessPermission::DELETE_ROLES,
+                AccessPermission::VIEW_SCHOOLS,
+                AccessPermission::CREATE_SCHOOLS,
+                AccessPermission::UPDATE_SCHOOLS,
+                AccessPermission::DELETE_SCHOOLS,
+                AccessPermission::VIEW_VILLAGES,
+                AccessPermission::CREATE_VILLAGES,
+                AccessPermission::UPDATE_VILLAGES,
+                AccessPermission::DELETE_VILLAGES,
+                AccessPermission::VIEW_IMPORTS,
+                AccessPermission::CREATE_IMPORTS,
+                AccessPermission::DELETE_IMPORTS,
+                AccessPermission::VIEW_EXPORTS,
+                AccessPermission::CREATE_EXPORTS,
+                AccessPermission::VIEW_TRASH,
+                AccessPermission::UPDATE_TRASH,
+                AccessPermission::DELETE_TRASH,
             ]],
             'province' => ['province', [
                 AccessPermission::MANAGE_SCHOOLS,
                 AccessPermission::MANAGE_ACCESS_CONTROL,
                 AccessPermission::MANAGE_USER_ACCOUNTS,
+                AccessPermission::VIEW_USERS,
+                AccessPermission::CREATE_USERS,
+                AccessPermission::UPDATE_USERS,
+                AccessPermission::DELETE_USERS,
+                AccessPermission::VIEW_ROLES,
+                AccessPermission::CREATE_ROLES,
+                AccessPermission::UPDATE_ROLES,
+                AccessPermission::DELETE_ROLES,
+                AccessPermission::VIEW_SCHOOLS,
+                AccessPermission::CREATE_SCHOOLS,
+                AccessPermission::UPDATE_SCHOOLS,
+                AccessPermission::DELETE_SCHOOLS,
+                AccessPermission::VIEW_SCHOOL_MERGES,
+                AccessPermission::CREATE_SCHOOL_MERGES,
             ]],
             'commune' => ['commune', [
                 AccessPermission::VIEW_HOUSEHOLDS,
@@ -59,16 +97,37 @@ class AccessPermissionTest extends TestCase
                 AccessPermission::IMPORT_HOUSEHOLDS,
                 AccessPermission::EXPORT_HOUSEHOLDS,
                 AccessPermission::MANAGE_VILLAGES,
+                AccessPermission::MANAGE_SCHOOLS,
                 AccessPermission::MANAGE_ACCESS_CONTROL,
                 AccessPermission::MANAGE_USER_ACCOUNTS,
-            ]],
-            'village' => ['village', [
-                AccessPermission::VIEW_HOUSEHOLDS,
-                AccessPermission::CREATE_HOUSEHOLDS,
-                AccessPermission::UPDATE_HOUSEHOLDS,
-                AccessPermission::DELETE_HOUSEHOLDS,
-                AccessPermission::IMPORT_HOUSEHOLDS,
-                AccessPermission::EXPORT_HOUSEHOLDS,
+                AccessPermission::VIEW_USERS,
+                AccessPermission::CREATE_USERS,
+                AccessPermission::UPDATE_USERS,
+                AccessPermission::DELETE_USERS,
+                AccessPermission::VIEW_ROLES,
+                AccessPermission::CREATE_ROLES,
+                AccessPermission::UPDATE_ROLES,
+                AccessPermission::DELETE_ROLES,
+                AccessPermission::VIEW_SCHOOLS,
+                AccessPermission::CREATE_SCHOOLS,
+                AccessPermission::UPDATE_SCHOOLS,
+                AccessPermission::DELETE_SCHOOLS,
+                AccessPermission::VIEW_SCHOOL_MERGES,
+                AccessPermission::CREATE_SCHOOL_MERGES,
+                AccessPermission::VIEW_VILLAGES,
+                AccessPermission::CREATE_VILLAGES,
+                AccessPermission::UPDATE_VILLAGES,
+                AccessPermission::DELETE_VILLAGES,
+                AccessPermission::VIEW_VILLAGE_MERGES,
+                AccessPermission::CREATE_VILLAGE_MERGES,
+                AccessPermission::VIEW_IMPORTS,
+                AccessPermission::CREATE_IMPORTS,
+                AccessPermission::DELETE_IMPORTS,
+                AccessPermission::VIEW_EXPORTS,
+                AccessPermission::CREATE_EXPORTS,
+                AccessPermission::VIEW_TRASH,
+                AccessPermission::UPDATE_TRASH,
+                AccessPermission::DELETE_TRASH,
             ]],
             'unknown scope' => ['unknown', []],
         ];
@@ -99,7 +158,7 @@ class AccessPermissionTest extends TestCase
             AccessPermission::impliedPermissions(AccessPermission::VIEW_HOUSEHOLDS),
         );
         self::assertSame(
-            [AccessPermission::MANAGE_USER_ACCOUNTS],
+            [],
             AccessPermission::impliedPermissions(AccessPermission::MANAGE_ACCESS_CONTROL),
         );
         self::assertSame([], AccessPermission::impliedPermissions('unknown-permission'));
@@ -131,5 +190,30 @@ class AccessPermissionTest extends TestCase
             AccessPermission::MANAGE_ACCESS_CONTROL,
             AccessPermission::MANAGE_USER_ACCOUNTS,
         ]));
+    }
+
+    public function test_legacy_permissions_expand_to_granular_actions_without_escalating_view_only_permissions(): void
+    {
+        self::assertSame([
+            AccessPermission::MANAGE_USER_ACCOUNTS,
+            AccessPermission::VIEW_USERS,
+            AccessPermission::CREATE_USERS,
+            AccessPermission::UPDATE_USERS,
+            AccessPermission::DELETE_USERS,
+            AccessPermission::MANAGE_ACCESS_CONTROL,
+            AccessPermission::VIEW_ROLES,
+            AccessPermission::CREATE_ROLES,
+            AccessPermission::UPDATE_ROLES,
+            AccessPermission::DELETE_ROLES,
+        ], AccessPermission::expandLegacyPermissions([AccessPermission::MANAGE_USER_ACCOUNTS]));
+
+        self::assertSame(
+            [AccessPermission::VIEW_USERS],
+            AccessPermission::expandLegacyPermissions([AccessPermission::VIEW_USERS]),
+        );
+        self::assertSame(
+            [AccessPermission::CREATE_USERS, AccessPermission::MANAGE_USER_ACCOUNTS],
+            AccessPermission::permissionSources(AccessPermission::CREATE_USERS),
+        );
     }
 }

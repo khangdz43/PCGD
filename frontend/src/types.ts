@@ -3,6 +3,10 @@ export interface User {
     name: string;
     username: string;
     scope_level: string | null;
+    scope_level_label?: string;
+    scope_area?: string;
+    role_name?: string;
+    school_year?: string;
     province_code: string | null;
     commune_code: string | null;
     permissions?: string[];

@@ -63,7 +63,11 @@ class HouseholdPersonServiceTest extends TestCase
         [$person, $education, $disability] = (new HouseholdPersonService)->splitFormData($data);
 
         self::assertSame(['first_name' => 'An'], $person);
-        self::assertSame(['school_year' => '2025-2026', 'is_complementary' => false], $education);
+        self::assertSame([
+            'school_year' => '2025-2026',
+            'is_complementary' => false,
+            'academic_block' => null,
+        ], $education);
         self::assertSame([
             'autism' => true,
             'mobility_disability' => false,

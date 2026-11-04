@@ -64,6 +64,11 @@ class Person extends Model
         return $this->hasOne(PersonDisability::class);
     }
 
+    public function scopeWithDetails(Builder $query): Builder
+    {
+        return $query->with(['ethnicity', 'educations.school', 'disability']);
+    }
+
     public function importLog(): BelongsTo
     {
         return $this->belongsTo(ImportLog::class);

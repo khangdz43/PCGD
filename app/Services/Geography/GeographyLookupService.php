@@ -38,7 +38,7 @@ class GeographyLookupService
                 $communes->whereRaw('1 = 0');
             }
 
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
+            if ($user->roleScopeLevel() === 'commune') {
                 $communes->where('code', $user->commune_code);
             }
         }
@@ -86,19 +86,20 @@ class GeographyLookupService
     public function villagesForCommune(string $communeCode, User $user, bool $includeAccountCounts): Collection
     {
         $commune = Commune::where('code', $communeCode)->firstOrFail();
-        $villages = $commune->villages();
+        $villages = $commune->villages()
+            ->whereNull('merged_into_code')
+            ->whereNull('intake_paused_at');
 
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             if ($user->province_code !== $commune->province_code) {
                 $villages->whereRaw('1 = 0');
             }
 
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)
-                && $user->commune_code !== $communeCode) {
+            if ($user->roleScopeLevel() === 'commune' && $user->commune_code !== $communeCode) {
                 $villages->whereRaw('1 = 0');
             }
 
-            if ($user->roleScopeLevel() === 'village') {
+            if ($user->roleScopeLevel() === 'commune' && $user->managedVillageCodes() !== []) {
                 $villages->whereIn('code', $user->managedVillageCodes());
             }
         }
@@ -124,7 +125,7 @@ class GeographyLookupService
                 $countsQuery->where('users.province_code', $user->province_code)
                     ->where('users.commune_code', $user->commune_code)
                     ->where('users.id', '!=', $user->id)
-                    ->where('users.scope_level', 'village');
+                    ->where('users.scope_level', 'commune');
             }
             $counts = $countsQuery
                 ->select('user_villages.village_code')

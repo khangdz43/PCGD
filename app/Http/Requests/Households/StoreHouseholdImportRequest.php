@@ -26,7 +26,10 @@ class StoreHouseholdImportRequest extends FormRequest
             ],
             'village_code' => [
                 'required',
-                Rule::exists('villages', 'code')->where('commune_code', $this->input('commune_code')),
+                Rule::exists('villages', 'code')
+                    ->where('commune_code', $this->input('commune_code'))
+                    ->whereNull('merged_into_code')
+                    ->whereNull('intake_paused_at'),
             ],
         ];
     }

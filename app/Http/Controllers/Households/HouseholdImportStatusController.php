@@ -42,7 +42,7 @@ class HouseholdImportStatusController extends Controller
             ->oldest('id')
             ->pluck('id');
         $queuePositions = $pendingImportIds->values()->mapWithKeys(
-            fn (int $id, int $index): array => [$id => $index + 1],
+            fn(int $id, int $index): array => [$id => $index + 1],
         );
         $queueTotal = $pendingImportIds->count();
 
@@ -61,15 +61,11 @@ class HouseholdImportStatusController extends Controller
 
     private function statusData(ImportLog $importLog): array
     {
-        $progress = $importLog->status === 'SUCCESS'
+        $progress = in_array($importLog->status, ['SUCCESS', 'PARTIAL', 'FAILED'], true)
             ? 100
             : ($importLog->total_rows > 0
                 ? min(100, (int) floor($importLog->processed_rows * 100 / $importLog->total_rows))
                 : 0);
-
-        if ($importLog->status === 'FAILED') {
-            $progress = min(90, $progress);
-        }
 
         return [
             'status' => $importLog->status,
@@ -78,9 +74,9 @@ class HouseholdImportStatusController extends Controller
             'total_rows' => $importLog->total_rows,
             'success_rows' => $importLog->success_rows,
             'error_rows' => $importLog->error_rows,
-            'has_error_file' => $importLog->status === 'FAILED'
-                && $importLog->file_path !== null
-                && Storage::disk('local')->exists($importLog->file_path),
+            'has_error_file' => in_array($importLog->status, ['PARTIAL', 'FAILED'], true)
+                && $importLog->error_file_path !== null
+                && Storage::disk('local')->exists($importLog->error_file_path),
         ];
     }
 }

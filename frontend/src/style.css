@@ -5259,6 +5259,11 @@ h2 {
     font-size: .78rem;
 }
 
+.account-management-table td:nth-child(1) {
+    color: #344054;
+    font-weight: 400;
+}
+
 .account-management-table .table-actions {
     min-width: 180px;
     text-align: center;

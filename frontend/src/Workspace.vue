@@ -5588,23 +5588,6 @@ onMounted(() => void load());
                         </option>
                     </select>
                 </label>
-                <label>
-                    <span>Nhóm quyền</span>
-                    <select
-                        v-model="userFilterRole"
-                        aria-label="Lọc theo nhóm người dùng"
-                        @change="changeUserRole"
-                    >
-                        <option value="">Tất cả nhóm người dùng</option>
-                        <option
-                            v-for="role in userFilterRoles"
-                            :key="String(role.id)"
-                            :value="String(role.id)"
-                        >
-                            {{ role.name }}
-                        </option>
-                    </select>
-                </label>
                 <label v-if="showUserProvinceFilter">
                     <span>Phạm vi</span>
                     <select
@@ -5656,6 +5639,23 @@ onMounted(() => void load());
                             :value="String(village.code)"
                         >
                             {{ village.name }}
+                        </option>
+                    </select>
+                </label>
+                <label>
+                    <span>Nhóm quyền</span>
+                    <select
+                        v-model="userFilterRole"
+                        aria-label="Lọc theo nhóm người dùng"
+                        @change="changeUserRole"
+                    >
+                        <option value="">Tất cả nhóm người dùng</option>
+                        <option
+                            v-for="role in userFilterRoles"
+                            :key="String(role.id)"
+                            :value="String(role.id)"
+                        >
+                            {{ role.name }}
                         </option>
                     </select>
                 </label>

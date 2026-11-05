@@ -11366,11 +11366,17 @@ onMounted(() => void load());
                         <dd>{{ userDetail.is_active ? "Đang hoạt động" : "Đã vô hiệu hóa" }}</dd>
                     </div>
                     <div><dt>Cấp quản lý</dt><dd>{{ scopeLabels[String(userDetail.scope_level)] || "—" }}</dd></div>
-                    <div><dt>Tỉnh / thành phố</dt><dd>{{ asRow(userDetail.province).name || "—" }}</dd></div>
-                    <div><dt>Xã / phường</dt><dd>{{ asRow(userDetail.commune).name || "—" }}</dd></div>
-                    <div>
+                    <div v-if="userDetail.province">
+                        <dt>Tỉnh / thành phố</dt>
+                        <dd>{{ asRow(userDetail.province).name }}</dd>
+                    </div>
+                    <div v-if="userDetail.commune">
+                        <dt>Xã / phường</dt>
+                        <dd>{{ asRow(userDetail.commune).name }}</dd>
+                    </div>
+                    <div v-if="asRows(userDetail.villages).length">
                         <dt>Thôn / xóm</dt>
-                        <dd>{{ asRows(userDetail.villages).map((village) => String(village.name ?? "")).filter(Boolean).join(", ") || "—" }}</dd>
+                        <dd>{{ asRows(userDetail.villages).map((village) => String(village.name ?? "")).filter(Boolean).join(", ") }}</dd>
                     </div>
                     <div class="user-detail-roles">
                         <dt>Nhóm quyền</dt>

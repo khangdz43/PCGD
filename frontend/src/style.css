@@ -1364,7 +1364,20 @@ h2 {
     box-shadow: 0 4px 16px rgb(15 23 42 / 4%);
 }
 
-.village-merge-configuration-form > .workspace-form-heading,
+.workspace-modal-card.user-configuration-form .user-form-actions {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    grid-column: 1 / -1;
+    width: fit-content;
+    justify-self: end;
+    justify-content: flex-end;
+    margin: 0;
+    padding: 8px 0;
+    background: transparent;
+}
+
+.village-merge-configuration-form>.workspace-form-heading,
 .village-merge-configuration-form > .notice,
 .village-merge-configuration-form > .village-merge-columns,
 .village-merge-configuration-form > .pagination-actions {
@@ -5044,6 +5057,11 @@ h2 {
     .workspace-modal-card {
         max-height: 94dvh;
         padding: 16px;
+    }
+
+    .workspace-modal-card.user-configuration-form .user-form-actions {
+        margin: 0;
+        padding: 8px 0;
     }
 
     .role-configuration-form {

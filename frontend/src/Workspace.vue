@@ -94,6 +94,7 @@ const error = ref("");
 const notice = ref("");
 const configurationFormOpen = ref(false);
 const formErrors = ref<Record<string, string>>({});
+const userFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
@@ -631,17 +632,37 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
         name: "Vui lòng nhập họ và tên.",
         username: "Vui lòng nhập tên đăng nhập.",
         citizen_id: "Vui lòng nhập số CCCD gồm 12 chữ số.",
+        email: "Vui lòng nhập email.",
         role_id: "Vui lòng chọn nhóm quyền.",
         scope_level: "Vui lòng chọn cấp quản lý.",
     };
     for (const [field, message] of Object.entries(requiredFields)) {
         if (!form.value[field]?.trim()) errors[field] = message;
     }
+    const username = form.value.username ?? "";
+    const unchangedLegacyUsername =
+        editing.value &&
+        username === String(selected.value?.username ?? "") &&
+        username.length > 12;
+    if (
+        username.trim() &&
+        !unchangedLegacyUsername &&
+        (username.length < 7 || username.length > 12)
+    ) {
+        errors.username = "Tên đăng nhập phải có từ 7 đến 12 ký tự.";
+    }
     if (
         form.value.citizen_id?.trim() &&
         !/^\d{12}$/.test(form.value.citizen_id.trim())
     ) {
         errors.citizen_id = "Số CCCD phải gồm đúng 12 chữ số.";
+    }
+    if (form.value.phone?.trim() && !/^\d+$/.test(form.value.phone.trim())) {
+        errors.phone = "Số điện thoại chỉ được chứa chữ số.";
+    }
+    const email = form.value.email?.trim() ?? "";
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.email = "Email không đúng định dạng.";
     }
 
     if (form.value.scope_level !== "global" && !form.value.province_code) {
@@ -654,7 +675,9 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
     if (!editing.value && !passwordValue) {
         errors.password = "Vui lòng nhập mật khẩu.";
     } else if (passwordValue && passwordValue.length < 12) {
-        errors.password = "Mật khẩu phải có ít nhất 12 ký tự.";
+        errors.password = "Mật khẩu phải có từ 12 đến 18 ký tự.";
+    } else if (passwordValue.length > 18) {
+        errors.password = "Mật khẩu không được vượt quá 18 ký tự.";
     }
     if (
         (!editing.value || passwordValue) &&
@@ -688,6 +711,20 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
 
     return errors;
 });
+
+function sanitizeUserNumericInput(event: Event, field: string): void {
+    if (
+        props.moduleKey !== "users" ||
+        !["phone", "citizen_id"].includes(field)
+    ) {
+        return;
+    }
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    input.value = input.value.replace(/\D/g, "");
+    form.value[field] = input.value;
+}
+
 const userFormReady = computed(
     () =>
         props.moduleKey !== "users" ||
@@ -707,11 +744,6 @@ const schoolFormReady = computed(
     () =>
         props.moduleKey !== "schools" ||
         Boolean(form.value.name?.trim() && form.value.type),
-);
-const userFormValidationMessages = computed(() =>
-    Object.entries(userFormValidationErrors.value).map(
-        ([field, message]) => `${fieldLabel(field)}: ${message}`,
-    ),
 );
 const roleFormValidationErrors = computed<Record<string, string>>(() => {
     if (props.moduleKey !== "roles") return {};
@@ -2731,6 +2763,7 @@ async function beginEdit(row?: Row): Promise<void> {
     initialSchoolFormState.value = null;
     initialHouseholdFormState.value = null;
     formErrors.value = {};
+    userFormSubmitted.value = false;
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
@@ -3166,6 +3199,7 @@ function closeConfigurationForm(): void {
     showUserPassword.value = false;
     showUserPasswordConfirmation.value = false;
     formErrors.value = {};
+    userFormSubmitted.value = false;
 }
 
 async function beginMember(isHead: boolean, person?: Row): Promise<void> {
@@ -4173,7 +4207,7 @@ async function save(): Promise<void> {
     roleFormRequestError.value = "";
     managementResult.value = null;
     if (props.moduleKey === "users") {
-        formErrors.value = { ...userFormValidationErrors.value };
+        userFormSubmitted.value = true;
         if (!userFormReady.value) {
             error.value =
                 "Bạn chưa thể lưu tài khoản. Hãy hoàn tất các thông tin bắt buộc bên dưới.";
@@ -5755,6 +5789,7 @@ onMounted(() => void load());
                     'workspace-modal-card':
                         isDialogForm && !isHouseholdCreatePage,
                     'household-create-page-form': isHouseholdCreatePage,
+                    'user-configuration-form': moduleKey === 'users',
                     'role-configuration-form': moduleKey === 'roles',
                     'village-merge-configuration-form': moduleKey === 'merge',
                     'village-configuration-form': [
@@ -5830,19 +5865,6 @@ onMounted(() => void load());
                     Nhóm này có quyền quản lý thôn/xóm nên tài khoản tự động
                     quản lý tất cả thôn/xóm trong xã.
                 </p>
-                <p
-                    v-else-if="
-                        moduleKey === 'users' &&
-                        form.role_id &&
-                        !selectedRoleUsesVillageScope
-                    "
-                    class="muted"
-                    role="status"
-                >
-                    Nhóm này không có quyền liên quan đến phiếu điều tra,
-                    nhập/xuất hoặc thùng rác nên tài khoản áp dụng phạm vi toàn
-                    xã.
-                </p>
                 <template
                     v-for="field in fieldsForForm.filter(
                         (field) =>
@@ -5904,7 +5926,13 @@ onMounted(() => void load());
                                 ['address', 'residence_status'].includes(field),
                         }"
                     >
-                        <span>{{ fieldLabel(field) }}</span>
+                        <span>
+                            {{
+                                moduleKey === "users" && field === "username"
+                                    ? "Tên đăng nhập (7–12 ký tự)"
+                                    : fieldLabel(field)
+                            }}
+                        </span>
                         <select
                             v-if="field === 'type'"
                             v-model="form[field]"
@@ -5966,7 +5994,8 @@ onMounted(() => void load());
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
-                                    userFormValidationErrors[field],
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors[field]),
                                 )
                             "
                         >
@@ -5989,7 +6018,8 @@ onMounted(() => void load());
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
-                                    userFormValidationErrors[field],
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors[field]),
                                 )
                             "
                         >
@@ -6186,6 +6216,7 @@ onMounted(() => void load());
                         <input
                             v-else
                             v-model="form[field]"
+                            @input="sanitizeUserNumericInput($event, field)"
                             :type="
                                 field.includes('password')
                                     ? 'password'
@@ -6193,16 +6224,42 @@ onMounted(() => void load());
                                       ? 'date'
                                       : field === 'email'
                                         ? 'email'
+                                        : moduleKey === 'users' &&
+                                            field === 'phone'
+                                          ? 'tel'
                                         : 'text'
                             "
-                            :maxlength="field === 'citizen_id' ? 12 : undefined"
+                            :maxlength="
+                                field === 'citizen_id'
+                                    ? 12
+                                    : moduleKey === 'users' &&
+                                        field === 'username'
+                                      ? editing &&
+                                        String(selected?.username ?? '') ===
+                                            form.username &&
+                                        form.username.length > 12
+                                          ? form.username.length
+                                          : 12
+                                    : moduleKey === 'users' && field === 'phone'
+                                      ? 20
+                                      : undefined
+                            "
+                            :minlength="
+                                moduleKey === 'users' && field === 'username'
+                                    ? 7
+                                    : undefined
+                            "
                             :inputmode="
-                                field === 'citizen_id' ? 'numeric' : undefined
+                                moduleKey === 'users' &&
+                                ['phone', 'citizen_id'].includes(field)
+                                    ? 'numeric'
+                                    : undefined
                             "
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
-                                    userFormValidationErrors[field] ||
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors[field]) ||
                                     (field === 'username' &&
                                         userFormRequestError),
                                 )
@@ -6225,7 +6282,7 @@ onMounted(() => void load());
                                     'scope_level',
                                 ].includes(field) ||
                                 (moduleKey === 'users' &&
-                                    field === 'citizen_id')
+                                    ['citizen_id', 'email'].includes(field))
                             "
                         />
                         <small
@@ -6245,7 +6302,10 @@ onMounted(() => void load());
                             >{{ formErrors[field] }}</small
                         >
                         <small
-                            v-else-if="userFormValidationErrors[field]"
+                            v-else-if="
+                                userFormSubmitted &&
+                                userFormValidationErrors[field]
+                            "
                             class="field-error"
                             role="alert"
                             >{{ userFormValidationErrors[field] }}</small
@@ -6292,7 +6352,10 @@ onMounted(() => void load());
                             >{{ formErrors[field] }}</small
                         >
                         <small
-                            v-else-if="userFormValidationErrors[field]"
+                            v-else-if="
+                                userFormSubmitted &&
+                                userFormValidationErrors[field]
+                            "
                             class="field-error"
                             role="alert"
                             >{{ userFormValidationErrors[field] }}</small
@@ -6553,18 +6616,21 @@ onMounted(() => void load());
                 </div>
                 <label v-if="moduleKey === 'users'" class="workspace-field">
                     <span
-                        >Mật khẩu
+                        >Mật khẩu (12–18 ký tự)
                         {{ editing ? "(để trống nếu không đổi)" : "" }}</span
                     >
                     <div class="password-input-control">
                         <input
                             v-model="form.password"
                             :type="showUserPassword ? 'text' : 'password'"
+                            minlength="12"
+                            maxlength="18"
                             :required="!editing"
                             :aria-invalid="
                                 Boolean(
                                     formErrors.password ||
-                                    userFormValidationErrors.password,
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors.password),
                                 )
                             "
                         />
@@ -6585,13 +6651,15 @@ onMounted(() => void load());
                     <small
                         v-if="
                             formErrors.password ||
-                            userFormValidationErrors.password
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password)
                         "
                         class="field-error"
                         role="alert"
                         >{{
                             formErrors.password ||
-                            userFormValidationErrors.password
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password)
                         }}</small
                     >
                 </label>
@@ -6609,10 +6677,13 @@ onMounted(() => void load());
                                     : 'password'
                             "
                             :required="!editing || Boolean(form.password)"
+                            minlength="12"
+                            maxlength="18"
                             :aria-invalid="
                                 Boolean(
                                     formErrors.password_confirmation ||
-                                    userFormValidationErrors.password_confirmation,
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors.password_confirmation),
                                 )
                             "
                         />
@@ -6636,13 +6707,15 @@ onMounted(() => void load());
                     <small
                         v-if="
                             formErrors.password_confirmation ||
-                            userFormValidationErrors.password_confirmation
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password_confirmation)
                         "
                         class="field-error"
                         role="alert"
                         >{{
                             formErrors.password_confirmation ||
-                            userFormValidationErrors.password_confirmation
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password_confirmation)
                         }}</small
                     >
                 </label>
@@ -7373,6 +7446,7 @@ onMounted(() => void load());
                     class="pagination-actions"
                     :class="{
                         'role-form-actions': moduleKey === 'roles',
+                        'user-form-actions': moduleKey === 'users',
                         'household-form-actions': moduleKey === 'households',
                         'village-merge-form-actions': moduleKey === 'merge',
                     }"
@@ -7384,7 +7458,6 @@ onMounted(() => void load());
                             busy ||
                             villageMergeBusy ||
                             formOptionsBusy ||
-                            !userFormReady ||
                             !roleFormReady ||
                             !villageFormReady ||
                             (moduleKey === 'merge' &&
@@ -7429,14 +7502,6 @@ onMounted(() => void load());
                         }}
                     </button>
                 </div>
-                <p
-                    v-if="moduleKey === 'users' && !userFormReady"
-                    class="muted form-validation-hint"
-                    role="status"
-                >
-                    Còn {{ userFormValidationMessages.length }} mục cần kiểm
-                    tra: {{ userFormValidationMessages.join(" · ") }}
-                </p>
             </form>
         </div>
 
@@ -7686,6 +7751,7 @@ onMounted(() => void load());
                                 :type="showNewPassword ? 'text' : 'password'"
                                 autocomplete="new-password"
                                 minlength="12"
+                                maxlength="18"
                                 required
                             />
                             <button
@@ -7701,10 +7767,16 @@ onMounted(() => void load());
                             </button>
                         </span>
                         <small
-                            v-if="passwordFormErrors.password"
+                            v-if="
+                                passwordFormErrors.password ||
+                                passwordForm.password.length > 18
+                            "
                             class="field-error"
                             role="alert"
-                            >{{ passwordFormErrors.password }}</small
+                            >{{
+                                passwordFormErrors.password ||
+                                "Mật khẩu mới không được vượt quá 18 ký tự."
+                            }}</small
                         >
                     </label>
                     <label class="workspace-field">
@@ -7719,6 +7791,7 @@ onMounted(() => void load());
                                 "
                                 autocomplete="new-password"
                                 minlength="12"
+                                maxlength="18"
                                 required
                             />
                             <button
@@ -7752,6 +7825,7 @@ onMounted(() => void load());
                             busy ||
                             !passwordForm.current_password ||
                             passwordForm.password.length < 12 ||
+                            passwordForm.password.length > 18 ||
                             !passwordForm.password_confirmation
                         "
                     >

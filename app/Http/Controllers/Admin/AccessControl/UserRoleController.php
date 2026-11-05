@@ -314,15 +314,16 @@ class UserRoleController extends Controller
         $roleIds = in_array($scopeLevel, $manageableLevels, true)
             ? $this->users->availableRoles($actor, [$scopeLevel])->modelKeys()
             : [];
+        $usernameRules = ['required', 'string'];
+        if (! $user || request()->input('username') !== $user->username) {
+            $usernameRules[] = 'min:7';
+            $usernameRules[] = 'max:12';
+        }
+        $usernameRules[] = Rule::unique('users', 'username')->ignore($user?->id);
 
         return [
             'name' => ['required', 'string', 'max:255'],
-            'username' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('users', 'username')->ignore($user?->id),
-            ],
+            'username' => $usernameRules,
             'phone' => [
                 'nullable',
                 'string',
@@ -340,7 +341,7 @@ class UserRoleController extends Controller
                 'max:255',
                 Rule::unique('users', 'email')->ignore($user?->id),
             ],
-            'password' => [$user ? 'nullable' : 'required', 'confirmed', Password::min(12)],
+            'password' => [$user ? 'nullable' : 'required', 'confirmed', Password::min(12)->max(18)],
             'role_id' => [
                 'required',
                 'integer',

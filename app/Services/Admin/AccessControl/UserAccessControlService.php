@@ -555,9 +555,9 @@ class UserAccessControlService
         return $this->canManageUser($actor, $target);
     }
 
-    public function resetPassword(User $user): void
+    public function resetPassword(User $user, string $password): void
     {
-        $user->password = User::TEMPORARY_PASSWORD;
+        $user->password = $password;
         $user->save();
     }
 

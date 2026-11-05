@@ -701,11 +701,22 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonFragment(['id' => $target->id, 'name' => 'Tài khoản tỉnh cần reset']);
 
-        $this->postJson(route('api.users.password-resets.store', $target))
-            ->assertOk();
+        $this->postJson(route('api.users.password-resets.store', $target), [
+            'password' => 'NewSecurePass2026!',
+            'password_confirmation' => 'DifferentPass2026!',
+        ])->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'password');
+        $this->assertTrue(Hash::check('old-secure-password', $target->fresh()->password));
+
+        $this->postJson(route('api.users.password-resets.store', $target), [
+            'password' => 'NewSecurePass2026!',
+            'password_confirmation' => 'NewSecurePass2026!',
+        ])->assertOk()
+            ->assertJsonPath('message', 'Đã đổi mật khẩu tài khoản thành công.')
+            ->assertJsonMissingPath('data.temporary_password');
 
         $target->refresh();
-        $this->assertTrue(Hash::check('Huukhang2k4#', $target->password));
+        $this->assertTrue(Hash::check('NewSecurePass2026!', $target->password));
 
         $this->postJson(route('api.users.password-resets.store', $admin))->assertForbidden();
 
@@ -1811,8 +1822,11 @@ class AccessControlTest extends TestCase
         $this->assertDatabaseHas('roles', ['id' => $ownRole->id, 'name' => 'Nhóm cán bộ đã cập nhật']);
 
         $this->postJson("/api/v1/users/{$target->id}/password-resets")
-            ->assertOk()
-            ->assertJsonPath('data.temporary_password', User::TEMPORARY_PASSWORD);
+            ->assertUnprocessable();
+        $this->postJson("/api/v1/users/{$target->id}/password-resets", [
+            'password' => 'NewSecurePass2026!',
+            'password_confirmation' => 'NewSecurePass2026!',
+        ])->assertOk();
         $this->patchJson("/api/v1/users/{$target->id}/status", ['is_active' => false])
             ->assertOk();
         self::assertFalse($target->fresh()->is_active);
@@ -4581,9 +4595,11 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonFragment(['username' => 'central-limited'])
             ->assertJsonPath('data.can_edit_account_configurations', true);
-        $this->postJson(route('api.users.password-resets.store', $centralUser))
-            ->assertOk();
-        $this->assertTrue(Hash::check(User::TEMPORARY_PASSWORD, $centralUser->fresh()->password));
+        $this->postJson(route('api.users.password-resets.store', $centralUser), [
+            'password' => 'NewSecurePass2026!',
+            'password_confirmation' => 'NewSecurePass2026!',
+        ])->assertOk();
+        $this->assertTrue(Hash::check('NewSecurePass2026!', $centralUser->fresh()->password));
         $this->patchJson(route('api.users.status.update', $centralUser), ['is_active' => false])
             ->assertOk();
         $this->assertDatabaseHas('users', ['id' => $centralUser->id, 'is_active' => false]);

@@ -47,7 +47,7 @@ type PermissionMatrixRow = {
 };
 type AccountAction = "status" | "password";
 type AccountActionDialog = {
-    mode: "confirm" | "result";
+    mode: "confirm" | "password-form" | "result";
     action: AccountAction;
     row: Row;
     accountName: string;
@@ -112,6 +112,11 @@ const trashPageSize = ref(10);
 const deleteResult = ref<DeleteResult | null>(null);
 const trashActionDialog = ref<TrashActionDialog | null>(null);
 const accountActionDialog = ref<AccountActionDialog | null>(null);
+const accountPassword = ref("");
+const accountPasswordConfirmation = ref("");
+const accountPasswordError = ref("");
+const showAccountPassword = ref(false);
+const showAccountPasswordConfirmation = ref(false);
 const userDetail = ref<Row | null>(null);
 const userDetailRow = ref<Row | null>(null);
 const userDetailLoading = ref(false);
@@ -5087,12 +5092,101 @@ function applyTrashFilters(): void {
 
 function openAccountAction(row: Row, action: AccountAction): void {
     const accountName = String(row.name ?? row.username ?? "tài khoản này");
-    accountActionDialog.value = { mode: "confirm", action, row, accountName };
+    accountPassword.value = "";
+    accountPasswordConfirmation.value = "";
+    accountPasswordError.value = "";
+    showAccountPassword.value = false;
+    showAccountPasswordConfirmation.value = false;
+    accountActionDialog.value = {
+        mode: action === "password" ? "password-form" : "confirm",
+        action,
+        row,
+        accountName,
+    };
+}
+
+function randomPasswordIndex(max: number): number {
+    const range = 0x100000000;
+    const limit = range - (range % max);
+    const value = new Uint32Array(1);
+    do {
+        window.crypto.getRandomValues(value);
+    } while (value[0] >= limit);
+
+    return value[0] % max;
+}
+
+function generateAccountPassword(): void {
+    const groups = [
+        "abcdefghijkmnopqrstuvwxyz",
+        "ABCDEFGHJKLMNPQRSTUVWXYZ",
+        "23456789",
+        "!@#$%_-",
+    ];
+    const allCharacters = groups.join("");
+
+    try {
+        const password = groups
+            .map((group) => group[randomPasswordIndex(group.length)])
+            .concat(
+                Array.from(
+                    { length: 12 },
+                    () =>
+                        allCharacters[
+                            randomPasswordIndex(allCharacters.length)
+                        ],
+                ),
+            );
+        for (let index = password.length - 1; index > 0; index -= 1) {
+            const swapIndex = randomPasswordIndex(index + 1);
+            [password[index], password[swapIndex]] = [
+                password[swapIndex],
+                password[index],
+            ];
+        }
+
+        accountPassword.value = password.join("");
+        accountPasswordConfirmation.value = accountPassword.value;
+        showAccountPassword.value = true;
+        showAccountPasswordConfirmation.value = true;
+        accountPasswordError.value = "";
+    } catch {
+        accountPasswordError.value =
+            "Trình duyệt không thể tạo mật khẩu an toàn. Vui lòng nhập mật khẩu mới.";
+    }
+}
+
+function closeAccountAction(): void {
+    if (busy.value) return;
+    accountActionDialog.value = null;
+    accountPassword.value = "";
+    accountPasswordConfirmation.value = "";
+    accountPasswordError.value = "";
+    showAccountPassword.value = false;
+    showAccountPasswordConfirmation.value = false;
 }
 
 async function confirmAccountAction(): Promise<void> {
     const dialog = accountActionDialog.value;
-    if (!dialog || dialog.mode !== "confirm") return;
+    if (
+        !dialog ||
+        (dialog.mode !== "confirm" && dialog.mode !== "password-form")
+    )
+        return;
+
+    if (dialog.action === "password") {
+        const passwordLength = Array.from(accountPassword.value).length;
+        if (passwordLength < 12 || passwordLength > 18) {
+            accountPasswordError.value =
+                "Mật khẩu phải có từ 12 đến 18 ký tự.";
+            return;
+        }
+        if (accountPassword.value !== accountPasswordConfirmation.value) {
+            accountPasswordError.value =
+                "Mật khẩu xác nhận không khớp.";
+            return;
+        }
+    }
 
     error.value = "";
     notice.value = "";
@@ -5108,10 +5202,17 @@ async function confirmAccountAction(): Promise<void> {
                   )
                 : await api.post<{ message: string }>(
                       `/users/${dialog.row.id}/password-resets`,
+                      {
+                          password: accountPassword.value,
+                          password_confirmation:
+                              accountPasswordConfirmation.value,
+                      },
                   );
         if (dialog.action === "status") {
             dialog.row.is_active = !dialog.row.is_active;
         }
+        accountPassword.value = "";
+        accountPasswordConfirmation.value = "";
         accountActionDialog.value = {
             ...dialog,
             mode: "result",
@@ -5119,6 +5220,21 @@ async function confirmAccountAction(): Promise<void> {
             message: result.data.message,
         };
     } catch (cause) {
+        if (
+            dialog.action === "password" &&
+            typeof cause === "object" &&
+            cause !== null &&
+            "response" in cause &&
+            typeof cause.response === "object" &&
+            cause.response !== null &&
+            "status" in cause.response &&
+            cause.response.status === 422
+        ) {
+            accountPasswordError.value = errorMessage(cause);
+            return;
+        }
+        accountPassword.value = "";
+        accountPasswordConfirmation.value = "";
         accountActionDialog.value = {
             ...dialog,
             mode: "result",
@@ -5132,9 +5248,9 @@ async function confirmAccountAction(): Promise<void> {
 
 function accountActionTitle(dialog: AccountActionDialog): string {
     if (dialog.action === "password") {
-        return dialog.mode === "confirm"
-            ? "Xác nhận đặt lại mật khẩu"
-            : "Kết quả đặt lại mật khẩu";
+        return dialog.mode === "result"
+            ? "Kết quả đổi mật khẩu"
+            : "Đổi mật khẩu tài khoản";
     }
 
     return dialog.mode === "confirm"
@@ -5149,6 +5265,10 @@ function accountActionMessage(dialog: AccountActionDialog): string {
         return dialog.success
             ? (dialog.message ?? "")
             : `Thao tác thất bại: ${dialog.message ?? "Vui lòng thử lại."}`;
+    }
+
+    if (dialog.mode === "password-form") {
+        return `Nhập mật khẩu mới cho tài khoản “${dialog.accountName}”, hoặc tự động điền mật khẩu an toàn.`;
     }
 
     return dialog.action === "password"
@@ -11429,12 +11549,16 @@ onMounted(() => void load());
         v-if="accountActionDialog"
         class="workspace-modal-backdrop"
         role="presentation"
-        @click.self="!busy && (accountActionDialog = null)"
-        @keydown.esc="!busy && (accountActionDialog = null)"
+        @click.self="closeAccountAction"
+        @keydown.esc="closeAccountAction"
     >
         <section
             class="confirm-dialog account-action-dialog"
-            role="alertdialog"
+            :role="
+                accountActionDialog.mode === 'password-form'
+                    ? 'dialog'
+                    : 'alertdialog'
+            "
             aria-modal="true"
             aria-labelledby="account-action-title"
             aria-describedby="account-action-message"
@@ -11462,13 +11586,107 @@ onMounted(() => void load());
             <p id="account-action-message">
                 {{ accountActionMessage(accountActionDialog) }}
             </p>
+            <div
+                v-if="accountActionDialog.mode === 'password-form'"
+                class="account-password-reset-fields"
+            >
+                <label>
+                    <span>Mật khẩu mới</span>
+                    <div class="account-password-reset-input">
+                        <input
+                            v-model="accountPassword"
+                            :type="showAccountPassword ? 'text' : 'password'"
+                            minlength="12"
+                            maxlength="18"
+                            autocomplete="new-password"
+                            aria-label="Mật khẩu mới"
+                            @input="accountPasswordError = ''"
+                        />
+                        <button
+                            class="password-visibility-button"
+                            type="button"
+                            @click="
+                                showAccountPassword = !showAccountPassword
+                            "
+                        >
+                            {{ showAccountPassword ? "Ẩn" : "Hiện" }}
+                        </button>
+                    </div>
+                </label>
+                <label>
+                    <span>Xác nhận mật khẩu mới</span>
+                    <div class="account-password-reset-input">
+                        <input
+                            v-model="accountPasswordConfirmation"
+                            :type="
+                                showAccountPasswordConfirmation
+                                    ? 'text'
+                                    : 'password'
+                            "
+                            minlength="12"
+                            maxlength="18"
+                            autocomplete="new-password"
+                            aria-label="Xác nhận mật khẩu mới"
+                            @input="accountPasswordError = ''"
+                        />
+                        <button
+                            class="password-visibility-button"
+                            type="button"
+                            @click="
+                                showAccountPasswordConfirmation =
+                                    !showAccountPasswordConfirmation
+                            "
+                        >
+                            {{
+                                showAccountPasswordConfirmation
+                                    ? "Ẩn"
+                                    : "Hiện"
+                            }}
+                        </button>
+                    </div>
+                </label>
+                <button
+                    class="secondary-button management-tool-button account-password-generate-button"
+                    type="button"
+                    @click="generateAccountPassword"
+                >
+                    Tự động điền mật khẩu
+                </button>
+                <p
+                    v-if="accountPasswordError"
+                    class="confirm-dialog-error"
+                    role="alert"
+                >
+                    {{ accountPasswordError }}
+                </p>
+            </div>
             <div class="confirm-dialog-actions">
-                <template v-if="accountActionDialog.mode === 'confirm'">
+                <template
+                    v-if="accountActionDialog.mode === 'password-form'"
+                >
                     <button
                         class="secondary-button management-tool-button"
                         type="button"
                         :disabled="busy"
-                        @click="accountActionDialog = null"
+                        @click="closeAccountAction"
+                    >
+                        Hủy
+                    </button>
+                    <button
+                        class="primary-button management-tool-button account-action-confirm-button"
+                        type="button"
+                        :disabled="busy"
+                        @click="confirmAccountAction"
+                    >
+                        {{ busy ? "Đang lưu…" : "Lưu" }}
+                    </button>
+                </template>
+                <template v-else-if="accountActionDialog.mode === 'confirm'">
+                    <button
+                        class="secondary-button management-tool-button"
+                        type="button"
+                        :disabled="busy"
+                        @click="closeAccountAction"
                     >
                         Hủy
                     </button>
@@ -11476,7 +11694,6 @@ onMounted(() => void load());
                         class="confirm-delete-button"
                         :class="{
                             'account-action-confirm-button':
-                                accountActionDialog.action === 'password' ||
                                 !accountActionDialog.row.is_active,
                         }"
                         type="button"
@@ -11486,20 +11703,18 @@ onMounted(() => void load());
                         {{
                             busy
                                 ? "Đang xử lý…"
-                                : accountActionDialog.action === "password"
-                                  ? "Đặt lại mật khẩu"
-                                  : accountActionDialog.row.is_active
-                                    ? "Vô hiệu hóa"
-                                    : "Kích hoạt"
+                                : accountActionDialog.row.is_active
+                                  ? "Vô hiệu hóa"
+                                  : "Kích hoạt"
                         }}
                     </button>
                 </template>
                 <button
-                    v-else
+                    v-else-if="accountActionDialog.mode === 'result'"
                     class="primary-button management-tool-button"
                     type="button"
                     autofocus
-                    @click="accountActionDialog = null"
+                    @click="closeAccountAction"
                 >
                     Đóng
                 </button>

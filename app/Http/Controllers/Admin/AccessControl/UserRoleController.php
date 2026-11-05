@@ -315,11 +315,13 @@ class UserRoleController extends Controller
     {
         $actor = $request->user();
         abort_unless($this->users->canResetUserPassword($actor, $user), 403);
-        $this->users->resetPassword($user);
+        $data = $request->validate([
+            'password' => ['required', 'string', 'confirmed', Password::min(12)->max(18)],
+        ]);
+        $this->users->resetPassword($user, $data['password']);
 
         return response()->json([
-            'message' => 'Đã đặt lại mật khẩu về '.User::TEMPORARY_PASSWORD.'.',
-            'temporary_password' => User::TEMPORARY_PASSWORD,
+            'message' => 'Đã đổi mật khẩu tài khoản thành công.',
         ]);
     }
 

@@ -8,7 +8,6 @@ use App\Models\User;
 use App\Services\Admin\AccessControl\UserAccessControlService;
 use App\Support\ApiResponse;
 use App\Support\DelegatedAccess;
-use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -144,13 +143,12 @@ class UserRoleController extends Controller
 
     public function show(Request $request, User $user): JsonResponse
     {
-        abort_unless($this->users->canViewUser($request->user(), $user), 403);
-        $user->load([
-            'roles' => fn (MorphToMany $roles) => $roles->where('roles.created_by', $request->user()->id),
-            'province',
-            'commune',
-            'villages',
-        ]);
+        $actor = $request->user();
+        $actor->loadMissing(['roles.permissions', 'roles.creator']);
+        $user->loadMissing(['roles.permissions', 'roles.creator', 'villages']);
+
+        abort_unless($this->users->canViewUser($actor, $user), 403);
+        $user->loadMissing(['province', 'commune']);
 
         return response()->json([
             'data' => [
@@ -169,11 +167,13 @@ class UserRoleController extends Controller
                     'code' => $village->code,
                     'name' => $village->name,
                 ])->values(),
-                'roles' => $user->roles->map(fn (Role $role): array => [
-                    'id' => $role->id,
-                    'name' => $role->name,
-                    'scope_level' => $role->scope_level,
-                ])->values(),
+                'roles' => $user->roles
+                    ->where('created_by', $actor->id)
+                    ->map(fn (Role $role): array => [
+                        'id' => $role->id,
+                        'name' => $role->name,
+                        'scope_level' => $role->scope_level,
+                    ])->values(),
             ],
         ]);
     }
@@ -221,16 +221,29 @@ class UserRoleController extends Controller
     public function edit(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        abort_unless($this->users->canEditUserConfiguration($actor, $user), 403);
+        $actor->loadMissing(['roles.permissions', 'roles.creator']);
+        $user->loadMissing(['roles.permissions', 'roles.creator', 'villages']);
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
+        $roles = $this->users->rolesForForm($actor, $accountLevels);
+        abort_unless($this->users->canEditUserConfiguration($actor, $user, $roles), 403);
         $provinces = $this->users->manageableProvinces($actor, $user);
+        $selectedLocations = $this->users->selectedLocations($user);
+        $canAssignCommuneAdmin = $roles->contains(
+            fn (Role $role): bool => $role->is_primary_admin
+                && in_array('commune', $role->assignable_scope_levels, true),
+        );
+        $user->roles->each(function (Role $role): void {
+            $role->unsetRelation('permissions');
+            $role->unsetRelation('creator');
+        });
+        $user->setRelation(
+            'roles',
+            $user->roles->where('created_by', $actor->id)->values(),
+        );
 
         return response()->json([
-            'user' => $user->load([
-                'roles' => fn (MorphToMany $roles) => $roles->where('roles.created_by', $actor->id),
-                'villages',
-            ]),
-            'roles' => $this->users->rolesForForm($actor, $accountLevels)
+            'user' => $user,
+            'roles' => $roles
                 ->map(fn (Role $role): array => $role->only([
                     'id',
                     'name',
@@ -244,10 +257,11 @@ class UserRoleController extends Controller
             'account_scope_level' => $user->scope_level,
             'available_primary_admin_scopes' => [
                 'province' => $provinces->isNotEmpty(),
-                'commune' => $this->users->hasAvailablePrimaryAdminScope($actor, 'commune', $user),
+                'commune' => $canAssignCommuneAdmin
+                    && $this->users->hasAvailablePrimaryAdminScope($actor, 'commune', $user),
             ],
             'provinces' => $provinces,
-            'selected_locations' => $this->users->selectedLocations($user),
+            'selected_locations' => $selectedLocations,
             'actor_scope_level' => $actor->roleScopeLevel(),
         ]);
     }

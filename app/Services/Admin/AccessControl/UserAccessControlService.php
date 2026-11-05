@@ -449,7 +449,11 @@ class UserAccessControlService
         ];
     }
 
-    public function canManageUser(User $actor, User $target): bool
+    public function canManageUser(
+        User $actor,
+        User $target,
+        ?Collection $assignableRoles = null
+    ): bool
     {
         if ($target->created_by !== $actor->id) {
             return false;
@@ -473,8 +477,21 @@ class UserAccessControlService
         }
 
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $assignableRoleIds = $this->availableRoles($actor, [$targetLevel])->modelKeys();
-            if ($target->roles()->whereNotIn('roles.id', $assignableRoleIds)->exists()) {
+            $assignableRoleIds = $assignableRoles === null
+                ? $this->availableRoles($actor, [$targetLevel])->modelKeys()
+                : $assignableRoles
+                    ->filter(fn (Role $role): bool => in_array(
+                        $targetLevel,
+                        $role->getAttribute('assignable_scope_levels') ?? [],
+                        true,
+                    ))
+                    ->modelKeys();
+            $hasUnassignableRole = $target->relationLoaded('roles')
+                ? $target->roles->contains(
+                    fn (Role $role): bool => ! in_array($role->id, $assignableRoleIds, true)
+                )
+                : $target->roles()->whereNotIn('roles.id', $assignableRoleIds)->exists();
+            if ($hasUnassignableRole) {
                 return false;
             }
         }
@@ -503,7 +520,11 @@ class UserAccessControlService
         return DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
     }
 
-    public function canEditUserConfiguration(User $actor, User $target): bool
+    public function canEditUserConfiguration(
+        User $actor,
+        User $target,
+        ?Collection $assignableRoles = null
+    ): bool
     {
         if (
             ! $actor->hasRole(Role::SYSTEM_ADMIN)
@@ -512,7 +533,7 @@ class UserAccessControlService
             return false;
         }
 
-        return $this->canManageUser($actor, $target);
+        return $this->canManageUser($actor, $target, $assignableRoles);
     }
 
     public function canEditUserConfigurations(User $actor): bool

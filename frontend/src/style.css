@@ -1364,7 +1364,20 @@ h2 {
     box-shadow: 0 4px 16px rgb(15 23 42 / 4%);
 }
 
-.village-merge-configuration-form > .workspace-form-heading,
+.workspace-modal-card.user-configuration-form .user-form-actions {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    grid-column: 1 / -1;
+    width: fit-content;
+    justify-self: end;
+    justify-content: flex-end;
+    margin: 0;
+    padding: 8px 0;
+    background: transparent;
+}
+
+.village-merge-configuration-form>.workspace-form-heading,
 .village-merge-configuration-form > .notice,
 .village-merge-configuration-form > .village-merge-columns,
 .village-merge-configuration-form > .pagination-actions {
@@ -3162,6 +3175,21 @@ h2 {
     box-shadow: 0 24px 70px rgb(15 23 42 / 28%);
 }
 
+.workspace-modal-card > .workspace-form-heading {
+    padding: 8px 0;
+}
+
+.workspace-modal-card > .workspace-form-close {
+    position: sticky;
+    z-index: 5;
+    top: 0;
+    justify-self: end;
+    grid-column: 1 / -1;
+    margin-top: -46px;
+    margin-bottom: -46px;
+    background: #fff;
+}
+
 .workspace-modal-card::-webkit-scrollbar {
     width: 0;
     height: 0;
@@ -3913,7 +3941,8 @@ h2 {
 
 .user-location-filters {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
+    width: 100%;
     min-width: 0;
     align-items: end;
     gap: 8px;
@@ -4151,6 +4180,10 @@ h2 {
     gap: 12px;
 }
 
+.user-management-toolbar-bottom>.management-tool-button {
+    margin-left: auto;
+}
+
 .village-management-toolbar-bottom {
     display: flex;
     width: 100%;
@@ -4185,6 +4218,12 @@ h2 {
     border: 1px solid #e2e8f0;
     border-radius: 10px;
     background: #fff;
+}
+
+.user-pagination-footer-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 
 .user-pagination-footer .page-size-control {
@@ -4755,7 +4794,52 @@ h2 {
 }
 
 .account-action-dialog {
-    width: min(100%, 440px);
+    width: min(100%, 480px);
+}
+
+.account-password-reset-fields {
+    display: grid;
+    gap: 12px;
+    margin-top: 20px;
+    text-align: left;
+}
+
+.account-password-reset-fields>label {
+    display: grid;
+    gap: 6px;
+    color: #35445c;
+    font-size: .82rem;
+    font-weight: 650;
+}
+
+.account-password-reset-input {
+    display: flex;
+    gap: 8px;
+}
+
+.account-password-reset-input input {
+    width: 100%;
+    min-width: 0;
+    min-height: 38px;
+    padding: 7px 10px;
+    border: 1px solid #d6dfeb;
+    border-radius: 8px;
+    color: #26364f;
+    font: inherit;
+}
+
+.account-password-reset-input input:focus-visible {
+    border-color: #6b8fc4;
+    outline: 2px solid rgb(59 130 246 / 20%);
+    outline-offset: 1px;
+}
+
+.account-password-generate-button {
+    justify-self: start;
+}
+
+.account-password-reset-fields .confirm-dialog-error {
+    margin: 0 !important;
 }
 
 .account-action-success-icon {
@@ -4935,6 +5019,10 @@ h2 {
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .user-location-filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .management-toolbar-actions {
         width: 100%;
         justify-content: flex-end;
@@ -5029,6 +5117,11 @@ h2 {
     .workspace-modal-card {
         max-height: 94dvh;
         padding: 16px;
+    }
+
+    .workspace-modal-card.user-configuration-form .user-form-actions {
+        margin: 0;
+        padding: 8px 0;
     }
 
     .role-configuration-form {
@@ -5249,20 +5342,55 @@ h2 {
     font-size: .78rem;
 }
 
+.account-management-table td:nth-child(1) {
+    color: #344054;
+    font-weight: 400;
+}
+
+.account-management-table .account-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.account-management-table .account-name {
+    color: #263b59;
+    font-weight: 700;
+}
+
+.account-management-table .account-name-cell small {
+    color: #667085;
+    font-size: .72rem;
+    line-height: 1.2;
+}
+
+.account-management-table .account-role-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.account-management-table .account-role-cell small {
+    color: #667085;
+    font-size: .72rem;
+    line-height: 1.2;
+}
+
 .account-management-table .table-actions {
-    min-width: 105px;
+    min-width: 180px;
     text-align: center;
     white-space: nowrap;
 }
 
 .account-management-table .account-actions-heading {
-    min-width: 105px;
+    min-width: 180px;
     text-align: center;
 }
 
 .account-management-table .account-status-cell {
     min-width: 135px;
     white-space: nowrap;
+    text-align: center;
 }
 
 .account-management-table .account-numeric-cell {
@@ -5276,10 +5404,10 @@ h2 {
 }
 
 .account-action-controls {
-    display: grid;
-    grid-template-columns: repeat(2, 36px);
+    display: flex;
     align-items: stretch;
-    gap: 8px;
+    justify-content: center;
+    gap: 6px;
 }
 
 .account-management-table .account-action-button {
@@ -5306,6 +5434,80 @@ h2 {
     stroke-width: 1.7;
 }
 
+.user-edit-account-button {
+    border-color: #cbdcf5 !important;
+    background: #f5f9ff !important;
+    color: #3568a8 !important;
+}
+
+.user-edit-account-button:hover {
+    border-color: #8db4eb !important;
+    background: #eaf3ff !important;
+}
+
+.user-detail-backdrop {
+    z-index: 1010;
+}
+
+.user-detail-card {
+    width: min(100%, 680px);
+}
+
+.user-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.user-detail-header h2 {
+    margin: 0;
+    color: #223551;
+    font-size: 1.25rem;
+}
+
+.user-detail-loading {
+    margin: 0;
+    color: #64748b;
+}
+
+.user-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px 20px;
+    margin: 0;
+}
+
+.user-detail-grid>div {
+    min-width: 0;
+}
+
+.user-detail-grid dt {
+    margin-bottom: 4px;
+    color: #728096;
+    font-size: .73rem;
+    font-weight: 650;
+}
+
+.user-detail-grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    color: #263b59;
+    font-size: .86rem;
+}
+
+.user-detail-roles {
+    grid-column: 1 / -1;
+}
+
+.user-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 24px;
+}
+
 .account-management-table th,
 .account-management-table td,
 .workspace-table.village-management-table th,
@@ -5318,6 +5520,15 @@ h2 {
 .account-management-table th,
 .workspace-table.village-management-table th {
     font-size: .78rem;
+}
+
+.workspace-table th.table-numeric-heading {
+    text-align: right;
+}
+
+.workspace-table th.table-date-heading,
+.workspace-table th.table-status-heading {
+    text-align: center;
 }
 
 .workspace-table.village-management-table .village-row-number {
@@ -6198,6 +6409,14 @@ button {
     box-sizing: border-box;
     margin: 0 auto;
 padding: 10px clamp(18px, 2.4vw, 34px);
+}
+
+@media (min-width: 801px) {
+    .app-content.app-content-wide {
+        max-width: none;
+        padding-right: clamp(12px, 1.25vw, 24px);
+        padding-left: clamp(12px, 1.25vw, 24px);
+    }
 }
 
 .app-global-notice {
@@ -7488,60 +7707,6 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     cursor: pointer;
     font-size: .68rem;
     font-weight: 700;
-}
-
-.captcha-row {
-    display: flex;
-    align-items: stretch;
-    gap: 7px;
-}
-
-.captcha-input-wrap {
-    min-width: 0;
-    flex: 1;
-}
-
-.captcha-image {
-    display: grid;
-    min-width: 91px;
-    place-items: center;
-    padding: 0 9px;
-    border: 1px dashed #9eb4d4;
-    border-radius: 9px;
-    background:
-        repeating-linear-gradient(165deg, transparent 0 8px, rgb(67 113 177 / 8%) 8px 10px),
-        #f0f5fd;
-    color: #355d92;
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: .94rem;
-    font-style: italic;
-    font-weight: 800;
-    letter-spacing: .15em;
-    text-decoration: line-through;
-    user-select: none;
-}
-
-.captcha-refresh {
-    width: 36px;
-    flex: 0 0 36px;
-    border: 1px solid #dfe6ef;
-    border-radius: 9px;
-    background: #fff;
-    color: #617b9f;
-    cursor: pointer;
-    font-size: 1.15rem;
-}
-
-.captcha-refresh:hover {
-    border-color: #b7c9e2;
-    background: #f5f8fc;
-}
-
-.captcha-disclaimer {
-    margin: 11px 0 0;
-    color: #a0a9b5;
-    font-size: .61rem;
-    line-height: 1.5;
 }
 
 .login-form .remember-option {

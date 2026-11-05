@@ -438,7 +438,10 @@ function updateCurrentUserName(profile: { name: string }): void {
                 @change-password="openAccount('password')"
                 @logout="submitLogout"
             />
-            <div class="app-content">
+            <div
+                class="app-content"
+                :class="{ 'app-content-wide': activeModule === 'users' }"
+            >
                 <p v-if="error" class="notice app-global-notice" role="alert">
                     {{ error }}
                 </p>

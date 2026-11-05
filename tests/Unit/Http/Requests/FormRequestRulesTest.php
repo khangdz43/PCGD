@@ -44,6 +44,7 @@ class FormRequestRulesTest extends TestCase
             'password.confirmed' => 'Xác nhận mật khẩu mới không khớp.',
             'password.different' => 'Mật khẩu mới phải khác mật khẩu hiện tại.',
             'password.min' => 'Mật khẩu mới phải có ít nhất 12 ký tự.',
+            'password.max' => 'Mật khẩu mới không được vượt quá 18 ký tự.',
         ], $request->messages());
     }
 

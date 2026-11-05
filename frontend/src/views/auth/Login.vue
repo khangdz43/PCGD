@@ -13,29 +13,11 @@ const username = ref('');
 const password = ref('');
 const remember = ref(false);
 const passwordVisible = ref(false);
-const captchaInput = ref('');
-const captchaAnswer = ref(generateCaptcha());
 const validationError = ref('');
 
-function generateCaptcha(): string {
-    const characters = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-    return Array.from({ length: 5 }, () => characters[Math.floor(Math.random() * characters.length)]).join('');
-}
-
-function refreshCaptcha(): void {
-    captchaAnswer.value = generateCaptcha();
-    captchaInput.value = '';
-}
-
 function submit(): void {
-    if (!username.value.trim() || !password.value || !captchaInput.value.trim()) {
-        validationError.value = 'Vui lòng nhập đầy đủ tên đăng nhập, mật khẩu và mã xác nhận.';
-        return;
-    }
-
-    if (captchaInput.value.trim().toUpperCase() !== captchaAnswer.value) {
-        validationError.value = 'Mã xác nhận chưa chính xác. Vui lòng thử lại.';
-        refreshCaptcha();
+    if (!username.value.trim() || !password.value) {
+        validationError.value = 'Vui lòng nhập tên đăng nhập và mật khẩu.';
         return;
     }
 
@@ -119,24 +101,6 @@ function submit(): void {
                             </button>
                         </span>
                     </label>
-                    <label class="login-field" for="login-captcha">
-                        <span>Mã xác nhận</span>
-                        <span class="captcha-row">
-                            <span class="login-input-wrap captcha-input-wrap">
-                                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16m-9-14v14m6-14v14" /></svg>
-                                <input
-                                    id="login-captcha"
-                                    v-model="captchaInput"
-                                    name="captcha"
-                                    autocomplete="off"
-                                    placeholder="Nhập mã bên cạnh"
-                                    required
-                                >
-                            </span>
-                            <span class="captcha-image" aria-label="Mã xác nhận minh họa">{{ captchaAnswer }}</span>
-                            <button class="captcha-refresh" type="button" aria-label="Đổi mã xác nhận" @click="refreshCaptcha">↻</button>
-                        </span>
-                    </label>
                     <label class="remember-option">
                         <input v-model="remember" type="checkbox" name="remember">
                         <span>Ghi nhớ đăng nhập</span>
@@ -152,7 +116,6 @@ function submit(): void {
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></svg>
                     <span>Phiên làm việc được bảo vệ an toàn</span>
                 </div>
-                <p class="captcha-disclaimer">Mã xác nhận hiện được kiểm tra trên giao diện; cần tích hợp kiểm tra phía máy chủ để dùng như biện pháp bảo mật.</p>
             </div>
         </section>
         <footer class="login-page-footer">© {{ new Date().getFullYear() }} PCGD - XMC · Hệ thống quản lý phổ cập giáo dục</footer>

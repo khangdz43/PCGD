@@ -29,7 +29,14 @@ class UserAccessControlService
         return $query->get(['code', 'name']);
     }
 
-    public function indexData(User $actor, array $filter, Collection $provinces, int $perPage = 10): array
+    public function indexData(
+        User $actor,
+        array $filter,
+        Collection $provinces,
+        int $perPage = 10,
+        bool $includeOrganizationData = true,
+        ?Collection $assignableRoles = null,
+    ): array
     {
         $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
         $showOrganizationTree = $includeOrganizationData && (
@@ -81,6 +88,7 @@ class UserAccessControlService
             $actor->roleScopeLevel() === 'commune' ? $actor->commune_code : null
         );
         $villageCode = $filter['village_code'] ?? null;
+        $scopeLevel = $filter['scope_level'] ?? null;
         $query = $this->manageableUsers($actor)
             ->with(['roles.permissions', 'villages', 'commune', 'province']);
 
@@ -103,6 +111,16 @@ class UserAccessControlService
         if (filled($villageCode)) {
             $query->whereHas('villages', fn (Builder $villages) => $villages->where('villages.code', $villageCode));
         }
+        if (filled($scopeLevel)) {
+            $query->where(function (Builder $accounts) use ($scopeLevel): void {
+                $accounts->where('users.scope_level', $scopeLevel)
+                    ->orWhere(function (Builder $legacyAccounts) use ($scopeLevel): void {
+                        $legacyAccounts->whereNull('users.scope_level')
+                            ->whereHas('roles', fn (Builder $roles) => $roles
+                                ->where('roles.scope_level', $scopeLevel));
+                    });
+            });
+        }
 
         if (filled($filter['q'] ?? null)) {
             $search = trim((string) $filter['q']);
@@ -120,30 +138,30 @@ class UserAccessControlService
 
         $search = trim((string) ($filter['q'] ?? ''));
         $roleId = $filter['role_id'] ?? null;
-        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode) || filled($roleId) || $search !== '';
-        $managementPriority = DB::table('model_has_roles as account_model_roles')
-            ->join('roles as account_roles', 'account_roles.id', '=', 'account_model_roles.role_id')
-            ->join('role_has_permissions as account_role_permissions', 'account_role_permissions.role_id', '=', 'account_roles.id')
-            ->join('permissions as account_permissions', 'account_permissions.id', '=', 'account_role_permissions.permission_id')
-            ->where('account_model_roles.model_type', User::class)
-            ->whereIn('account_roles.scope_level', ['province', 'commune'])
-            ->whereIn('account_permissions.name', [
-                AccessPermission::MANAGE_USER_ACCOUNTS,
-                AccessPermission::MANAGE_ACCESS_CONTROL,
-            ])
-            ->select('account_model_roles.model_id')
-            ->selectRaw(
-                'MIN(CASE WHEN account_roles.scope_level = ? THEN 0 ELSE 1 END) AS priority',
-                ['province'],
+        $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode)
+            || filled($scopeLevel) || filled($roleId) || $search !== '';
+        $query->select('users.*')
+            ->orderByRaw(
+                'COALESCE((
+                    SELECT MIN(CASE WHEN account_roles.scope_level = ? THEN 0 ELSE 1 END)
+                    FROM model_has_roles AS account_model_roles
+                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
+                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
+                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
+                    WHERE account_model_roles.model_id = users.id
+                        AND account_model_roles.model_type = ?
+                        AND account_roles.scope_level IN (?, ?)
+                        AND account_permissions.name IN (?, ?)
+                ), 2)',
+                [
+                    'province',
+                    User::class,
+                    'province',
+                    'commune',
+                    AccessPermission::MANAGE_USER_ACCOUNTS,
+                    AccessPermission::MANAGE_ACCESS_CONTROL,
+                ],
             )
-            ->groupBy('account_model_roles.model_id');
-
-        $query->leftJoinSub(
-            $managementPriority,
-            'user_management_priority',
-            fn ($join) => $join->on('users.id', '=', 'user_management_priority.model_id'),
-        )->select('users.*')
-            ->orderByRaw('COALESCE(user_management_priority.priority, 2)')
             ->orderBy('users.name');
 
         $allUsers = $query
@@ -152,7 +170,7 @@ class UserAccessControlService
         $usersForView = $allUsers->getCollection();
         $totalUserCount = $allUsers->total();
         $this->addStatusManagementFlags($actor, $usersForView);
-        $this->addPasswordResetFlags($actor, $usersForView);
+        $this->addAccountActionFlags($actor, $usersForView, $assignableRoles);
         $hierarchy = [];
         $noLocationUsers = collect();
 
@@ -316,7 +334,14 @@ class UserAccessControlService
             }
         }
 
-        $occupied = DelegatedAccess::occupiedTerritorialCodes('commune', $user?->id);
+        $provinceCode = in_array($actor->roleScopeLevel(), ['province', 'commune'], true)
+            ? $actor->province_code
+            : null;
+        $occupied = DelegatedAccess::occupiedTerritorialCodes(
+            'commune',
+            $user?->id,
+            $provinceCode,
+        );
         if ($occupied !== []) {
             $query->whereNotIn('code', $occupied);
         }
@@ -347,7 +372,8 @@ class UserAccessControlService
                         $role,
                         $accountLevel,
                         $actor,
-                        $actorPermissionNames
+                        $actorPermissionNames,
+                        $accountLevels,
                     )) {
                         return true;
                     }
@@ -365,6 +391,7 @@ class UserAccessControlService
             $actor->roleScopeLevel() === 'commune' ? $actor->commune_code : null
         );
         $villageCode = $filters['village_code'] ?? null;
+        $scopeLevel = $filters['scope_level'] ?? null;
         $accounts = $this->manageableUsers($actor);
 
         if (filled($provinceCode)) {
@@ -376,6 +403,16 @@ class UserAccessControlService
         if (filled($villageCode)) {
             $accounts->whereHas('villages', fn (Builder $villages) => $villages
                 ->where('villages.code', $villageCode));
+        }
+        if (filled($scopeLevel)) {
+            $accounts->where(function (Builder $query) use ($scopeLevel): void {
+                $query->where('users.scope_level', $scopeLevel)
+                    ->orWhere(function (Builder $legacyAccounts) use ($scopeLevel): void {
+                        $legacyAccounts->whereNull('users.scope_level')
+                            ->whereHas('roles', fn (Builder $roles) => $roles
+                                ->where('roles.scope_level', $scopeLevel));
+                    });
+            });
         }
 
         $accountIds = $accounts->select('users.id');
@@ -420,7 +457,11 @@ class UserAccessControlService
         ];
     }
 
-    public function canManageUser(User $actor, User $target): bool
+    public function canManageUser(
+        User $actor,
+        User $target,
+        ?Collection $assignableRoles = null
+    ): bool
     {
         if ($target->created_by !== $actor->id) {
             return false;
@@ -444,8 +485,21 @@ class UserAccessControlService
         }
 
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $assignableRoleIds = $this->availableRoles($actor, [$targetLevel])->modelKeys();
-            if ($target->roles()->whereNotIn('roles.id', $assignableRoleIds)->exists()) {
+            $assignableRoleIds = $assignableRoles === null
+                ? $this->availableRoles($actor, [$targetLevel])->modelKeys()
+                : $assignableRoles
+                    ->filter(fn (Role $role): bool => in_array(
+                        $targetLevel,
+                        $role->getAttribute('assignable_scope_levels') ?? [],
+                        true,
+                    ))
+                    ->modelKeys();
+            $hasUnassignableRole = $target->relationLoaded('roles')
+                ? $target->roles->contains(
+                    fn (Role $role): bool => ! in_array($role->id, $assignableRoleIds, true)
+                )
+                : $target->roles()->whereNotIn('roles.id', $assignableRoleIds)->exists();
+            if ($hasUnassignableRole) {
                 return false;
             }
         }
@@ -474,7 +528,11 @@ class UserAccessControlService
         return DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
     }
 
-    public function canEditUserConfiguration(User $actor, User $target): bool
+    public function canEditUserConfiguration(
+        User $actor,
+        User $target,
+        ?Collection $assignableRoles = null
+    ): bool
     {
         if (
             ! $actor->hasRole(Role::SYSTEM_ADMIN)
@@ -483,7 +541,7 @@ class UserAccessControlService
             return false;
         }
 
-        return $this->canManageUser($actor, $target);
+        return $this->canManageUser($actor, $target, $assignableRoles);
     }
 
     public function canEditUserConfigurations(User $actor): bool
@@ -492,7 +550,11 @@ class UserAccessControlService
             || ($actor->roleScopeLevel() !== 'global' && $actor->can('update-users'));
     }
 
-    public function canResetUserPassword(User $actor, User $target): bool
+    public function canResetUserPassword(
+        User $actor,
+        User $target,
+        ?Collection $assignableRoles = null,
+    ): bool
     {
         if ($actor->is($target)) {
             return false;
@@ -502,12 +564,12 @@ class UserAccessControlService
             return false;
         }
 
-        return $this->canManageUser($actor, $target);
+        return $this->canManageUser($actor, $target, $assignableRoles);
     }
 
-    public function resetPassword(User $user): void
+    public function resetPassword(User $user, string $password): void
     {
-        $user->password = User::TEMPORARY_PASSWORD;
+        $user->password = $password;
         $user->save();
     }
 
@@ -529,35 +591,111 @@ class UserAccessControlService
     private function addStatusManagementFlags(User $actor, SupportCollection $users): void
     {
         $targetLevels = $this->statusTargetLevels($actor);
-        $canChangeStatus = $actor->hasRole(Role::SYSTEM_ADMIN)
+        $canManageAccounts = $actor->hasRole(Role::SYSTEM_ADMIN)
             || $actor->can('update-users')
             || $actor->can('delete-users');
         foreach ($users as $user) {
             $targetLevel = $user->roleScopeLevel();
-            $assignableRoleIds = in_array($targetLevel, $targetLevels, true)
-                && $canManageAccounts
-                && ! $actor->hasRole(Role::SYSTEM_ADMIN)
-                ? $this->availableRoles($actor, [$targetLevel])->modelKeys()
-                : null;
             $canChangeStatus = in_array($targetLevel, $targetLevels, true)
                 && $canManageAccounts
-                && $this->statusTargetIsManageable($actor, $user, $targetLevel, $assignableRoleIds);
+                && $this->statusTargetIsManageable($actor, $user, $targetLevel);
             $user->setAttribute('can_change_account_status', $canChangeStatus);
         }
     }
 
-    private function addPasswordResetFlags(User $actor, SupportCollection $users): void
+    private function addAccountActionFlags(
+        User $actor,
+        SupportCollection $users,
+        ?Collection $assignableRoles = null,
+    ): void
     {
+        $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
+        $actorLevel = $actor->roleScopeLevel();
+        $manageableLevels = DelegatedAccess::manageableAccountLevels($actor);
+        $canViewAccounts = $isSystemAdmin || $actor->can('view-users');
+        $canEditAccounts = $isSystemAdmin
+            || ($actorLevel !== 'global' && $actor->can('update-users'));
+        $canResetAccounts = $isSystemAdmin || $actor->can('update-users');
+        $assignableRoleIdsByLevel = [];
+        $actorVillageCodes = null;
+        foreach ($assignableRoles ?? collect() as $role) {
+            foreach ($role->getAttribute('assignable_scope_levels') ?? [] as $level) {
+                $assignableRoleIdsByLevel[$level][] = $role->id;
+            }
+        }
+
         foreach ($users as $user) {
-            $user->setAttribute('can_reset_account_password', $this->canResetUserPassword($actor, $user));
+            $isOwned = $user->created_by === $actor->id;
+            $targetLevel = $user->roleScopeLevel();
+            $inActorArea = null;
+            $isInActorArea = function () use (
+                $actor,
+                $actorLevel,
+                $user,
+                $targetLevel,
+                &$actorVillageCodes,
+                &$inActorArea,
+            ): bool {
+                if ($actorLevel === 'commune' && $targetLevel === 'commune') {
+                    $actorVillageCodes ??= $actor->managedVillageCodes();
+                }
+
+                return $inActorArea ??= $targetLevel !== null
+                    && DelegatedAccess::userIsInActorArea(
+                        $actor,
+                        $user,
+                        $targetLevel,
+                        $actorVillageCodes,
+                    );
+            };
+
+            $canManage = $isOwned;
+            if ($canManage) {
+                if ($targetLevel === null) {
+                    $canManage = $isSystemAdmin;
+                } elseif ($targetLevel === 'global') {
+                    $canManage = $isSystemAdmin && ! $user->hasRole(Role::SYSTEM_ADMIN);
+                } elseif (! in_array($targetLevel, $manageableLevels, true)) {
+                    $canManage = false;
+                } elseif (
+                    $isSystemAdmin
+                    && $targetLevel === 'province'
+                    && ! $this->hasPrimaryAdminRole($user, 'province')
+                ) {
+                    $canManage = false;
+                } elseif (! $isSystemAdmin) {
+                    $assignableRoleIds = $assignableRoleIdsByLevel[$targetLevel] ?? [];
+                    $canManage = ! $user->roles->contains(
+                        fn (Role $role): bool => ! in_array($role->id, $assignableRoleIds, true)
+                    );
+                }
+
+                if ($canManage && $targetLevel !== null && $targetLevel !== 'global') {
+                    $canManage = $isInActorArea();
+                }
+            }
+
+            $canView = $isOwned && $isSystemAdmin;
+            if (! $canView && $isOwned && $canViewAccounts) {
+                $canView = $targetLevel === null
+                    || ! in_array($targetLevel, $manageableLevels, true)
+                    ? $actor->is($user)
+                    : $isInActorArea();
+            }
+
+            $user->setAttribute('can_view_details', $canView);
+            $user->setAttribute('can_edit_configuration', $canManage && $canEditAccounts);
+            $user->setAttribute(
+                'can_reset_account_password',
+                $canManage && $canResetAccounts && ! $actor->is($user),
+            );
         }
     }
 
     private function statusTargetIsManageable(
         User $actor,
         User $target,
-        string $targetLevel,
-        ?array $assignableRoleIds
+        string $targetLevel
     ): bool {
         if ($target->created_by !== $actor->id) {
             return false;
@@ -703,7 +841,8 @@ class UserAccessControlService
         Role $role,
         string $accountLevel,
         User $actor,
-        array $actorPermissionNames
+        array $actorPermissionNames,
+        ?array $manageableRoleLevels = null,
     ): bool
     {
         if ($role->scope_level !== $accountLevel || $role->created_by !== $actor->id) {
@@ -711,7 +850,7 @@ class UserAccessControlService
         }
 
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)
-            && ! DelegatedAccess::roleBelongsToActorArea($actor, $role)) {
+            && ! DelegatedAccess::roleBelongsToActorArea($actor, $role, $manageableRoleLevels)) {
             return false;
         }
 
@@ -751,7 +890,8 @@ class UserAccessControlService
                 $role,
                 $accountLevel,
                 $actor,
-                $actorPermissionNames
+                $actorPermissionNames,
+                $accountLevels,
             )
         ));
     }
@@ -848,6 +988,11 @@ class UserAccessControlService
                 });
             });
         }
+
+        $query->whereDoesntHave('roles', fn (Builder $roles) => $roles
+            ->whereNotNull('roles.created_by')
+            ->where('roles.created_by', '!=', $actor->id));
+
         if ($actor->roleScopeLevel() === 'commune' && $actor->managedVillageCodes() !== []) {
             $villageCodes = $actor->managedVillageCodes();
             $query->whereHas('villages', fn (Builder $villages) => $villages

@@ -47,7 +47,7 @@ type PermissionMatrixRow = {
 };
 type AccountAction = "status" | "password";
 type AccountActionDialog = {
-    mode: "confirm" | "result";
+    mode: "confirm" | "password-form" | "result";
     action: AccountAction;
     row: Row;
     accountName: string;
@@ -94,9 +94,11 @@ const error = ref("");
 const notice = ref("");
 const configurationFormOpen = ref(false);
 const formErrors = ref<Record<string, string>>({});
+const userFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
+const initialUserFormState = ref<string | null>(null);
 const rows = ref<Row[]>([]);
 const selected = ref<Row | null>(null);
 const selectedRolePermissions = ref<Row | null>(null);
@@ -110,6 +112,15 @@ const trashPageSize = ref(10);
 const deleteResult = ref<DeleteResult | null>(null);
 const trashActionDialog = ref<TrashActionDialog | null>(null);
 const accountActionDialog = ref<AccountActionDialog | null>(null);
+const accountPassword = ref("");
+const accountPasswordConfirmation = ref("");
+const accountPasswordError = ref("");
+const showAccountPassword = ref(false);
+const showAccountPasswordConfirmation = ref(false);
+const userDetail = ref<Row | null>(null);
+const userDetailRow = ref<Row | null>(null);
+const userDetailLoading = ref(false);
+const userDetailError = ref("");
 const managementResult = ref<{
     success: boolean;
     title: string;
@@ -153,8 +164,10 @@ const userFilterProvince = ref("");
 const userFilterCommune = ref("");
 const userFilterVillage = ref("");
 const userFilterRole = ref("");
+const userFilterScopeLevel = ref("");
 const userFilterQuery = ref("");
 const userFilterRoles = ref<Row[]>([]);
+const userAccountScopeLevels = ref<string[]>([]);
 const userFiltersInitialized = ref(false);
 let syncingVillageOptions = false;
 const currentActorScopeLevel = ref<string | null>(null);
@@ -469,11 +482,9 @@ const moduleInfo: Record<
         columns: [
             "name",
             "username",
-            "date_of_birth",
             "email",
             "phone",
             "role_name",
-            "scope_level",
         ],
         fields: [
             "name",
@@ -486,6 +497,7 @@ const moduleInfo: Record<
             "role_id",
             "province_code",
             "commune_code",
+            "is_active",
             "village_codes",
         ],
     },
@@ -545,19 +557,20 @@ const householdCreationPageActive = computed(
         (configurationFormOpen.value ||
             isHouseholdCreateContinuationPage.value),
 );
-const showUserProvinceFilter = computed(
-    () =>
-        currentActorScopeLevel.value === "global" && provinces.value.length > 1,
-);
 const showUserCommuneFilter = computed(
     () =>
         currentActorScopeLevel.value === "province" &&
-        userFilterCommunes.value.length > 1,
+        userFilterCommunes.value.length > 0,
 );
 const showUserVillageFilter = computed(
     () =>
         currentActorScopeLevel.value === "commune" &&
-        userFilterVillages.value.length > 1,
+        userFilterVillages.value.length > 0,
+);
+const showUserProvinceFilter = computed(
+    () =>
+        currentActorScopeLevel.value === "global" &&
+        provinces.value.length > 0,
 );
 const showSchoolProvinceFilter = computed(() => provinces.value.length > 1);
 const showSchoolCommuneFilter = computed(
@@ -572,7 +585,6 @@ const hasConfigurationForm = computed(() =>
           ) &&
               Object.keys(form.value).length > 0),
 );
-const fieldsForForm = computed(() => info.value.fields);
 const scopeLevelOptions = computed(() =>
     props.moduleKey === "roles" ? roleScopeLevels.value : accountLevels.value,
 );
@@ -585,6 +597,37 @@ const assignableUserRoles = computed(() => {
             Array.isArray(role.assignable_scope_levels) &&
             role.assignable_scope_levels.includes(level),
     );
+});
+const selectedRoleIsCommuneAdmin = computed(() =>
+    assignableUserRoles.value.some(
+        (role) =>
+            String(role.id) === form.value.role_id &&
+            role.scope_level === "commune" &&
+            role.is_primary_admin === true,
+    ),
+);
+const fieldsForForm = computed(() => {
+    const fields = [...info.value.fields];
+    const selectedRole = assignableUserRoles.value.find(
+        (role) => String(role.id) === form.value.role_id,
+    );
+
+    if (
+        props.moduleKey !== "users" ||
+        form.value.scope_level !== "province" ||
+        selectedRole?.is_primary_admin !== true
+    ) {
+        return fields;
+    }
+
+    const provinceFieldIndex = fields.indexOf("province_code");
+    const roleFieldIndex = fields.indexOf("role_id");
+    if (provinceFieldIndex !== -1 && roleFieldIndex !== -1) {
+        fields.splice(provinceFieldIndex, 1);
+        fields.splice(fields.indexOf("role_id") + 1, 0, "province_code");
+    }
+
+    return fields;
 });
 const selectedRoleManagesAllVillages = computed(() =>
     assignableUserRoles.value.some(
@@ -632,11 +675,49 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
     for (const [field, message] of Object.entries(requiredFields)) {
         if (!form.value[field]?.trim()) errors[field] = message;
     }
+    if ([...(form.value.name ?? "")].length > 255) {
+        errors.name = "Họ và tên không được vượt quá 255 ký tự.";
+    }
+    const username = form.value.username ?? "";
+    const unchangedLegacyUsername =
+        editing.value &&
+        username === String(selected.value?.username ?? "") &&
+        username.length > 12;
+    if (
+        username.trim() &&
+        !unchangedLegacyUsername &&
+        (username.length < 7 || username.length > 12)
+    ) {
+        errors.username = "Tên đăng nhập phải có từ 7 đến 12 ký tự.";
+    }
     if (
         form.value.citizen_id?.trim() &&
         !/^\d{12}$/.test(form.value.citizen_id.trim())
     ) {
         errors.citizen_id = "Số CCCD phải gồm đúng 12 chữ số.";
+    }
+    if (
+        form.value.phone?.trim() &&
+        !/^\+?\d+$/.test(form.value.phone.trim())
+    ) {
+        errors.phone = "Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.";
+    }
+    if ([...(form.value.phone ?? "")].length > 20) {
+        errors.phone = "Số điện thoại không được vượt quá 20 ký tự.";
+    }
+    const email = form.value.email?.trim() ?? "";
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errors.email = "Email không đúng định dạng.";
+    }
+    if ([...email].length > 255) {
+        errors.email = "Email không được vượt quá 255 ký tự.";
+    }
+    if (
+        form.value.date_of_birth &&
+        form.value.date_of_birth > latestBirthDate
+    ) {
+        errors.date_of_birth =
+            "Ngày sinh không được lớn hơn ngày hiện tại.";
     }
 
     if (form.value.scope_level !== "global" && !form.value.province_code) {
@@ -649,7 +730,9 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
     if (!editing.value && !passwordValue) {
         errors.password = "Vui lòng nhập mật khẩu.";
     } else if (passwordValue && passwordValue.length < 12) {
-        errors.password = "Mật khẩu phải có ít nhất 12 ký tự.";
+        errors.password = "Mật khẩu phải có từ 12 đến 18 ký tự.";
+    } else if (passwordValue.length > 18) {
+        errors.password = "Mật khẩu không được vượt quá 18 ký tự.";
     }
     if (
         (!editing.value || passwordValue) &&
@@ -683,6 +766,45 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
 
     return errors;
 });
+
+function sanitizeUserNumericInput(event: Event, field: string): void {
+    if (
+        props.moduleKey !== "users" ||
+        !["phone", "citizen_id"].includes(field)
+    ) {
+        return;
+    }
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const hasInternationalPrefix =
+        field === "phone" && input.value.trimStart().startsWith("+");
+    const digits = input.value.replace(/\D/g, "");
+    input.value = hasInternationalPrefix ? `+${digits}` : digits;
+    form.value[field] = input.value;
+}
+
+function formFieldMaxLength(field: string): number | undefined {
+    if (field === "citizen_id") return 12;
+    if (props.moduleKey === "users") {
+        if (field === "name" || field === "email") return 255;
+        if (field === "phone") return 20;
+        if (field === "username") {
+            const existingUsername = String(selected.value?.username ?? "");
+            return editing.value &&
+                existingUsername === form.value.username &&
+                existingUsername.length > 12
+                ? existingUsername.length
+                : 12;
+        }
+    }
+    if (props.moduleKey === "roles") {
+        if (field === "name") return 50;
+        if (field === "description") return 255;
+    }
+
+    return undefined;
+}
+
 const userFormReady = computed(
     () =>
         props.moduleKey !== "users" ||
@@ -703,17 +825,17 @@ const schoolFormReady = computed(
         props.moduleKey !== "schools" ||
         Boolean(form.value.name?.trim() && form.value.type),
 );
-const userFormValidationMessages = computed(() =>
-    Object.entries(userFormValidationErrors.value).map(
-        ([field, message]) => `${fieldLabel(field)}: ${message}`,
-    ),
-);
 const roleFormValidationErrors = computed<Record<string, string>>(() => {
     if (props.moduleKey !== "roles") return {};
 
     const errors: Record<string, string> = {};
     if (!form.value.name?.trim())
         errors.name = "Vui lòng nhập tên nhóm người dùng.";
+    else if ([...form.value.name].length > 50)
+        errors.name = "Tên nhóm người dùng không được vượt quá 50 ký tự.";
+    if ([...(form.value.description ?? "")].length > 255) {
+        errors.description = "Mô tả không được vượt quá 255 ký tự.";
+    }
     if (!form.value.scope_level)
         errors.scope_level = "Vui lòng chọn cấp quản lý.";
     if (!editing.value && permissionIds.value.length === 0) {
@@ -2089,6 +2211,38 @@ async function loadFormCommunes(code: string): Promise<void> {
     );
 }
 
+async function loadUserFormCommunes(): Promise<void> {
+    const code = form.value.province_code;
+    if (!code || form.value.scope_level !== "commune") {
+        formCommunes.value = [];
+        return;
+    }
+
+    const response = await api.get<unknown>(
+        `/provinces/${encodeURIComponent(code)}/communes`,
+        {
+            params: selectedRoleIsCommuneAdmin.value
+                ? {
+                      available_for: "commune-admin",
+                      except: selected.value?.id,
+                  }
+                : undefined,
+        },
+    );
+    formCommunes.value = apiRows<Row>(apiData<unknown>(response.data));
+    if (
+        selectedRoleIsCommuneAdmin.value &&
+        form.value.commune_code &&
+        !formCommunes.value.some(
+            (commune) => String(commune.code) === form.value.commune_code,
+        )
+    ) {
+        form.value.commune_code = "";
+        form.value.village_codes = "";
+        selectedUserVillageCodes.value = [];
+    }
+}
+
 async function loadFormVillages(code: string): Promise<void> {
     if (!code) {
         formVillages.value = [];
@@ -2158,7 +2312,11 @@ async function changeFormProvince(): Promise<void> {
             ) ||
             form.value.scope_level === "commune"
         ) {
-            await loadFormCommunes(form.value.province_code);
+            if (props.moduleKey === "users") {
+                await loadUserFormCommunes();
+            } else {
+                await loadFormCommunes(form.value.province_code);
+            }
         } else {
             formCommunes.value = [];
         }
@@ -2181,6 +2339,14 @@ async function changeFormCommune(): Promise<void> {
     }
 }
 
+async function changeUserFormRole(): Promise<void> {
+    try {
+        await loadUserFormCommunes();
+    } catch (cause) {
+        error.value = errorMessage(cause);
+    }
+}
+
 async function changeHouseholdFormCommune(): Promise<void> {
     form.value.village_code = "";
     formVillages.value = [];
@@ -2200,25 +2366,20 @@ async function loadUserFilterCommunes(code: string): Promise<void> {
         : [];
 }
 
+async function changeUserProvince(): Promise<void> {
+    userFilterCommune.value = "";
+    userFilterVillage.value = "";
+    userFilterRole.value = "";
+    currentPage.value = 1;
+    await load();
+}
+
 async function loadUserFilterVillages(code: string): Promise<void> {
     userFilterVillages.value = code
         ? await getLocationOptions<Row>(
               `/communes/${encodeURIComponent(code)}/villages`,
           )
         : [];
-}
-
-async function changeUserProvince(): Promise<void> {
-    userFilterCommune.value = "";
-    userFilterVillage.value = "";
-    userFilterVillages.value = [];
-    currentPage.value = 1;
-    try {
-        await loadUserFilterCommunes(userFilterProvince.value);
-        await load();
-    } catch (cause) {
-        error.value = errorMessage(cause);
-    }
 }
 
 async function changeUserCommune(): Promise<void> {
@@ -2238,6 +2399,15 @@ async function changeUserVillage(): Promise<void> {
 }
 
 async function changeUserRole(): Promise<void> {
+    currentPage.value = 1;
+    await load();
+}
+
+async function changeUserScopeLevel(): Promise<void> {
+    userFilterRole.value = "";
+    if (userFilterScopeLevel.value === "global") {
+        userFilterProvince.value = "";
+    }
     currentPage.value = 1;
     await load();
 }
@@ -2279,7 +2449,7 @@ watch(
 
             if (level === "commune" && form.value.province_code) {
                 try {
-                    await loadFormCommunes(form.value.province_code);
+                    await loadUserFormCommunes();
                     if (
                         currentActorScopeLevel.value === "commune" &&
                         form.value.commune_code
@@ -2449,6 +2619,8 @@ async function load(): Promise<void> {
                             : {}),
                         ...(props.moduleKey === "users"
                             ? {
+                                  scope_level:
+                                      userFilterScopeLevel.value || undefined,
                                   province_code:
                                       userFilterProvince.value || undefined,
                                   commune_code:
@@ -2599,6 +2771,11 @@ async function load(): Promise<void> {
             }
             if (props.moduleKey === "users") {
                 userFilterRoles.value = asRows(data.roles);
+                userAccountScopeLevels.value = Array.isArray(data.account_scope_levels)
+                    ? data.account_scope_levels.filter(
+                          (level): level is string => typeof level === "string",
+                      )
+                    : [];
                 currentActorScopeLevel.value =
                     typeof data.actor_scope_level === "string"
                         ? data.actor_scope_level
@@ -2622,6 +2799,9 @@ async function load(): Promise<void> {
                     );
                     userFilterRole.value = String(
                         selectedFilters.role_id ?? "",
+                    );
+                    userFilterScopeLevel.value = String(
+                        selectedFilters.scope_level ?? "",
                     );
                     if (currentActorScopeLevel.value === "global") {
                         userFilterCommune.value = "";
@@ -2683,6 +2863,9 @@ function newFormValues(): Record<string, string> {
             name: "",
             username: "",
             phone: "",
+            citizen_id: "",
+            date_of_birth: "",
+            email: "",
             password: "",
             password_confirmation: "",
             role_id: "",
@@ -2711,7 +2894,9 @@ async function beginEdit(row?: Row): Promise<void> {
     initialVillageFormState.value = null;
     initialSchoolFormState.value = null;
     initialHouseholdFormState.value = null;
+    initialUserFormState.value = null;
     formErrors.value = {};
+    userFormSubmitted.value = false;
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
@@ -2853,8 +3038,17 @@ async function beginEdit(row?: Row): Promise<void> {
                 const value = user[key];
                 if (Array.isArray(value))
                     form.value[key] = value.map(String).join(", ");
-                else if (value !== undefined && value !== null)
-                    form.value[key] = String(value);
+                else if (value !== undefined && value !== null) {
+                    const stringValue = String(value);
+                    form.value[key] =
+                        key === "date_of_birth"
+                            ? stringValue.slice(0, 10)
+                            : key === "is_active"
+                              ? value === true || value === 1 || value === "1"
+                                  ? "1"
+                                  : "0"
+                              : stringValue;
+                }
             }
             form.value.scope_level = String(
                 user.scope_level ??
@@ -2889,13 +3083,20 @@ async function beginEdit(row?: Row): Promise<void> {
                 }
             }
             if (
-                currentActorScopeLevel.value === "commune" &&
-                form.value.commune_code
+                form.value.scope_level === "commune" &&
+                form.value.province_code
             ) {
-                await Promise.all([
-                    loadFormCommunes(form.value.province_code),
-                    loadFormVillages(form.value.commune_code),
-                ]);
+                await loadUserFormCommunes();
+                if (
+                    currentActorScopeLevel.value === "commune" &&
+                    form.value.commune_code
+                ) {
+                    await loadFormVillages(form.value.commune_code);
+                }
+            }
+            if (row) {
+                await nextTick();
+                initialUserFormState.value = userFormState();
             }
         } else {
             const modelKey =
@@ -2991,6 +3192,37 @@ async function openHousehold(row: Row): Promise<void> {
     } finally {
         householdLoading.value = false;
     }
+}
+
+async function openUserDetail(row: Row): Promise<void> {
+    const id = row.id;
+    if (id === undefined) return;
+
+    userDetailRow.value = row;
+    userDetail.value = null;
+    userDetailError.value = "";
+    userDetailLoading.value = true;
+    try {
+        const response = await api.get<unknown>(`/users/${id}`);
+        const payload = asRow(apiData<unknown>(response.data));
+        userDetail.value = asRow(payload.data ?? payload);
+    } catch (cause) {
+        userDetailError.value = errorMessage(cause);
+    } finally {
+        userDetailLoading.value = false;
+    }
+}
+
+function closeUserDetail(): void {
+    userDetail.value = null;
+    userDetailRow.value = null;
+    userDetailError.value = "";
+}
+
+function editUserDetail(): void {
+    const row = userDetailRow.value;
+    closeUserDetail();
+    if (row) void beginEdit(row);
 }
 
 function closeHouseholdDetail(): void {
@@ -3112,10 +3344,13 @@ function closeConfigurationForm(): void {
     initialVillageFormState.value = null;
     initialSchoolFormState.value = null;
     initialHouseholdFormState.value = null;
+    initialUserFormState.value = null;
     initialVillageFormState.value = null;
     showUserPassword.value = false;
     showUserPasswordConfirmation.value = false;
+    error.value = "";
     formErrors.value = {};
+    userFormSubmitted.value = false;
 }
 
 async function beginMember(isHead: boolean, person?: Row): Promise<void> {
@@ -4117,13 +4352,59 @@ function userMatchesCurrentFilters(user: Row): boolean {
     );
 }
 
+function userFormState(): string {
+    const values = Object.keys(form.value)
+        .filter((field) => !["password", "password_confirmation"].includes(field))
+        .sort()
+        .map((field) => [field, form.value[field] ?? ""]);
+
+    return JSON.stringify({
+        values,
+        village_codes: [...selectedUserVillageCodes.value].sort(),
+    });
+}
+
+function updateUserList(userId: unknown, data: Row): void {
+    const role = roleOptions.value.find(
+        (option) => String(option.id) === String(data.role_id ?? ""),
+    );
+
+    rows.value = rows.value.map((row) =>
+        String(row.id) === String(userId)
+            ? {
+                  ...row,
+                  name: data.name,
+                  username: data.username,
+                  email: data.email,
+                  phone: data.phone,
+                  role_name: role?.name ?? row.role_name,
+                  scope_level: data.scope_level,
+                  is_active: data.is_active,
+              }
+            : row,
+    );
+}
+
+const userFormChanged = computed(
+    () =>
+        Boolean(form.value.password) ||
+        initialUserFormState.value !== userFormState(),
+);
+
 async function save(): Promise<void> {
     formErrors.value = {};
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
     if (props.moduleKey === "users") {
-        formErrors.value = { ...userFormValidationErrors.value };
+        if (
+            editing.value &&
+            !userFormChanged.value
+        ) {
+            return;
+        }
+
+        userFormSubmitted.value = true;
         if (!userFormReady.value) {
             error.value =
                 "Bạn chưa thể lưu tài khoản. Hãy hoàn tất các thông tin bắt buộc bên dưới.";
@@ -4262,6 +4543,18 @@ async function save(): Promise<void> {
                 `${endpoint}/${householdId}`,
                 body,
             );
+            if (props.moduleKey === "users") {
+                updateUserList(householdId, body);
+                configurationFormOpen.value = false;
+                selected.value = null;
+                form.value = {};
+                managementResult.value = {
+                    success: true,
+                    title: "Cập nhật tài khoản thành công",
+                    message: `Thông tin tài khoản “${String(body.name ?? "")}” đã được lưu.`,
+                };
+                return;
+            }
             if (props.moduleKey === "villages") {
                 const result = apiData<Row>(response.data);
                 savedVillage =
@@ -4304,14 +4597,13 @@ async function save(): Promise<void> {
             }
         }
         notice.value =
-            props.moduleKey === "households"
+            props.moduleKey === "households" ||
+            props.moduleKey === "users" ||
+            ["roles", "villages", "schools"].includes(props.moduleKey)
                 ? ""
-                : ["roles", "villages", "schools"].includes(props.moduleKey) ||
-                    (props.moduleKey === "users" && !wasEditing)
-                  ? ""
-                  : wasEditing
-                    ? "Đã cập nhật."
-                    : "";
+                : wasEditing
+                  ? "Đã cập nhật."
+                  : "";
         if (
             props.moduleKey === "households" &&
             typeof createdHouseholdIdValue === "number"
@@ -4396,8 +4688,6 @@ async function save(): Promise<void> {
             )
         ) {
             await load();
-        } else if (props.moduleKey === "users" && wasEditing) {
-            await load();
         }
         if (props.moduleKey === "merge") {
             deleteResult.value = {
@@ -4461,6 +4751,17 @@ async function save(): Promise<void> {
             if (Object.keys(formErrors.value).length === 0) {
                 userFormRequestError.value = `Chưa thể tạo tài khoản. ${error.value} Vui lòng thử lại.`;
             }
+            managementResult.value = {
+                success: false,
+                title: "Tạo tài khoản thất bại",
+                message: error.value,
+            };
+        } else if (props.moduleKey === "users") {
+            managementResult.value = {
+                success: false,
+                title: "Cập nhật tài khoản thất bại",
+                message: error.value,
+            };
         } else if (props.moduleKey === "roles") {
             roleFormRequestError.value =
                 Object.keys(formErrors.value).length === 0
@@ -4592,6 +4893,47 @@ async function saveAccountProfile(): Promise<void> {
     if (!accountFormChanged.value) return;
 
     accountFormErrors.value = {};
+    if (!accountForm.value.name.trim()) {
+        accountFormErrors.value.name = "Vui lòng nhập họ và tên.";
+    } else if ([...accountForm.value.name].length > 255) {
+        accountFormErrors.value.name = "Họ và tên không được vượt quá 255 ký tự.";
+    }
+    if (
+        accountForm.value.email &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountForm.value.email)
+    ) {
+        accountFormErrors.value.email = "Email không đúng định dạng.";
+    } else if ([...accountForm.value.email].length > 255) {
+        accountFormErrors.value.email = "Email không được vượt quá 255 ký tự.";
+    }
+    if (
+        accountForm.value.phone &&
+        !/^\+?\d+$/.test(accountForm.value.phone)
+    ) {
+        accountFormErrors.value.phone =
+            "Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.";
+    } else if ([...accountForm.value.phone].length > 20) {
+        accountFormErrors.value.phone =
+            "Số điện thoại không được vượt quá 20 ký tự.";
+    }
+    if (
+        accountForm.value.citizen_id &&
+        !/^\d{12}$/.test(accountForm.value.citizen_id)
+    ) {
+        accountFormErrors.value.citizen_id =
+            "Số CCCD phải gồm đúng 12 chữ số.";
+    }
+    if (
+        accountForm.value.date_of_birth &&
+        accountForm.value.date_of_birth > latestBirthDate
+    ) {
+        accountFormErrors.value.date_of_birth =
+            "Ngày sinh không được lớn hơn ngày hiện tại.";
+    }
+    if (Object.keys(accountFormErrors.value).length > 0) {
+        return;
+    }
+
     busy.value = true;
     error.value = "";
     notice.value = "";
@@ -4878,12 +5220,101 @@ function applyTrashFilters(): void {
 
 function openAccountAction(row: Row, action: AccountAction): void {
     const accountName = String(row.name ?? row.username ?? "tài khoản này");
-    accountActionDialog.value = { mode: "confirm", action, row, accountName };
+    accountPassword.value = "";
+    accountPasswordConfirmation.value = "";
+    accountPasswordError.value = "";
+    showAccountPassword.value = false;
+    showAccountPasswordConfirmation.value = false;
+    accountActionDialog.value = {
+        mode: action === "password" ? "password-form" : "confirm",
+        action,
+        row,
+        accountName,
+    };
+}
+
+function randomPasswordIndex(max: number): number {
+    const range = 0x100000000;
+    const limit = range - (range % max);
+    const value = new Uint32Array(1);
+    do {
+        window.crypto.getRandomValues(value);
+    } while (value[0] >= limit);
+
+    return value[0] % max;
+}
+
+function generateAccountPassword(): void {
+    const groups = [
+        "abcdefghijkmnopqrstuvwxyz",
+        "ABCDEFGHJKLMNPQRSTUVWXYZ",
+        "23456789",
+        "!@#$%_-",
+    ];
+    const allCharacters = groups.join("");
+
+    try {
+        const password = groups
+            .map((group) => group[randomPasswordIndex(group.length)])
+            .concat(
+                Array.from(
+                    { length: 12 },
+                    () =>
+                        allCharacters[
+                            randomPasswordIndex(allCharacters.length)
+                        ],
+                ),
+            );
+        for (let index = password.length - 1; index > 0; index -= 1) {
+            const swapIndex = randomPasswordIndex(index + 1);
+            [password[index], password[swapIndex]] = [
+                password[swapIndex],
+                password[index],
+            ];
+        }
+
+        accountPassword.value = password.join("");
+        accountPasswordConfirmation.value = accountPassword.value;
+        showAccountPassword.value = true;
+        showAccountPasswordConfirmation.value = true;
+        accountPasswordError.value = "";
+    } catch {
+        accountPasswordError.value =
+            "Trình duyệt không thể tạo mật khẩu an toàn. Vui lòng nhập mật khẩu mới.";
+    }
+}
+
+function closeAccountAction(): void {
+    if (busy.value) return;
+    accountActionDialog.value = null;
+    accountPassword.value = "";
+    accountPasswordConfirmation.value = "";
+    accountPasswordError.value = "";
+    showAccountPassword.value = false;
+    showAccountPasswordConfirmation.value = false;
 }
 
 async function confirmAccountAction(): Promise<void> {
     const dialog = accountActionDialog.value;
-    if (!dialog || dialog.mode !== "confirm") return;
+    if (
+        !dialog ||
+        (dialog.mode !== "confirm" && dialog.mode !== "password-form")
+    )
+        return;
+
+    if (dialog.action === "password") {
+        const passwordLength = Array.from(accountPassword.value).length;
+        if (passwordLength < 12 || passwordLength > 18) {
+            accountPasswordError.value =
+                "Mật khẩu phải có từ 12 đến 18 ký tự.";
+            return;
+        }
+        if (accountPassword.value !== accountPasswordConfirmation.value) {
+            accountPasswordError.value =
+                "Mật khẩu xác nhận không khớp.";
+            return;
+        }
+    }
 
     error.value = "";
     notice.value = "";
@@ -4899,10 +5330,17 @@ async function confirmAccountAction(): Promise<void> {
                   )
                 : await api.post<{ message: string }>(
                       `/users/${dialog.row.id}/password-resets`,
+                      {
+                          password: accountPassword.value,
+                          password_confirmation:
+                              accountPasswordConfirmation.value,
+                      },
                   );
         if (dialog.action === "status") {
             dialog.row.is_active = !dialog.row.is_active;
         }
+        accountPassword.value = "";
+        accountPasswordConfirmation.value = "";
         accountActionDialog.value = {
             ...dialog,
             mode: "result",
@@ -4910,6 +5348,21 @@ async function confirmAccountAction(): Promise<void> {
             message: result.data.message,
         };
     } catch (cause) {
+        if (
+            dialog.action === "password" &&
+            typeof cause === "object" &&
+            cause !== null &&
+            "response" in cause &&
+            typeof cause.response === "object" &&
+            cause.response !== null &&
+            "status" in cause.response &&
+            cause.response.status === 422
+        ) {
+            accountPasswordError.value = errorMessage(cause);
+            return;
+        }
+        accountPassword.value = "";
+        accountPasswordConfirmation.value = "";
         accountActionDialog.value = {
             ...dialog,
             mode: "result",
@@ -4923,9 +5376,9 @@ async function confirmAccountAction(): Promise<void> {
 
 function accountActionTitle(dialog: AccountActionDialog): string {
     if (dialog.action === "password") {
-        return dialog.mode === "confirm"
-            ? "Xác nhận đặt lại mật khẩu"
-            : "Kết quả đặt lại mật khẩu";
+        return dialog.mode === "result"
+            ? "Kết quả đổi mật khẩu"
+            : "Đổi mật khẩu tài khoản";
     }
 
     return dialog.mode === "confirm"
@@ -4936,15 +5389,9 @@ function accountActionTitle(dialog: AccountActionDialog): string {
 }
 
 function accountActionMessage(dialog: AccountActionDialog): string {
-    if (dialog.mode === "result") {
-        return dialog.success
-            ? (dialog.message ?? "")
-            : `Thao tác thất bại: ${dialog.message ?? "Vui lòng thử lại."}`;
-    }
-
-    return dialog.action === "password"
-        ? `Bạn có chắc muốn đặt lại mật khẩu cho tài khoản “${dialog.accountName}”?`
-        : `Bạn có chắc muốn ${dialog.row.is_active ? "vô hiệu hóa" : "kích hoạt"} tài khoản “${dialog.accountName}”?`;
+    return dialog.success
+        ? (dialog.message ?? "")
+        : `Thao tác thất bại: ${dialog.message ?? "Vui lòng thử lại."}`;
 }
 
 async function changeUserPageSize(): Promise<void> {
@@ -5384,20 +5831,74 @@ onMounted(() => void load());
             }"
         >
             <div v-if="moduleKey === 'users'" class="user-location-filters">
+                <label v-if="userAccountScopeLevels.length > 1">
+                    <span>Cấp quản lý</span>
+                    <select
+                        v-model="userFilterScopeLevel"
+                        aria-label="Lọc theo cấp quản lý"
+                        @change="changeUserScopeLevel"
+                    >
+                        <option value="">Tất cả cấp quản lý</option>
+                        <option
+                            v-for="level in userAccountScopeLevels"
+                            :key="level"
+                            :value="level"
+                        >
+                            {{ scopeLabels[level] || level }}
+                        </option>
+                    </select>
+                </label>
                 <label v-if="showUserProvinceFilter">
-                    <span>Tỉnh</span>
+                    <span>Phạm vi</span>
                     <select
                         v-model="userFilterProvince"
-                        aria-label="Lọc theo tỉnh / thành phố"
+                        aria-label="Lọc theo phạm vi"
+                        :disabled="userFilterScopeLevel === 'global'"
                         @change="changeUserProvince"
                     >
-                        <option value="">Tất cả địa bàn</option>
+                        <option value="">Cả nước</option>
                         <option
                             v-for="province in provinces"
                             :key="String(province.code)"
                             :value="String(province.code)"
                         >
                             {{ province.name }}
+                        </option>
+                    </select>
+                </label>
+                <label v-else-if="showUserCommuneFilter">
+                    <span>Phạm vi</span>
+                    <select
+                        v-model="userFilterCommune"
+                        aria-label="Lọc theo phạm vi xã / phường"
+                        :disabled="!userFilterProvince"
+                        @change="changeUserCommune"
+                    >
+                        <option value="">Tất cả xã / phường</option>
+                        <option
+                            v-for="commune in userFilterCommunes"
+                            :key="String(commune.code)"
+                            :value="String(commune.code)"
+                        >
+                            {{ commune.name }}
+                        </option>
+                    </select>
+                </label>
+                <label v-else-if="showUserVillageFilter">
+                    <span>Phạm vi</span>
+                    <select
+                        v-model="userFilterVillage"
+                        aria-label="Lọc theo phạm vi thôn / xóm"
+                        :disabled="!userFilterCommune"
+                        @change="changeUserVillage"
+                    >
+                        <option value="">Tất cả thôn / xóm</option>
+                        <option
+                            v-for="village in userFilterVillages"
+                            :key="String(village.code)"
+                            :value="String(village.code)"
+                        >
+                            {{ village.name }}
                         </option>
                     </select>
                 </label>
@@ -5415,42 +5916,6 @@ onMounted(() => void load());
                             :value="String(role.id)"
                         >
                             {{ role.name }}
-                        </option>
-                    </select>
-                </label>
-                <label v-if="showUserCommuneFilter">
-                    <span>Xã</span>
-                    <select
-                        v-model="userFilterCommune"
-                        aria-label="Lọc theo xã / phường"
-                        :disabled="!userFilterProvince"
-                        @change="changeUserCommune"
-                    >
-                        <option value="">Tất cả xã / phường</option>
-                        <option
-                            v-for="commune in userFilterCommunes"
-                            :key="String(commune.code)"
-                            :value="String(commune.code)"
-                        >
-                            {{ commune.name }}
-                        </option>
-                    </select>
-                </label>
-                <label v-if="showUserVillageFilter">
-                    <span>Thôn</span>
-                    <select
-                        v-model="userFilterVillage"
-                        aria-label="Lọc theo thôn / xóm"
-                        :disabled="!userFilterCommune"
-                        @change="changeUserVillage"
-                    >
-                        <option value="">Tất cả thôn / xóm</option>
-                        <option
-                            v-for="village in userFilterVillages"
-                            :key="String(village.code)"
-                            :value="String(village.code)"
-                        >
-                            {{ village.name }}
                         </option>
                     </select>
                 </label>
@@ -5483,11 +5948,6 @@ onMounted(() => void load());
                 v-if="moduleKey === 'users'"
                 class="user-management-toolbar-bottom"
             >
-                <div class="user-management-toolbar-summary">
-                    <span class="record-count"
-                        >{{ rows.length }} / {{ totalRecords }} bản ghi</span
-                    >
-                </div>
                 <button
                     v-if="canCreate"
                     class="primary-button management-tool-button"
@@ -5692,6 +6152,7 @@ onMounted(() => void load());
                     'workspace-modal-card':
                         isDialogForm && !isHouseholdCreatePage,
                     'household-create-page-form': isHouseholdCreatePage,
+                    'user-configuration-form': moduleKey === 'users',
                     'role-configuration-form': moduleKey === 'roles',
                     'village-merge-configuration-form': moduleKey === 'merge',
                     'village-configuration-form': [
@@ -5729,16 +6190,16 @@ onMounted(() => void load());
                     >
                         {{ `${editing ? "Cập nhật" : "Tạo mới"} ${info.title.toLocaleLowerCase("vi")}` }}
                     </h3>
-                    <button
-                        v-if="isDialogForm && !isHouseholdCreatePage"
-                        class="modal-icon-button"
-                        type="button"
-                        aria-label="Đóng biểu mẫu"
-                        @click="closeConfigurationForm"
-                    >
-                        ×
-                    </button>
                 </div>
+                <button
+                    v-if="isDialogForm && !isHouseholdCreatePage"
+                    class="modal-icon-button workspace-form-close"
+                    type="button"
+                    aria-label="Đóng biểu mẫu"
+                    @click="closeConfigurationForm"
+                >
+                    ×
+                </button>
                 <p
                     v-if="
                         error &&
@@ -5756,29 +6217,6 @@ onMounted(() => void load());
                     role="alert"
                 >
                     {{ roleFormRequestError }}
-                </p>
-                <p
-                    v-if="
-                        moduleKey === 'users' && selectedRoleManagesAllVillages
-                    "
-                    class="muted"
-                    role="status"
-                >
-                    Nhóm này có quyền quản lý thôn/xóm nên tài khoản tự động
-                    quản lý tất cả thôn/xóm trong xã.
-                </p>
-                <p
-                    v-else-if="
-                        moduleKey === 'users' &&
-                        form.role_id &&
-                        !selectedRoleUsesVillageScope
-                    "
-                    class="muted"
-                    role="status"
-                >
-                    Nhóm này không có quyền liên quan đến phiếu điều tra,
-                    nhập/xuất hoặc thùng rác nên tài khoản áp dụng phạm vi toàn
-                    xã.
                 </p>
                 <template
                     v-for="field in fieldsForForm.filter(
@@ -5824,6 +6262,11 @@ onMounted(() => void load());
                                 field === 'village_codes'
                             ) &&
                             !(
+                                moduleKey === 'users' &&
+                                field === 'province_code' &&
+                                currentActorScopeLevel === 'province'
+                            ) &&
+                            !(
                                 moduleKey === 'schools' &&
                                 field === 'province_code' &&
                                 provinces.length === 1
@@ -5841,7 +6284,13 @@ onMounted(() => void load());
                                 ['address', 'residence_status'].includes(field),
                         }"
                     >
-                        <span>{{ fieldLabel(field) }}</span>
+                        <span>
+                            {{
+                                moduleKey === "users" && field === "username"
+                                    ? "Tên đăng nhập (7–12 ký tự)"
+                                    : fieldLabel(field)
+                            }}
+                        </span>
                         <select
                             v-if="field === 'type'"
                             v-model="form[field]"
@@ -5856,14 +6305,20 @@ onMounted(() => void load());
                         </select>
                         <select
                             v-else-if="
-                                moduleKey === 'schools' &&
+                                ['schools', 'users'].includes(moduleKey) &&
                                 field === 'is_active'
                             "
                             v-model="form[field]"
                             required
                         >
                             <option value="1">Đang hoạt động</option>
-                            <option value="0">Ngừng hoạt động</option>
+                            <option value="0">
+                                {{
+                                    moduleKey === 'users'
+                                        ? 'Vô hiệu hóa'
+                                        : 'Ngừng hoạt động'
+                                }}
+                            </option>
                         </select>
                         <select
                             v-else-if="field === 'level'"
@@ -5903,7 +6358,8 @@ onMounted(() => void load());
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
-                                    userFormValidationErrors[field],
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors[field]),
                                 )
                             "
                         >
@@ -5926,8 +6382,12 @@ onMounted(() => void load());
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
-                                    userFormValidationErrors[field],
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors[field]),
                                 )
+                            "
+                            @change="
+                                moduleKey === 'users' && changeUserFormRole()
                             "
                         >
                             <option value="">Chọn nhóm quyền</option>
@@ -6123,6 +6583,7 @@ onMounted(() => void load());
                         <input
                             v-else
                             v-model="form[field]"
+                            @input="sanitizeUserNumericInput($event, field)"
                             :type="
                                 field.includes('password')
                                     ? 'password'
@@ -6130,16 +6591,38 @@ onMounted(() => void load());
                                       ? 'date'
                                       : field === 'email'
                                         ? 'email'
+                                        : moduleKey === 'users' &&
+                                            field === 'phone'
+                                          ? 'tel'
                                         : 'text'
                             "
-                            :maxlength="field === 'citizen_id' ? 12 : undefined"
+                            :maxlength="
+                                formFieldMaxLength(field)
+                            "
+                            :max="
+                                field === 'date_of_birth'
+                                    ? latestBirthDate
+                                    : undefined
+                            "
+                            :minlength="
+                                moduleKey === 'users' && field === 'username'
+                                    ? 7
+                                    : undefined
+                            "
                             :inputmode="
-                                field === 'citizen_id' ? 'numeric' : undefined
+                                moduleKey === 'users' &&
+                                field === 'phone'
+                                    ? 'tel'
+                                    : moduleKey === 'users' &&
+                                        field === 'citizen_id'
+                                    ? 'numeric'
+                                    : undefined
                             "
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
-                                    userFormValidationErrors[field] ||
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors[field]) ||
                                     (field === 'username' &&
                                         userFormRequestError),
                                 )
@@ -6182,7 +6665,10 @@ onMounted(() => void load());
                             >{{ formErrors[field] }}</small
                         >
                         <small
-                            v-else-if="userFormValidationErrors[field]"
+                            v-else-if="
+                                userFormSubmitted &&
+                                userFormValidationErrors[field]
+                            "
                             class="field-error"
                             role="alert"
                             >{{ userFormValidationErrors[field] }}</small
@@ -6229,7 +6715,10 @@ onMounted(() => void load());
                             >{{ formErrors[field] }}</small
                         >
                         <small
-                            v-else-if="userFormValidationErrors[field]"
+                            v-else-if="
+                                userFormSubmitted &&
+                                userFormValidationErrors[field]
+                            "
                             class="field-error"
                             role="alert"
                             >{{ userFormValidationErrors[field] }}</small
@@ -6490,18 +6979,21 @@ onMounted(() => void load());
                 </div>
                 <label v-if="moduleKey === 'users'" class="workspace-field">
                     <span
-                        >Mật khẩu
+                        >Mật khẩu (12–18 ký tự)
                         {{ editing ? "(để trống nếu không đổi)" : "" }}</span
                     >
                     <div class="password-input-control">
                         <input
                             v-model="form.password"
                             :type="showUserPassword ? 'text' : 'password'"
+                            minlength="12"
+                            maxlength="18"
                             :required="!editing"
                             :aria-invalid="
                                 Boolean(
                                     formErrors.password ||
-                                    userFormValidationErrors.password,
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors.password),
                                 )
                             "
                         />
@@ -6522,13 +7014,15 @@ onMounted(() => void load());
                     <small
                         v-if="
                             formErrors.password ||
-                            userFormValidationErrors.password
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password)
                         "
                         class="field-error"
                         role="alert"
                         >{{
                             formErrors.password ||
-                            userFormValidationErrors.password
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password)
                         }}</small
                     >
                 </label>
@@ -6546,10 +7040,13 @@ onMounted(() => void load());
                                     : 'password'
                             "
                             :required="!editing || Boolean(form.password)"
+                            minlength="12"
+                            maxlength="18"
                             :aria-invalid="
                                 Boolean(
                                     formErrors.password_confirmation ||
-                                    userFormValidationErrors.password_confirmation,
+                                    (userFormSubmitted &&
+                                        userFormValidationErrors.password_confirmation),
                                 )
                             "
                         />
@@ -6573,13 +7070,15 @@ onMounted(() => void load());
                     <small
                         v-if="
                             formErrors.password_confirmation ||
-                            userFormValidationErrors.password_confirmation
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password_confirmation)
                         "
                         class="field-error"
                         role="alert"
                         >{{
                             formErrors.password_confirmation ||
-                            userFormValidationErrors.password_confirmation
+                            (userFormSubmitted &&
+                                userFormValidationErrors.password_confirmation)
                         }}</small
                     >
                 </label>
@@ -6736,13 +7235,6 @@ onMounted(() => void load());
                     Mã thôn / xóm sẽ tự sinh theo cấu trúc [Mã xã]_[Số thứ tự],
                     ví dụ C01_001. Mã cũ được giữ nguyên.
                 </p>
-                <label v-if="moduleKey === 'users'" class="workspace-field">
-                    <span>Trạng thái</span>
-                    <select v-model="form.is_active">
-                        <option value="1">Đang hoạt động</option>
-                        <option value="0">Vô hiệu hóa</option>
-                    </select>
-                </label>
                 <section
                     v-if="moduleKey === 'households' && editing"
                     class="household-edit-members"
@@ -7310,6 +7802,7 @@ onMounted(() => void load());
                     class="pagination-actions"
                     :class="{
                         'role-form-actions': moduleKey === 'roles',
+                        'user-form-actions': moduleKey === 'users',
                         'household-form-actions': moduleKey === 'households',
                         'village-merge-form-actions': moduleKey === 'merge',
                     }"
@@ -7321,7 +7814,9 @@ onMounted(() => void load());
                             busy ||
                             villageMergeBusy ||
                             formOptionsBusy ||
-                            !userFormReady ||
+                            (moduleKey === 'users' &&
+                                editing &&
+                                !userFormChanged) ||
                             !roleFormReady ||
                             !villageFormReady ||
                             (moduleKey === 'merge' &&
@@ -7366,14 +7861,6 @@ onMounted(() => void load());
                         }}
                     </button>
                 </div>
-                <p
-                    v-if="moduleKey === 'users' && !userFormReady"
-                    class="muted form-validation-hint"
-                    role="status"
-                >
-                    Còn {{ userFormValidationMessages.length }} mục cần kiểm
-                    tra: {{ userFormValidationMessages.join(" · ") }}
-                </p>
             </form>
         </div>
 
@@ -7623,6 +8110,7 @@ onMounted(() => void load());
                                 :type="showNewPassword ? 'text' : 'password'"
                                 autocomplete="new-password"
                                 minlength="12"
+                                maxlength="18"
                                 required
                             />
                             <button
@@ -7638,10 +8126,16 @@ onMounted(() => void load());
                             </button>
                         </span>
                         <small
-                            v-if="passwordFormErrors.password"
+                            v-if="
+                                passwordFormErrors.password ||
+                                passwordForm.password.length > 18
+                            "
                             class="field-error"
                             role="alert"
-                            >{{ passwordFormErrors.password }}</small
+                            >{{
+                                passwordFormErrors.password ||
+                                "Mật khẩu mới không được vượt quá 18 ký tự."
+                            }}</small
                         >
                     </label>
                     <label class="workspace-field">
@@ -7656,6 +8150,7 @@ onMounted(() => void load());
                                 "
                                 autocomplete="new-password"
                                 minlength="12"
+                                maxlength="18"
                                 required
                             />
                             <button
@@ -7689,6 +8184,7 @@ onMounted(() => void load());
                             busy ||
                             !passwordForm.current_password ||
                             passwordForm.password.length < 12 ||
+                            passwordForm.password.length > 18 ||
                             !passwordForm.password_confirmation
                         "
                     >
@@ -8150,6 +8646,22 @@ onMounted(() => void load());
                             v-for="column in info.columns"
                             :key="column"
                             :class="{
+                                'table-numeric-heading': [
+                                    'phone',
+                                    'members_count',
+                                    'users_count',
+                                ].includes(column),
+                                'table-date-heading': [
+                                    'date_of_birth',
+                                    'dob',
+                                    'created_at',
+                                    'updated_at',
+                                ].includes(column),
+                                'table-status-heading': [
+                                    'is_active',
+                                    'operational_status',
+                                    'status',
+                                ].includes(column),
                                 'village-operational-status-cell':
                                     moduleKey === 'villages' &&
                                     column === 'operational_status',
@@ -8158,10 +8670,19 @@ onMounted(() => void load());
                                     column === 'is_active',
                             }"
                         >
-                            {{ fieldLabel(column) }}
+                            {{
+                                moduleKey === "users" && column === "name"
+                                    ? "Tên / Cấp quản lý"
+                                    : fieldLabel(column)
+                            }}
                         </th>
                         <th v-if="moduleKey === 'roles'">Quyền hạn</th>
-                        <th v-if="moduleKey === 'users'">Trạng thái</th>
+                        <th
+                            v-if="moduleKey === 'users'"
+                            class="table-status-heading"
+                        >
+                            Trạng thái
+                        </th>
                         <th
                             :class="{
                                 'account-actions-heading':
@@ -8310,6 +8831,43 @@ onMounted(() => void load());
                                     <path d="m7 7 6 6m0-6-6 6" />
                                 </svg>
                             </span>
+                            <div
+                                v-else-if="
+                                    moduleKey === 'users' && column === 'name'
+                                "
+                                class="account-name-cell"
+                            >
+                                <span class="account-name">{{ pathValue(row, column) }}</span>
+                                <small v-if="row.scope_level">
+                                    {{
+                                        scopeLabels[String(row.scope_level)] ||
+                                        row.scope_level
+                                    }}
+                                </small>
+                            </div>
+                            <div
+                                v-else-if="
+                                    moduleKey === 'users' &&
+                                    column === 'role_name'
+                                "
+                                class="account-role-cell"
+                            >
+                                <span>{{ pathValue(row, column) }}</span>
+                                <small
+                                    v-if="
+                                        row.scope_level === 'commune'
+                                            ? row.commune_name
+                                            : row.scope_level === 'province' &&
+                                              row.province_name
+                                    "
+                                >
+                                    {{
+                                        row.scope_level === 'commune'
+                                            ? row.commune_name
+                                            : row.province_name
+                                    }}
+                                </small>
+                            </div>
                             <template v-else>
                                 {{ pathValue(row, column) }}
                             </template>
@@ -8345,6 +8903,32 @@ onMounted(() => void load());
                                 class="account-status-actions"
                             >
                                 <div class="account-action-controls">
+                                    <button
+                                        v-if="row.can_view_details"
+                                        class="secondary-button account-action-button account-icon-action"
+                                        type="button"
+                                        :aria-label="`Xem chi tiết tài khoản ${row.name}`"
+                                        title="Xem chi tiết"
+                                        @click="openUserDetail(row)"
+                                    >
+                                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                                            <path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" />
+                                            <circle cx="12" cy="12" r="2.7" />
+                                        </svg>
+                                    </button>
+                                    <button
+                                        v-if="row.can_edit_configuration"
+                                        class="secondary-button account-action-button account-icon-action user-edit-account-button"
+                                        type="button"
+                                        :aria-label="`Sửa tài khoản ${row.name}`"
+                                        title="Sửa tài khoản"
+                                        @click="beginEdit(row)"
+                                    >
+                                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                                            <path d="M13.8 3.2a2 2 0 0 1 2.8 2.8L8 14.6l-3.5.9.9-3.5 8.4-8.8Z" />
+                                            <path d="m12.5 4.5 3 3" />
+                                        </svg>
+                                    </button>
                                     <button
                                         v-if="row.can_change_account_status"
                                         class="secondary-button account-action-button account-icon-action"
@@ -8710,19 +9294,24 @@ onMounted(() => void load());
             }}
         </p>
         <div v-if="moduleKey === 'users'" class="user-pagination-footer">
-            <label class="page-size-control">
-                <span>Mỗi trang</span>
-                <select
-                    v-model.number="userPageSize"
-                    :disabled="busy"
-                    @change="changeUserPageSize"
+            <div class="user-pagination-footer-info">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-model.number="userPageSize"
+                        :disabled="busy"
+                        @change="changeUserPageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                        <option :value="100">100</option>
+                    </select>
+                </label>
+                <span class="record-count"
+                    >{{ rows.length }} / {{ totalRecords }} bản ghi</span
                 >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                    <option :value="100">100</option>
-                </select>
-            </label>
+            </div>
             <div
                 class="pagination-actions compact-pagination"
                 aria-label="Phân trang danh sách"
@@ -10989,15 +11578,106 @@ onMounted(() => void load());
         </section>
     </div>
     <div
+        v-if="moduleKey === 'users' && (userDetail || userDetailLoading || userDetailError)"
+        class="workspace-modal-backdrop user-detail-backdrop"
+        role="presentation"
+        @click.self="closeUserDetail"
+        @keydown.esc="closeUserDetail"
+    >
+        <section
+            class="workspace-modal-card user-detail-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="user-detail-title"
+        >
+            <header class="user-detail-header">
+                <div>
+                    <p class="workspace-eyebrow">THÔNG TIN TÀI KHOẢN</p>
+                    <h2 id="user-detail-title">
+                        {{ userDetail?.name ?? userDetailRow?.name ?? "Chi tiết tài khoản" }}
+                    </h2>
+                </div>
+                <button
+                    class="household-detail-icon-button"
+                    type="button"
+                    aria-label="Đóng chi tiết tài khoản"
+                    title="Đóng"
+                    @click="closeUserDetail"
+                >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="m6 6 12 12M18 6 6 18" />
+                    </svg>
+                </button>
+            </header>
+            <p v-if="userDetailLoading" class="user-detail-loading" role="status">
+                Đang tải thông tin tài khoản…
+            </p>
+            <p v-else-if="userDetailError" class="notice login-error" role="alert">
+                {{ userDetailError }}
+            </p>
+            <template v-else-if="userDetail">
+                <dl class="user-detail-grid">
+                    <div><dt>Tên đăng nhập</dt><dd>{{ userDetail.username || "—" }}</dd></div>
+                    <div><dt>Số điện thoại</dt><dd>{{ userDetail.phone || "—" }}</dd></div>
+                    <div><dt>Email</dt><dd>{{ userDetail.email || "—" }}</dd></div>
+                    <div><dt>Số CCCD</dt><dd>{{ userDetail.citizen_id || "—" }}</dd></div>
+                    <div><dt>Ngày sinh</dt><dd>{{ userDetail.date_of_birth || "—" }}</dd></div>
+                    <div>
+                        <dt>Trạng thái</dt>
+                        <dd>{{ userDetail.is_active ? "Đang hoạt động" : "Đã vô hiệu hóa" }}</dd>
+                    </div>
+                    <div><dt>Cấp quản lý</dt><dd>{{ scopeLabels[String(userDetail.scope_level)] || "—" }}</dd></div>
+                    <div v-if="userDetail.province">
+                        <dt>Tỉnh / thành phố</dt>
+                        <dd>{{ asRow(userDetail.province).name }}</dd>
+                    </div>
+                    <div v-if="userDetail.commune">
+                        <dt>Xã / phường</dt>
+                        <dd>{{ asRow(userDetail.commune).name }}</dd>
+                    </div>
+                    <div v-if="asRows(userDetail.villages).length">
+                        <dt>Thôn / xóm</dt>
+                        <dd>{{ asRows(userDetail.villages).map((village) => String(village.name ?? "")).filter(Boolean).join(", ") }}</dd>
+                    </div>
+                    <div class="user-detail-roles">
+                        <dt>Nhóm quyền</dt>
+                        <dd>{{ asRows(userDetail.roles).map((role) => String(role.name ?? "")).filter(Boolean).join(", ") || "Chưa được gán nhóm" }}</dd>
+                    </div>
+                </dl>
+                <div class="user-detail-actions">
+                    <button
+                        class="secondary-button management-tool-button"
+                        type="button"
+                        @click="closeUserDetail"
+                    >
+                        Đóng
+                    </button>
+                    <button
+                        v-if="userDetailRow?.can_edit_configuration"
+                        class="primary-button management-tool-button"
+                        type="button"
+                        @click="editUserDetail"
+                    >
+                        Sửa tài khoản
+                    </button>
+                </div>
+            </template>
+        </section>
+    </div>
+    <div
         v-if="accountActionDialog"
         class="workspace-modal-backdrop"
         role="presentation"
-        @click.self="!busy && (accountActionDialog = null)"
-        @keydown.esc="!busy && (accountActionDialog = null)"
+        @click.self="closeAccountAction"
+        @keydown.esc="closeAccountAction"
     >
         <section
             class="confirm-dialog account-action-dialog"
-            role="alertdialog"
+            :role="
+                accountActionDialog.mode === 'password-form'
+                    ? 'dialog'
+                    : 'alertdialog'
+            "
             aria-modal="true"
             aria-labelledby="account-action-title"
             aria-describedby="account-action-message"
@@ -11023,15 +11703,130 @@ onMounted(() => void load());
                 {{ accountActionTitle(accountActionDialog) }}
             </h3>
             <p id="account-action-message">
-                {{ accountActionMessage(accountActionDialog) }}
-            </p>
-            <div class="confirm-dialog-actions">
                 <template v-if="accountActionDialog.mode === 'confirm'">
+                    Bạn có chắc muốn
+                    {{
+                        accountActionDialog.action === "password"
+                            ? "đặt lại mật khẩu"
+                            : accountActionDialog.row.is_active
+                              ? "vô hiệu hóa"
+                              : "kích hoạt"
+                    }}
+                    tài khoản
+                    <strong>“{{ accountActionDialog.accountName }}”</strong>?
+                </template>
+                <template
+                    v-else-if="accountActionDialog.mode === 'password-form'"
+                >
+                    Nhập mật khẩu mới cho tài khoản
+                    <strong>“{{ accountActionDialog.accountName }}”</strong>,
+                    hoặc tự động điền mật khẩu an toàn.
+                </template>
+                <template v-else>
+                    {{ accountActionMessage(accountActionDialog) }}
+                </template>
+            </p>
+            <div
+                v-if="accountActionDialog.mode === 'password-form'"
+                class="account-password-reset-fields"
+            >
+                <label>
+                    <span>Mật khẩu mới</span>
+                    <div class="account-password-reset-input">
+                        <input
+                            v-model="accountPassword"
+                            :type="showAccountPassword ? 'text' : 'password'"
+                            minlength="12"
+                            maxlength="18"
+                            autocomplete="new-password"
+                            aria-label="Mật khẩu mới"
+                            @input="accountPasswordError = ''"
+                        />
+                        <button
+                            class="password-visibility-button"
+                            type="button"
+                            @click="
+                                showAccountPassword = !showAccountPassword
+                            "
+                        >
+                            {{ showAccountPassword ? "Ẩn" : "Hiện" }}
+                        </button>
+                    </div>
+                </label>
+                <label>
+                    <span>Xác nhận mật khẩu mới</span>
+                    <div class="account-password-reset-input">
+                        <input
+                            v-model="accountPasswordConfirmation"
+                            :type="
+                                showAccountPasswordConfirmation
+                                    ? 'text'
+                                    : 'password'
+                            "
+                            minlength="12"
+                            maxlength="18"
+                            autocomplete="new-password"
+                            aria-label="Xác nhận mật khẩu mới"
+                            @input="accountPasswordError = ''"
+                        />
+                        <button
+                            class="password-visibility-button"
+                            type="button"
+                            @click="
+                                showAccountPasswordConfirmation =
+                                    !showAccountPasswordConfirmation
+                            "
+                        >
+                            {{
+                                showAccountPasswordConfirmation
+                                    ? "Ẩn"
+                                    : "Hiện"
+                            }}
+                        </button>
+                    </div>
+                </label>
+                <button
+                    class="secondary-button management-tool-button account-password-generate-button"
+                    type="button"
+                    @click="generateAccountPassword"
+                >
+                    Tự động điền mật khẩu
+                </button>
+                <p
+                    v-if="accountPasswordError"
+                    class="confirm-dialog-error"
+                    role="alert"
+                >
+                    {{ accountPasswordError }}
+                </p>
+            </div>
+            <div class="confirm-dialog-actions">
+                <template
+                    v-if="accountActionDialog.mode === 'password-form'"
+                >
                     <button
                         class="secondary-button management-tool-button"
                         type="button"
                         :disabled="busy"
-                        @click="accountActionDialog = null"
+                        @click="closeAccountAction"
+                    >
+                        Hủy
+                    </button>
+                    <button
+                        class="primary-button management-tool-button account-action-confirm-button"
+                        type="button"
+                        :disabled="busy"
+                        @click="confirmAccountAction"
+                    >
+                        {{ busy ? "Đang lưu…" : "Lưu" }}
+                    </button>
+                </template>
+                <template v-else-if="accountActionDialog.mode === 'confirm'">
+                    <button
+                        class="secondary-button management-tool-button"
+                        type="button"
+                        :disabled="busy"
+                        @click="closeAccountAction"
                     >
                         Hủy
                     </button>
@@ -11039,7 +11834,6 @@ onMounted(() => void load());
                         class="confirm-delete-button"
                         :class="{
                             'account-action-confirm-button':
-                                accountActionDialog.action === 'password' ||
                                 !accountActionDialog.row.is_active,
                         }"
                         type="button"
@@ -11049,20 +11843,18 @@ onMounted(() => void load());
                         {{
                             busy
                                 ? "Đang xử lý…"
-                                : accountActionDialog.action === "password"
-                                  ? "Đặt lại mật khẩu"
-                                  : accountActionDialog.row.is_active
-                                    ? "Vô hiệu hóa"
-                                    : "Kích hoạt"
+                                : accountActionDialog.row.is_active
+                                  ? "Vô hiệu hóa"
+                                  : "Kích hoạt"
                         }}
                     </button>
                 </template>
                 <button
-                    v-else
+                    v-else-if="accountActionDialog.mode === 'result'"
                     class="primary-button management-tool-button"
                     type="button"
                     autofocus
-                    @click="accountActionDialog = null"
+                    @click="closeAccountAction"
                 >
                     Đóng
                 </button>

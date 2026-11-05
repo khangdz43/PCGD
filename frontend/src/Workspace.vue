@@ -495,9 +495,9 @@ const moduleInfo: Record<
             "phone",
             "scope_level",
             "role_id",
-            "is_active",
             "province_code",
             "commune_code",
+            "is_active",
             "village_codes",
         ],
     },
@@ -598,6 +598,14 @@ const assignableUserRoles = computed(() => {
             role.assignable_scope_levels.includes(level),
     );
 });
+const selectedRoleIsCommuneAdmin = computed(() =>
+    assignableUserRoles.value.some(
+        (role) =>
+            String(role.id) === form.value.role_id &&
+            role.scope_level === "commune" &&
+            role.is_primary_admin === true,
+    ),
+);
 const fieldsForForm = computed(() => {
     const fields = [...info.value.fields];
     const selectedRole = assignableUserRoles.value.find(
@@ -2203,6 +2211,38 @@ async function loadFormCommunes(code: string): Promise<void> {
     );
 }
 
+async function loadUserFormCommunes(): Promise<void> {
+    const code = form.value.province_code;
+    if (!code || form.value.scope_level !== "commune") {
+        formCommunes.value = [];
+        return;
+    }
+
+    const response = await api.get<unknown>(
+        `/provinces/${encodeURIComponent(code)}/communes`,
+        {
+            params: selectedRoleIsCommuneAdmin.value
+                ? {
+                      available_for: "commune-admin",
+                      except: selected.value?.id,
+                  }
+                : undefined,
+        },
+    );
+    formCommunes.value = apiRows<Row>(apiData<unknown>(response.data));
+    if (
+        selectedRoleIsCommuneAdmin.value &&
+        form.value.commune_code &&
+        !formCommunes.value.some(
+            (commune) => String(commune.code) === form.value.commune_code,
+        )
+    ) {
+        form.value.commune_code = "";
+        form.value.village_codes = "";
+        selectedUserVillageCodes.value = [];
+    }
+}
+
 async function loadFormVillages(code: string): Promise<void> {
     if (!code) {
         formVillages.value = [];
@@ -2272,7 +2312,11 @@ async function changeFormProvince(): Promise<void> {
             ) ||
             form.value.scope_level === "commune"
         ) {
-            await loadFormCommunes(form.value.province_code);
+            if (props.moduleKey === "users") {
+                await loadUserFormCommunes();
+            } else {
+                await loadFormCommunes(form.value.province_code);
+            }
         } else {
             formCommunes.value = [];
         }
@@ -2292,6 +2336,14 @@ async function changeFormCommune(): Promise<void> {
         await loadFormVillages(form.value.commune_code);
     } catch (cause) {
         formErrors.value.commune_code = errorMessage(cause);
+    }
+}
+
+async function changeUserFormRole(): Promise<void> {
+    try {
+        await loadUserFormCommunes();
+    } catch (cause) {
+        error.value = errorMessage(cause);
     }
 }
 
@@ -2397,7 +2449,7 @@ watch(
 
             if (level === "commune" && form.value.province_code) {
                 try {
-                    await loadFormCommunes(form.value.province_code);
+                    await loadUserFormCommunes();
                     if (
                         currentActorScopeLevel.value === "commune" &&
                         form.value.commune_code
@@ -3031,13 +3083,16 @@ async function beginEdit(row?: Row): Promise<void> {
                 }
             }
             if (
-                currentActorScopeLevel.value === "commune" &&
-                form.value.commune_code
+                form.value.scope_level === "commune" &&
+                form.value.province_code
             ) {
-                await Promise.all([
-                    loadFormCommunes(form.value.province_code),
-                    loadFormVillages(form.value.commune_code),
-                ]);
+                await loadUserFormCommunes();
+                if (
+                    currentActorScopeLevel.value === "commune" &&
+                    form.value.commune_code
+                ) {
+                    await loadFormVillages(form.value.commune_code);
+                }
             }
             if (row) {
                 await nextTick();
@@ -6163,16 +6218,6 @@ onMounted(() => void load());
                 >
                     {{ roleFormRequestError }}
                 </p>
-                <p
-                    v-if="
-                        moduleKey === 'users' && selectedRoleManagesAllVillages
-                    "
-                    class="muted"
-                    role="status"
-                >
-                    Nhóm này có quyền quản lý thôn/xóm nên tài khoản tự động
-                    quản lý tất cả thôn/xóm trong xã.
-                </p>
                 <template
                     v-for="field in fieldsForForm.filter(
                         (field) =>
@@ -6215,6 +6260,11 @@ onMounted(() => void load());
                             !(
                                 moduleKey === 'users' &&
                                 field === 'village_codes'
+                            ) &&
+                            !(
+                                moduleKey === 'users' &&
+                                field === 'province_code' &&
+                                currentActorScopeLevel === 'province'
                             ) &&
                             !(
                                 moduleKey === 'schools' &&
@@ -6335,6 +6385,9 @@ onMounted(() => void load());
                                     (userFormSubmitted &&
                                         userFormValidationErrors[field]),
                                 )
+                            "
+                            @change="
+                                moduleKey === 'users' && changeUserFormRole()
                             "
                         >
                             <option value="">Chọn nhóm quyền</option>
@@ -8790,6 +8843,14 @@ onMounted(() => void load());
                                         scopeLabels[String(row.scope_level)] ||
                                         row.scope_level
                                     }}
+                                </small>
+                                <small
+                                    v-if="
+                                        row.scope_level === 'commune' &&
+                                        row.commune_name
+                                    "
+                                >
+                                    {{ row.commune_name }}
                                 </small>
                             </div>
                             <div

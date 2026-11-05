@@ -65,6 +65,7 @@ class UserRoleController extends Controller
             'role_name' => $user->roles->pluck('name')->implode(', ') ?: 'Chưa được gán nhóm',
             'scope_level' => $user->roleScopeLevel(),
             'province_name' => $user->province?->name,
+            'commune_name' => $user->commune?->name,
             'is_active' => $user->is_active,
             'can_view_details' => $this->users->canViewUser($actor, $user),
             'can_edit_configuration' => $this->users->canEditUserConfiguration(

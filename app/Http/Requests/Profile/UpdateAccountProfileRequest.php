@@ -22,7 +22,7 @@ class UpdateAccountProfileRequest extends FormRequest
                 'max:255',
                 Rule::unique('users', 'email')->ignore($this->user()?->id),
             ],
-            'phone' => ['nullable', 'string', 'max:20'],
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^\+?[0-9]+$/'],
             'citizen_id' => [
                 'nullable',
                 'digits:12',
@@ -39,6 +39,7 @@ class UpdateAccountProfileRequest extends FormRequest
             'email.email' => 'Vui lòng nhập địa chỉ email hợp lệ.',
             'email.unique' => 'Địa chỉ email này đã được sử dụng.',
             'phone.max' => 'Số điện thoại không được vượt quá 20 ký tự.',
+            'phone.regex' => 'Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.',
             'citizen_id.digits' => 'Số CCCD phải gồm đúng 12 chữ số.',
             'citizen_id.unique' => 'Số CCCD này đã được sử dụng.',
             'date_of_birth.date_format' => 'Ngày sinh không đúng định dạng.',

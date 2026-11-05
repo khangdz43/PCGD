@@ -182,7 +182,7 @@ class UserRoleController extends Controller
     {
         $actor = $request->user();
         abort_unless($actor->can('create-users'), 403);
-        $data = $request->validate($this->rules($actor));
+        $data = $request->validate($this->rules($actor), $this->messages());
         $role = Role::findOrFail($data['role_id']);
         $scopeLevel = $data['scope_level'] ?? 'province';
         $this->users->validateRoleForScope($role, $scopeLevel, $actor);
@@ -271,7 +271,7 @@ class UserRoleController extends Controller
         $actor = $request->user();
         abort_unless($this->users->canEditUserConfiguration($actor, $user), 403);
 
-        $data = $request->validate($this->rules($actor, $user));
+        $data = $request->validate($this->rules($actor, $user), $this->messages());
         $role = Role::findOrFail($data['role_id']);
         $scopeLevel = $data['scope_level'] ?? 'province';
         $this->users->validateRoleForScope($role, $scopeLevel, $actor);
@@ -346,13 +346,14 @@ class UserRoleController extends Controller
                 'nullable',
                 'string',
                 'max:20',
+                'regex:/^\+?[0-9]+$/',
             ],
             'citizen_id' => [
                 'required',
                 'digits:12',
                 Rule::unique('users', 'citizen_id')->ignore($user?->id),
             ],
-            'date_of_birth' => ['nullable', 'date', 'before_or_equal:today'],
+            'date_of_birth' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
             'email' => [
                 'nullable',
                 'email',
@@ -367,6 +368,13 @@ class UserRoleController extends Controller
             ],
             'scope_level' => ['required', Rule::in($manageableLevels)],
             'is_active' => ['sometimes', 'boolean'],
+        ];
+    }
+
+    private function messages(): array
+    {
+        return [
+            'phone.regex' => 'Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.',
         ];
     }
 

@@ -661,12 +661,14 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
         name: "Vui lòng nhập họ và tên.",
         username: "Vui lòng nhập tên đăng nhập.",
         citizen_id: "Vui lòng nhập số CCCD gồm 12 chữ số.",
-        email: "Vui lòng nhập email.",
         role_id: "Vui lòng chọn nhóm quyền.",
         scope_level: "Vui lòng chọn cấp quản lý.",
     };
     for (const [field, message] of Object.entries(requiredFields)) {
         if (!form.value[field]?.trim()) errors[field] = message;
+    }
+    if ([...(form.value.name ?? "")].length > 255) {
+        errors.name = "Họ và tên không được vượt quá 255 ký tự.";
     }
     const username = form.value.username ?? "";
     const unchangedLegacyUsername =
@@ -686,12 +688,21 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
     ) {
         errors.citizen_id = "Số CCCD phải gồm đúng 12 chữ số.";
     }
-    if (form.value.phone?.trim() && !/^\d+$/.test(form.value.phone.trim())) {
-        errors.phone = "Số điện thoại chỉ được chứa chữ số.";
+    if (
+        form.value.phone?.trim() &&
+        !/^\+?\d+$/.test(form.value.phone.trim())
+    ) {
+        errors.phone = "Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.";
+    }
+    if ([...(form.value.phone ?? "")].length > 20) {
+        errors.phone = "Số điện thoại không được vượt quá 20 ký tự.";
     }
     const email = form.value.email?.trim() ?? "";
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         errors.email = "Email không đúng định dạng.";
+    }
+    if ([...email].length > 255) {
+        errors.email = "Email không được vượt quá 255 ký tự.";
     }
     if (
         form.value.date_of_birth &&
@@ -757,8 +768,33 @@ function sanitizeUserNumericInput(event: Event, field: string): void {
     }
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
-    input.value = input.value.replace(/\D/g, "");
+    const hasInternationalPrefix =
+        field === "phone" && input.value.trimStart().startsWith("+");
+    const digits = input.value.replace(/\D/g, "");
+    input.value = hasInternationalPrefix ? `+${digits}` : digits;
     form.value[field] = input.value;
+}
+
+function formFieldMaxLength(field: string): number | undefined {
+    if (field === "citizen_id") return 12;
+    if (props.moduleKey === "users") {
+        if (field === "name" || field === "email") return 255;
+        if (field === "phone") return 20;
+        if (field === "username") {
+            const existingUsername = String(selected.value?.username ?? "");
+            return editing.value &&
+                existingUsername === form.value.username &&
+                existingUsername.length > 12
+                ? existingUsername.length
+                : 12;
+        }
+    }
+    if (props.moduleKey === "roles") {
+        if (field === "name") return 50;
+        if (field === "description") return 255;
+    }
+
+    return undefined;
 }
 
 const userFormReady = computed(
@@ -787,6 +823,11 @@ const roleFormValidationErrors = computed<Record<string, string>>(() => {
     const errors: Record<string, string> = {};
     if (!form.value.name?.trim())
         errors.name = "Vui lòng nhập tên nhóm người dùng.";
+    else if ([...form.value.name].length > 50)
+        errors.name = "Tên nhóm người dùng không được vượt quá 50 ký tự.";
+    if ([...(form.value.description ?? "")].length > 255) {
+        errors.description = "Mô tả không được vượt quá 255 ký tự.";
+    }
     if (!form.value.scope_level)
         errors.scope_level = "Vui lòng chọn cấp quản lý.";
     if (!editing.value && permissionIds.value.length === 0) {
@@ -4797,12 +4838,44 @@ async function saveAccountProfile(): Promise<void> {
     if (!accountFormChanged.value) return;
 
     accountFormErrors.value = {};
+    if (!accountForm.value.name.trim()) {
+        accountFormErrors.value.name = "Vui lòng nhập họ và tên.";
+    } else if ([...accountForm.value.name].length > 255) {
+        accountFormErrors.value.name = "Họ và tên không được vượt quá 255 ký tự.";
+    }
+    if (
+        accountForm.value.email &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accountForm.value.email)
+    ) {
+        accountFormErrors.value.email = "Email không đúng định dạng.";
+    } else if ([...accountForm.value.email].length > 255) {
+        accountFormErrors.value.email = "Email không được vượt quá 255 ký tự.";
+    }
+    if (
+        accountForm.value.phone &&
+        !/^\+?\d+$/.test(accountForm.value.phone)
+    ) {
+        accountFormErrors.value.phone =
+            "Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.";
+    } else if ([...accountForm.value.phone].length > 20) {
+        accountFormErrors.value.phone =
+            "Số điện thoại không được vượt quá 20 ký tự.";
+    }
+    if (
+        accountForm.value.citizen_id &&
+        !/^\d{12}$/.test(accountForm.value.citizen_id)
+    ) {
+        accountFormErrors.value.citizen_id =
+            "Số CCCD phải gồm đúng 12 chữ số.";
+    }
     if (
         accountForm.value.date_of_birth &&
         accountForm.value.date_of_birth > latestBirthDate
     ) {
         accountFormErrors.value.date_of_birth =
             "Ngày sinh không được lớn hơn ngày hiện tại.";
+    }
+    if (Object.keys(accountFormErrors.value).length > 0) {
         return;
     }
 
@@ -6471,19 +6544,12 @@ onMounted(() => void load());
                                         : 'text'
                             "
                             :maxlength="
-                                field === 'citizen_id'
-                                    ? 12
-                                    : moduleKey === 'users' &&
-                                        field === 'username'
-                                      ? editing &&
-                                        String(selected?.username ?? '') ===
-                                            form.username &&
-                                        form.username.length > 12
-                                          ? form.username.length
-                                          : 12
-                                    : moduleKey === 'users' && field === 'phone'
-                                      ? 20
-                                      : undefined
+                                formFieldMaxLength(field)
+                            "
+                            :max="
+                                field === 'date_of_birth'
+                                    ? latestBirthDate
+                                    : undefined
                             "
                             :minlength="
                                 moduleKey === 'users' && field === 'username'
@@ -6492,7 +6558,10 @@ onMounted(() => void load());
                             "
                             :inputmode="
                                 moduleKey === 'users' &&
-                                ['phone', 'citizen_id'].includes(field)
+                                field === 'phone'
+                                    ? 'tel'
+                                    : moduleKey === 'users' &&
+                                        field === 'citizen_id'
                                     ? 'numeric'
                                     : undefined
                             "
@@ -6523,7 +6592,7 @@ onMounted(() => void load());
                                     'scope_level',
                                 ].includes(field) ||
                                 (moduleKey === 'users' &&
-                                    ['citizen_id', 'email'].includes(field))
+                                    field === 'citizen_id')
                             "
                         />
                         <small
@@ -7902,6 +7971,7 @@ onMounted(() => void load());
                             <input
                                 v-model="accountForm.date_of_birth"
                                 type="date"
+                                :max="latestBirthDate"
                                 autocomplete="bday"
                             />
                             <small

@@ -281,6 +281,55 @@ class AccessControlTest extends TestCase
         $this->getJson(route('api.users.index'))->assertOk();
     }
 
+    public function test_account_creation_accepts_international_phone_numbers_and_rejects_other_characters(): void
+    {
+        $systemAdminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($systemAdminRole);
+        $role = Role::create([
+            'name' => 'Nhóm tài khoản toàn quốc',
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+            'created_by' => $admin->id,
+        ]);
+        $this->actingAs($admin, 'web');
+
+        $payload = [
+            'name' => 'Tài khoản kiểm tra điện thoại',
+            'username' => 'phone-test1',
+            'phone' => '+84912345678',
+            'citizen_id' => '001234567890',
+            'password' => 'StrongPass123!',
+            'password_confirmation' => 'StrongPass123!',
+            'role_id' => $role->id,
+            'scope_level' => 'global',
+            'is_active' => true,
+        ];
+
+        $this->postJson('/api/v1/users', $payload)
+            ->assertCreated();
+        $this->assertDatabaseHas('users', [
+            'username' => 'phone-test1',
+            'phone' => '+84912345678',
+        ]);
+
+        $payload['username'] = 'phone-test2';
+        $payload['phone'] = '+84 912345678';
+        $payload['citizen_id'] = '001234567891';
+
+        $this->postJson('/api/v1/users', $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'phone')
+            ->assertJsonPath(
+                'error.details.0.issue',
+                'Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.',
+            );
+    }
+
     public function test_household_member_deletion_returns_json_without_redirecting(): void
     {
         Schema::table('persons', function (Blueprint $table): void {
@@ -570,8 +619,8 @@ class AccessControlTest extends TestCase
 
         $this->patchJson(route('api.account.password'), [
                 'current_password' => 'incorrect-password',
-                'password' => 'new-secure-password',
-                'password_confirmation' => 'new-secure-password',
+                'password' => 'new-secure-pass',
+                'password_confirmation' => 'new-secure-pass',
             ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'current_password');
@@ -579,12 +628,12 @@ class AccessControlTest extends TestCase
 
         $this->patchJson(route('api.account.password'), [
             'current_password' => 'old-secure-password',
-            'password' => 'new-secure-password',
-            'password_confirmation' => 'new-secure-password',
+            'password' => 'new-secure-pass',
+            'password_confirmation' => 'new-secure-pass',
         ])
             ->assertOk()
             ->assertJsonPath('message', 'Đổi mật khẩu thành công.');
-        $this->assertTrue(Hash::check('new-secure-password', $user->fresh()->password));
+        $this->assertTrue(Hash::check('new-secure-pass', $user->fresh()->password));
     }
 
     public function test_temporary_password_does_not_block_application_access(): void
@@ -606,11 +655,11 @@ class AccessControlTest extends TestCase
 
         $this->patchJson(route('api.account.password'), [
             'current_password' => 'Huukhang2k4#',
-            'password' => 'a-different-secure-password',
-            'password_confirmation' => 'a-different-secure-password',
+            'password' => 'different-secure1',
+            'password_confirmation' => 'different-secure1',
         ])->assertOk();
 
-        $this->assertTrue(Hash::check('a-different-secure-password', $user->fresh()->password));
+        $this->assertTrue(Hash::check('different-secure1', $user->fresh()->password));
         $this->getJson(route('api.session'))->assertOk();
     }
 
@@ -863,17 +912,17 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản tỉnh hạn chế',
-            'username' => 'limited-province-user',
+            'username' => 'limitprov1',
             'citizen_id' => '001111111115',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $limitedProvinceRole->id,
             'scope_level' => 'province',
             'province_code' => 'P1',
             'is_active' => '1',
         ])->assertCreated();
 
-        $limitedProvinceUser = User::where('username', 'limited-province-user')->firstOrFail();
+        $limitedProvinceUser = User::where('username', 'limitprov1')->firstOrFail();
         $this->assertSame('P1', $limitedProvinceUser->province_code);
         $this->assertTrue($limitedProvinceUser->can('manage-schools'));
         $this->assertFalse($limitedProvinceUser->can('manage-user-accounts'));
@@ -900,10 +949,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Quản trị xã một',
-            'username' => 'commune-admin-one',
+            'username' => 'commune1',
             'citizen_id' => '001111111116',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $communeRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -911,7 +960,7 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertCreated();
 
-        $communeAdmin = User::where('username', 'commune-admin-one')->firstOrFail();
+        $communeAdmin = User::where('username', 'commune1')->firstOrFail();
         $this->assertSame('C1', $communeAdmin->commune_code);
         $this->assertSame($provinceAdmin->id, $communeAdmin->created_by);
         $this->assertTrue($communeAdmin->can('manage-access-control'));
@@ -928,9 +977,9 @@ class AccessControlTest extends TestCase
             ->assertJsonMissing(['name' => 'Nhóm quản trị xã']);
 
         $this->actingAs($communeAdmin)->patchJson(route('api.account.password'), [
-            'current_password' => 'a-secure-password-123',
-            'password' => 'commune-admin-new-password',
-            'password_confirmation' => 'commune-admin-new-password',
+            'current_password' => 'SecurePass123!',
+            'password' => 'CommuneNew123!',
+            'password_confirmation' => 'CommuneNew123!',
         ])->assertOk();
 
         $this->actingAs($communeAdmin)
@@ -967,11 +1016,11 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản xã hạn chế',
-            'username' => 'limited-commune-user',
+            'username' => 'limitcommune',
             'citizen_id' => '001111111118',
             'citizen_id' => '001111111117',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $limitedCommuneRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -979,7 +1028,7 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertCreated();
 
-        $limitedCommuneUser = User::where('username', 'limited-commune-user')->firstOrFail();
+        $limitedCommuneUser = User::where('username', 'limitcommune')->firstOrFail();
         $this->assertSame('C1', $limitedCommuneUser->commune_code);
         $this->assertTrue($limitedCommuneUser->can('view-households'));
         $this->assertFalse($limitedCommuneUser->can('manage-user-accounts'));
@@ -998,10 +1047,10 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($communeAdmin)->postJson(route('api.users.store'), [
             'name' => 'Cán bộ thôn một',
-            'username' => 'village-officer-one',
+            'username' => 'village1',
             'citizen_id' => '001111111119',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $limitedCommuneRole->id,
             'scope_level' => 'village',
             'province_code' => 'P1',
@@ -1011,7 +1060,7 @@ class AccessControlTest extends TestCase
         ])->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'role_id');
 
-        $this->assertDatabaseMissing('users', ['username' => 'village-officer-one']);
+        $this->assertDatabaseMissing('users', ['username' => 'village1']);
     }
 
     public function test_inactive_accounts_cannot_sign_in_and_active_accounts_can(): void
@@ -1171,10 +1220,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản tỉnh vượt cấp',
-            'username' => 'province-too-high',
+            'username' => 'provhigh1',
             'citizen_id' => '001111111101',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $localRole->id,
             'scope_level' => 'province',
             'province_code' => 'P1',
@@ -1184,10 +1233,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Cán bộ xã',
-            'username' => 'commune-user-one',
+            'username' => 'commuser1',
             'citizen_id' => '001111111102',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $localRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -1197,10 +1246,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản xã cùng cấp thứ hai',
-            'username' => 'commune-user-two',
+            'username' => 'commuser2',
             'citizen_id' => '001111111103',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $localRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -1208,17 +1257,17 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertCreated();
         $this->assertDatabaseHas('users', [
-            'username' => 'commune-user-two',
+            'username' => 'commuser2',
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Cán bộ xã khác',
-            'username' => 'commune-user-other',
+            'username' => 'commother1',
             'citizen_id' => '001111111104',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $localRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -1226,8 +1275,8 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertCreated();
 
-        $this->assertDatabaseHas('users', ['username' => 'commune-user-one', 'province_code' => 'P1', 'commune_code' => 'C1']);
-        $peer = User::where('username', 'commune-user-one')->firstOrFail();
+        $this->assertDatabaseHas('users', ['username' => 'commuser1', 'province_code' => 'P1', 'commune_code' => 'C1']);
+        $peer = User::where('username', 'commuser1')->firstOrFail();
         $this->assertTrue($peer->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertDatabaseHas('model_has_roles', [
             'model_id' => $peer->id,
@@ -1238,10 +1287,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Cán bộ thôn không thuộc cấp được giao',
-            'username' => 'village-too-deep',
+            'username' => 'villdeep1',
             'citizen_id' => '001111111105',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => Role::create(['name' => 'village-data-entry', 'scope_level' => 'village', 'guard_name' => 'web'])->id,
             'scope_level' => 'village',
             'province_code' => 'P1',
@@ -1253,10 +1302,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Ngoài tỉnh',
-            'username' => 'outside-province',
+            'username' => 'outside1',
             'citizen_id' => '001111111106',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $localRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P2',
@@ -2343,11 +2392,11 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Quản lý trường cấp xã',
-            'username' => 'school-manager-wrong-scope',
+            'username' => 'schoolwrong1',
             'citizen_id' => '001111111107',
             'phone' => '0900000002',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $schoolManagerRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -3574,7 +3623,7 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản thiếu CCCD',
-            'username' => 'account-without-citizen-id',
+            'username' => 'no-citizen1',
             'password' => 'StrongPass123!',
             'password_confirmation' => 'StrongPass123!',
             'role_id' => $provincialAdminRole->id,
@@ -3633,7 +3682,7 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản không phải admin tỉnh',
-            'username' => 'province-staff-account',
+            'username' => 'provstaff1',
             'citizen_id' => '001111111111',
             'password' => 'StrongPass123!',
             'password_confirmation' => 'StrongPass123!',
@@ -3646,7 +3695,7 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản mật khẩu ngắn',
-            'username' => 'short-password-account',
+            'username' => 'shortpass1',
             'citizen_id' => '001111111112',
             'password' => 'short',
             'password_confirmation' => 'short',
@@ -3660,7 +3709,7 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
             'name' => 'Quản trị tỉnh trùng',
-            'username' => 'duplicate-province-admin',
+            'username' => 'duplicate1',
             'citizen_id' => '001111111113',
             'password' => 'StrongPass123!',
             'password_confirmation' => 'StrongPass123!',
@@ -3680,7 +3729,8 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
             'name' => 'Quản trị tỉnh thay thế',
-            'username' => 'replacement-province-admin',
+            'username' => 'replaceadmin',
+            'phone' => '+84912345678',
             'citizen_id' => '001234567890',
             'date_of_birth' => '1990-04-15',
             'email' => 'replacement@example.test',
@@ -3703,13 +3753,14 @@ class AccessControlTest extends TestCase
             'is_active' => false,
         ]);
         $this->assertDatabaseHas('users', [
-            'username' => 'replacement-province-admin',
+            'username' => 'replaceadmin',
+            'phone' => '+84912345678',
             'citizen_id' => '001234567890',
             'email' => 'replacement@example.test',
         ]);
         self::assertSame(
             '1990-04-15',
-            User::where('username', 'replacement-province-admin')->firstOrFail()->date_of_birth->format('Y-m-d'),
+            User::where('username', 'replaceadmin')->firstOrFail()->date_of_birth->format('Y-m-d'),
         );
     }
 
@@ -3746,7 +3797,7 @@ class AccessControlTest extends TestCase
         $this->authenticateApiUser($admin);
         $this->postJson('/api/v1/users', [
             'name' => 'Quản trị tỉnh mới',
-            'username' => 'province-admin-created-by-api',
+            'username' => 'provadminapi',
             'citizen_id' => '001111111114',
             'password' => 'StrongPass123!',
             'password_confirmation' => 'StrongPass123!',
@@ -3757,7 +3808,7 @@ class AccessControlTest extends TestCase
         ])->assertCreated();
 
         $this->assertDatabaseHas('users', [
-            'username' => 'province-admin-created-by-api',
+            'username' => 'provadminapi',
             'created_by' => $admin->id,
             'province_code' => 'P01',
             'scope_level' => 'province',
@@ -4573,10 +4624,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản trung ương giới hạn',
-            'username' => 'central-limited',
+            'username' => 'centrallimit',
             'citizen_id' => '001111111201',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'global',
             'role_id' => $limitedCentralRole->id,
             'is_active' => '1',
@@ -4593,7 +4644,7 @@ class AccessControlTest extends TestCase
         $this->actingAs($admin)
             ->getJson(route('api.users.index'))
             ->assertOk()
-            ->assertJsonFragment(['username' => 'central-limited'])
+            ->assertJsonFragment(['username' => 'centrallimit'])
             ->assertJsonPath('data.can_edit_account_configurations', true);
         $this->postJson(route('api.users.password-resets.store', $centralUser), [
             'password' => 'NewSecurePass2026!',
@@ -4606,10 +4657,10 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($admin)->postJson(route('api.users.store'), [
             'name' => 'Tài khoản giả quản trị',
-            'username' => 'central-admin-escalation',
+            'username' => 'centralesc1',
             'citizen_id' => '001111111202',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'global',
             'role_id' => $adminRole->id,
             'is_active' => '1',
@@ -4618,10 +4669,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản tỉnh',
-            'username' => 'province-account',
+            'username' => 'provaccount',
             'citizen_id' => '001111111203',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'province',
             'role_id' => $provinceRole->id,
             'province_code' => 'P1',
@@ -4630,10 +4681,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản tỉnh trùng',
-            'username' => 'province-duplicate',
+            'username' => 'provdup1',
             'citizen_id' => '001111111204',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'province',
             'role_id' => $provinceRole->id,
             'province_code' => 'P1',
@@ -4643,10 +4694,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản tỉnh khác',
-            'username' => 'province-other',
+            'username' => 'provother1',
             'citizen_id' => '001111111205',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'province',
             'role_id' => $provinceRole->id,
             'province_code' => 'P2',
@@ -4661,10 +4712,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản trung ương sau khi đủ tỉnh',
-            'username' => 'central-after-provinces-full',
+            'username' => 'centralfull',
             'citizen_id' => '001111111206',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'global',
             'role_id' => $limitedCentralRole->id,
             'is_active' => '1',
@@ -4672,10 +4723,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản tỉnh dùng nhóm cũ',
-            'username' => 'province-global-role',
+            'username' => 'provglobal1',
             'citizen_id' => '001111111207',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'scope_level' => 'province',
             'role_id' => $legacyGlobalRole->id,
             'province_code' => 'P1',
@@ -4685,10 +4736,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản xã vượt cấp',
-            'username' => 'commune-direct',
+            'username' => 'commdirect1',
             'citizen_id' => '001111111208',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $provinceRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -4697,7 +4748,7 @@ class AccessControlTest extends TestCase
         ])->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'role_id');
 
-        $provinceUser = User::where('username', 'province-account')->firstOrFail();
+        $provinceUser = User::where('username', 'provaccount')->firstOrFail();
         $this->assertSame('province', $provinceUser->roleScopeLevel());
         $this->assertTrue($provinceUser->hasPermissionTo(AccessPermission::MANAGE_SCHOOLS));
         $this->assertFalse($provinceUser->hasPermissionTo(AccessPermission::CREATE_HOUSEHOLDS));
@@ -4778,10 +4829,10 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($provinceUser)->postJson(route('api.users.store'), [
             'name' => 'Tài khoản xã',
-            'username' => 'commune-account',
+            'username' => 'commuser1',
             'citizen_id' => '001111111209',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $communeRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -4791,10 +4842,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản xã dùng nhóm tài khoản khác',
-            'username' => 'commune-other-role',
+            'username' => 'commother1',
             'citizen_id' => '001111111210',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $otherProvinceRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -4803,7 +4854,7 @@ class AccessControlTest extends TestCase
         ])->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'role_id');
 
-        $communeUser = User::where('username', 'commune-account')->firstOrFail();
+        $communeUser = User::where('username', 'commuser1')->firstOrFail();
         $this->assertSame('commune', $communeUser->roleScopeLevel());
         $this->assertTrue($communeUser->hasRole('Nhóm quản lý cấp xã'));
         $this->assertTrue($communeUser->hasPermissionTo(AccessPermission::MANAGE_VILLAGES));
@@ -4817,10 +4868,10 @@ class AccessControlTest extends TestCase
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Tài khoản xã trùng',
-            'username' => 'commune-viewer',
+            'username' => 'commview1',
             'citizen_id' => '001111111211',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $communeRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -4850,7 +4901,7 @@ class AccessControlTest extends TestCase
         $this->actingAs($admin)
             ->getJson(route('api.users.index'))
             ->assertOk()
-            ->assertJsonMissing(['username' => 'commune-account']);
+            ->assertJsonMissing(['username' => 'commuser1']);
         $this->getJson(route('api.users.edit', $communeUser))->assertForbidden();
 
         $this->actingAs($communeUser)->postJson(route('api.roles.store'), [
@@ -4870,10 +4921,10 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($communeUser)->postJson(route('api.users.store'), [
             'name' => 'Cán bộ xã giới hạn thôn',
-            'username' => 'village-account',
+            'username' => 'villuser1',
             'citizen_id' => '001111111212',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $villageRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -4882,7 +4933,7 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertCreated();
 
-        $villageUser = User::where('username', 'village-account')->firstOrFail();
+        $villageUser = User::where('username', 'villuser1')->firstOrFail();
         $this->assertSame('commune', $villageUser->roleScopeLevel());
         $this->assertTrue($villageUser->hasRole('Nhóm cán bộ xã'));
         $this->assertTrue($villageUser->hasPermissionTo(AccessPermission::CREATE_HOUSEHOLDS));
@@ -5655,10 +5706,10 @@ class AccessControlTest extends TestCase
 
         $this->actingAs($manager)->postJson(route('api.users.store'), [
             'name' => 'Quản lý nhiều thôn',
-            'username' => 'multiple-villages',
+            'username' => 'multivillage',
             'citizen_id' => '001111111213',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $villageRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -5667,17 +5718,17 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertCreated();
 
-        $villageUser = User::where('username', 'multiple-villages')->firstOrFail();
+        $villageUser = User::where('username', 'multivillage')->firstOrFail();
         $this->assertEqualsCanonicalizing(['V1', 'V2'], $villageUser->managedVillageCodes());
         $this->assertDatabaseHas('user_villages', ['user_id' => $villageUser->id, 'village_code' => 'V1']);
         $this->assertDatabaseHas('user_villages', ['user_id' => $villageUser->id, 'village_code' => 'V2']);
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Ngoài xã',
-            'username' => 'outside-commune',
+            'username' => 'outside1',
             'citizen_id' => '001111111214',
-            'password' => 'a-secure-password-123',
-            'password_confirmation' => 'a-secure-password-123',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
             'role_id' => $villageRole->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
@@ -5751,7 +5802,7 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
         'name' => 'Cán bộ quản lý toàn bộ thôn',
-        'username' => 'village-manager-all',
+        'username' => 'villageman1',
         'citizen_id' => '123456789012',
         'password' => 'StrongPass123!',
         'password_confirmation' => 'StrongPass123!',
@@ -5761,11 +5812,11 @@ class AccessControlTest extends TestCase
         'commune_code' => 'C1',
         'village_codes' => ['V1'],
         ])->assertCreated()
-            ->assertJsonPath('data.user.username', 'village-manager-all')
+            ->assertJsonPath('data.user.username', 'villageman1')
             ->assertJsonPath('data.user.role_name', 'Nhóm quản lý toàn bộ thôn xã')
             ->assertJsonPath('data.user.scope_level', 'commune');
 
-        $staff = User::where('username', 'village-manager-all')->firstOrFail();
+        $staff = User::where('username', 'villageman1')->firstOrFail();
         self::assertSame([], $staff->managedVillageCodes());
         $this->assertDatabaseMissing('user_villages', ['user_id' => $staff->id]);
         $householdInAnotherVillage = new Household;
@@ -5801,7 +5852,7 @@ class AccessControlTest extends TestCase
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản toàn xã',
-            'username' => 'commune-account-viewer',
+            'username' => 'commviewer1',
             'citizen_id' => '123456789013',
             'password' => 'StrongPass123!',
             'password_confirmation' => 'StrongPass123!',
@@ -5812,7 +5863,7 @@ class AccessControlTest extends TestCase
             'village_codes' => ['V1'],
         ])->assertCreated();
 
-        $accountViewer = User::where('username', 'commune-account-viewer')->firstOrFail();
+        $accountViewer = User::where('username', 'commviewer1')->firstOrFail();
         self::assertSame([], $accountViewer->managedVillageCodes());
         $this->assertDatabaseMissing('user_villages', ['user_id' => $accountViewer->id]);
     }

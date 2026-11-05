@@ -320,6 +320,35 @@ class AuthenticationFlowTest extends TestCase
         ]);
     }
 
+    public function test_account_profile_accepts_international_phone_numbers_and_rejects_other_characters(): void
+    {
+        $user = User::create([
+            'name' => 'Người dùng API',
+            'username' => 'profile-phone-user',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $user->forceFill(['is_active' => true])->save();
+        $this->actingAs($user, 'web');
+
+        $this->patchJson('/api/v1/account', [
+            'name' => 'Người dùng API',
+            'phone' => '+84912345678',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.user.phone', '+84912345678');
+
+        $this->patchJson('/api/v1/account', [
+            'name' => 'Người dùng API',
+            'phone' => '+84 912345678',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'phone')
+            ->assertJsonPath(
+                'error.details.0.issue',
+                'Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.',
+            );
+    }
+
     public function test_account_profile_rejects_invalid_or_duplicate_citizen_id_and_future_birth_date(): void
     {
         $user = User::create([

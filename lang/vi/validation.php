@@ -39,7 +39,7 @@ return [
     'doesnt_contain' => ':attribute không được chứa bất kỳ giá trị nào sau đây: :values.',
     'doesnt_end_with' => ':attribute không được kết thúc bằng một trong các giá trị: :values.',
     'doesnt_start_with' => ':attribute không được bắt đầu bằng một trong các giá trị: :values.',
-    'email' => ':attribute phải là địa chỉ email hợp lệ.',
+    'email' => ':attribute không hợp lệ.',
     'encoding' => ':attribute phải được mã hóa theo :encoding.',
     'ends_with' => ':attribute phải kết thúc bằng một trong các giá trị: :values.',
     'enum' => ':attribute đã chọn không hợp lệ.',
@@ -162,6 +162,7 @@ return [
     ],
 
     'attributes' => [
+        'date_of_birth' => 'ngày sinh',
         'name' => 'họ và tên',
         'username' => 'tên đăng nhập',
         'phone' => 'số điện thoại',
@@ -201,5 +202,11 @@ return [
         'target_truong_id' => 'trường học đích',
         'source_truong_ids' => 'danh sách trường học nguồn',
         'qd_sap_nhap' => 'quyết định sáp nhập',
+    ],
+
+    'values' => [
+        'date_of_birth' => [
+            'today' => 'hôm nay',
+        ],
     ],
 ];

@@ -3416,6 +3416,7 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('meta.per_page', 2)
             ->assertJsonPath('meta.total', 3)
             ->assertJsonPath('data.allUsers.0.phone', '0900000001')
+            ->assertJsonPath('data.account_scope_levels', ['global', 'province'])
             ->assertJsonMissingPath('data.allUsers.0.citizen_id')
             ->assertJsonMissingPath('data.hierarchy')
             ->assertJsonMissingPath('data.roleOptions')
@@ -3427,6 +3428,7 @@ class AccessControlTest extends TestCase
                         'username',
                         'phone',
                         'scope_level',
+                        'province_name',
                         'is_active',
                         'can_change_account_status',
                         'can_reset_account_password',
@@ -3439,6 +3441,14 @@ class AccessControlTest extends TestCase
             ->assertJsonCount(3, 'data.allUsers')
             ->assertJsonPath('meta.per_page', 100)
             ->assertJsonPath('meta.total', 3);
+
+        $this->getJson('/api/v1/users?scope_level=province&q=API%20paged%20user')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 3)
+            ->assertJsonPath('data.selected_filters.scope_level', 'province');
+        $this->getJson('/api/v1/users?scope_level=commune')
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'scope_level');
 
         $this->assertLessThan(4000, strlen($response->getContent()));
     }

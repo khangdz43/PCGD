@@ -209,6 +209,8 @@ class UserRoleController extends Controller
                 'commune_code' => $user->commune_code,
                 'village_codes' => $user->villages->pluck('code')->all(),
                 'is_active' => $user->is_active,
+                'can_view_details' => $this->users->canViewUser($actor, $user),
+                'can_edit_configuration' => $this->users->canEditUserConfiguration($actor, $user),
                 'can_change_account_status' => $this->users->canChangeUserStatus($actor, $user, true)
                     || $this->users->canChangeUserStatus($actor, $user, false),
                 'can_reset_account_password' => $this->users->canResetUserPassword($actor, $user),

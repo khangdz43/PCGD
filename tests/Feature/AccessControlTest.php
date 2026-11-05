@@ -6078,7 +6078,9 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'village_codes' => ['V1', 'V2'],
-        ])->assertCreated();
+        ])->assertCreated()
+            ->assertJsonPath('data.user.can_view_details', true)
+            ->assertJsonPath('data.user.can_edit_configuration', true);
 
         $staff = User::where('username', 'canboc1')->firstOrFail();
         self::assertSame('commune', $staff->scope_level);

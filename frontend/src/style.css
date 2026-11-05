@@ -4289,19 +4289,6 @@ h2 {
     vertical-align: top;
 }
 
-.role-permission-count {
-    display: inline-flex;
-    min-height: 28px;
-    align-items: center;
-    padding: 0 9px;
-    border: 1px solid #dbe5f1;
-    border-radius: 999px;
-    background: #f5f8fc;
-    color: #354b68;
-    font-size: .74rem;
-    font-weight: 700;
-}
-
 .role-system-lock {
     display: inline-flex;
     align-items: center;
@@ -5549,6 +5536,10 @@ h2 {
 }
 
 .workspace-table th.table-numeric-heading {
+    text-align: right;
+}
+
+.workspace-table.role-management-table .role-members-cell {
     text-align: right;
 }
 

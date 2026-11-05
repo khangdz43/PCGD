@@ -8701,7 +8701,6 @@ onMounted(() => void load());
                                     : fieldLabel(column)
                             }}
                         </th>
-                        <th v-if="moduleKey === 'roles'">Quyền hạn</th>
                         <th
                             v-if="moduleKey === 'users'"
                             class="table-status-heading"
@@ -8780,6 +8779,9 @@ onMounted(() => void load());
                             :class="{
                                 'account-numeric-cell':
                                     moduleKey === 'users' && column === 'phone',
+                                'role-members-cell':
+                                    moduleKey === 'roles' &&
+                                    column === 'users_count',
                                 'village-code-cell':
                                     ['villages', 'schools'].includes(
                                         moduleKey,
@@ -8896,16 +8898,6 @@ onMounted(() => void load());
                             <template v-else>
                                 {{ pathValue(row, column) }}
                             </template>
-                        </td>
-                        <td v-if="moduleKey === 'roles'">
-                            <span class="role-permission-count">
-                                {{
-                                    Array.isArray(row.permissions)
-                                        ? row.permissions.length
-                                        : 0
-                                }}
-                                quyền
-                            </span>
                         </td>
                         <td
                             v-if="moduleKey === 'users'"

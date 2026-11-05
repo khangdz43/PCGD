@@ -5383,6 +5383,7 @@ h2 {
 .account-management-table .account-status-cell {
     min-width: 135px;
     white-space: nowrap;
+    text-align: center;
 }
 
 .account-management-table .account-numeric-cell {

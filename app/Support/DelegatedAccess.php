@@ -2,6 +2,7 @@
 
 namespace App\Support;
 
+use App\Models\Commune;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -83,7 +84,11 @@ final class DelegatedAccess
             ->exists();
     }
     // Mã địa bàn đã có tài khoản quản trị chính đang hoạt động.
-    public static function occupiedTerritorialCodes(string $scopeLevel, ?int $ignoreUserId = null): array
+    public static function occupiedTerritorialCodes(
+        string $scopeLevel,
+        ?int $ignoreUserId = null,
+        ?string $provinceCode = null,
+    ): array
     {
         if (! in_array($scopeLevel, ['province', 'commune'], true)) {
             return [];
@@ -96,6 +101,14 @@ final class DelegatedAccess
             ->where(function ($builder) use ($scopeLevel): void {
                 self::constrainToTerritorialLevel($builder, $scopeLevel);
             });
+        if ($scopeLevel === 'commune' && $provinceCode !== null) {
+            $query->whereIn(
+                'commune_code',
+                Commune::query()
+                    ->select('code')
+                    ->where('province_code', $provinceCode),
+            );
+        }
         self::constrainToPrimaryAdminRole($query, $scopeLevel);
 
         if ($ignoreUserId !== null) {

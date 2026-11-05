@@ -170,7 +170,7 @@ class UserAccessControlService
         $usersForView = $allUsers->getCollection();
         $totalUserCount = $allUsers->total();
         $this->addStatusManagementFlags($actor, $usersForView);
-        $this->addPasswordResetFlags($actor, $usersForView, $assignableRoles);
+        $this->addAccountActionFlags($actor, $usersForView, $assignableRoles);
         $hierarchy = [];
         $noLocationUsers = collect();
 
@@ -334,7 +334,14 @@ class UserAccessControlService
             }
         }
 
-        $occupied = DelegatedAccess::occupiedTerritorialCodes('commune', $user?->id);
+        $provinceCode = in_array($actor->roleScopeLevel(), ['province', 'commune'], true)
+            ? $actor->province_code
+            : null;
+        $occupied = DelegatedAccess::occupiedTerritorialCodes(
+            'commune',
+            $user?->id,
+            $provinceCode,
+        );
         if ($occupied !== []) {
             $query->whereNotIn('code', $occupied);
         }
@@ -595,16 +602,74 @@ class UserAccessControlService
         }
     }
 
-    private function addPasswordResetFlags(
+    private function addAccountActionFlags(
         User $actor,
         SupportCollection $users,
         ?Collection $assignableRoles = null,
     ): void
     {
+        $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
+        $actorLevel = $actor->roleScopeLevel();
+        $manageableLevels = DelegatedAccess::manageableAccountLevels($actor);
+        $canViewAccounts = $isSystemAdmin || $actor->can('view-users');
+        $canEditAccounts = $isSystemAdmin
+            || ($actorLevel !== 'global' && $actor->can('update-users'));
+        $canResetAccounts = $isSystemAdmin || $actor->can('update-users');
+        $assignableRoleIdsByLevel = [];
+        foreach ($assignableRoles ?? collect() as $role) {
+            foreach ($role->getAttribute('assignable_scope_levels') ?? [] as $level) {
+                $assignableRoleIdsByLevel[$level][] = $role->id;
+            }
+        }
+
         foreach ($users as $user) {
+            $isOwned = $user->created_by === $actor->id;
+            $targetLevel = $user->roleScopeLevel();
+            $inActorArea = null;
+            $isInActorArea = function () use ($actor, $user, $targetLevel, &$inActorArea): bool {
+                return $inActorArea ??= $targetLevel !== null
+                    && DelegatedAccess::userIsInActorArea($actor, $user, $targetLevel);
+            };
+
+            $canManage = $isOwned;
+            if ($canManage) {
+                if ($targetLevel === null) {
+                    $canManage = $isSystemAdmin;
+                } elseif ($targetLevel === 'global') {
+                    $canManage = $isSystemAdmin && ! $user->hasRole(Role::SYSTEM_ADMIN);
+                } elseif (! in_array($targetLevel, $manageableLevels, true)) {
+                    $canManage = false;
+                } elseif (
+                    $isSystemAdmin
+                    && $targetLevel === 'province'
+                    && ! $this->hasPrimaryAdminRole($user, 'province')
+                ) {
+                    $canManage = false;
+                } elseif (! $isSystemAdmin) {
+                    $assignableRoleIds = $assignableRoleIdsByLevel[$targetLevel] ?? [];
+                    $canManage = ! $user->roles->contains(
+                        fn (Role $role): bool => ! in_array($role->id, $assignableRoleIds, true)
+                    );
+                }
+
+                if ($canManage && $targetLevel !== null && $targetLevel !== 'global') {
+                    $canManage = $isInActorArea();
+                }
+            }
+
+            $canView = $isOwned && $isSystemAdmin;
+            if (! $canView && $isOwned && $canViewAccounts) {
+                $canView = $targetLevel === null
+                    || ! in_array($targetLevel, $manageableLevels, true)
+                    ? $actor->is($user)
+                    : $isInActorArea();
+            }
+
+            $user->setAttribute('can_view_details', $canView);
+            $user->setAttribute('can_edit_configuration', $canManage && $canEditAccounts);
             $user->setAttribute(
                 'can_reset_account_password',
-                $this->canResetUserPassword($actor, $user, $assignableRoles),
+                $canManage && $canResetAccounts && ! $actor->is($user),
             );
         }
     }

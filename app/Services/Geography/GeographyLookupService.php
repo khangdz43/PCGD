@@ -44,7 +44,11 @@ class GeographyLookupService
         }
 
         if ($availableFor === 'commune-admin') {
-            $occupied = DelegatedAccess::occupiedTerritorialCodes('commune', $exceptUserId);
+            $occupied = DelegatedAccess::occupiedTerritorialCodes(
+                'commune',
+                $exceptUserId,
+                $provinceCode,
+            );
             if ($occupied !== []) {
                 $communes->whereNotIn('code', $occupied);
             }

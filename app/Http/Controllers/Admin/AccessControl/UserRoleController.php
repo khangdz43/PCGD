@@ -67,12 +67,8 @@ class UserRoleController extends Controller
             'province_name' => $user->province?->name,
             'commune_name' => $user->commune?->name,
             'is_active' => $user->is_active,
-            'can_view_details' => $this->users->canViewUser($actor, $user),
-            'can_edit_configuration' => $this->users->canEditUserConfiguration(
-                $actor,
-                $user,
-                $assignableRoles,
-            ),
+            'can_view_details' => $user->can_view_details,
+            'can_edit_configuration' => $user->can_edit_configuration,
             'can_change_account_status' => $user->can_change_account_status,
             'can_reset_account_password' => $user->can_reset_account_password,
         ])->all();

@@ -580,7 +580,6 @@ const hasConfigurationForm = computed(() =>
           ) &&
               Object.keys(form.value).length > 0),
 );
-const fieldsForForm = computed(() => info.value.fields);
 const scopeLevelOptions = computed(() =>
     props.moduleKey === "roles" ? roleScopeLevels.value : accountLevels.value,
 );
@@ -593,6 +592,29 @@ const assignableUserRoles = computed(() => {
             Array.isArray(role.assignable_scope_levels) &&
             role.assignable_scope_levels.includes(level),
     );
+});
+const fieldsForForm = computed(() => {
+    const fields = [...info.value.fields];
+    const selectedRole = assignableUserRoles.value.find(
+        (role) => String(role.id) === form.value.role_id,
+    );
+
+    if (
+        props.moduleKey !== "users" ||
+        form.value.scope_level !== "province" ||
+        selectedRole?.is_primary_admin !== true
+    ) {
+        return fields;
+    }
+
+    const provinceFieldIndex = fields.indexOf("province_code");
+    const roleFieldIndex = fields.indexOf("role_id");
+    if (provinceFieldIndex !== -1 && roleFieldIndex !== -1) {
+        fields.splice(provinceFieldIndex, 1);
+        fields.splice(fields.indexOf("role_id") + 1, 0, "province_code");
+    }
+
+    return fields;
 });
 const selectedRoleManagesAllVillages = computed(() =>
     assignableUserRoles.value.some(

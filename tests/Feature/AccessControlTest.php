@@ -2258,6 +2258,7 @@ class AccessControlTest extends TestCase
         $this->actingAs($communeManager, 'web')
             ->getJson('/api/v1/users')
             ->assertOk()
+            ->assertHeader('Server-Timing')
             ->assertJsonFragment([
                 'id' => $staff->id,
                 'can_change_account_status' => true,

@@ -175,13 +175,17 @@ final class DelegatedAccess
         return false;
     }
     // check role cụ thể có thuộc về scope mà user hiện tại qunar lí ko
-    public static function roleBelongsToActorArea(User $actor, Role $role): bool
+    public static function roleBelongsToActorArea(
+        User $actor,
+        Role $role,
+        ?array $manageableLevels = null,
+    ): bool
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
             return true;
         }
 
-        if (! in_array($role->scope_level, self::manageableRoleLevels($actor), true)) {
+        if (! in_array($role->scope_level, $manageableLevels ?? self::manageableRoleLevels($actor), true)) {
             return false;
         }
 
@@ -214,7 +218,12 @@ final class DelegatedAccess
         ];
     }
 // check user này có trong vùng quản li của mình 
-    public static function userIsInActorArea(User $actor, User $target, string $targetLevel): bool
+    public static function userIsInActorArea(
+        User $actor,
+        User $target,
+        string $targetLevel,
+        ?array $actorVillageCodes = null,
+    ): bool
     {
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
             return $target->province_code !== null
@@ -249,11 +258,15 @@ final class DelegatedAccess
         }
 
         if ($targetLevel === 'commune') {
-            $actorVillages = $actor->managedVillageCodes();
+            $actorVillages = $actorVillageCodes ?? $actor->managedVillageCodes();
+            if ($actorVillages === []) {
+                return true;
+            }
+
             $targetVillages = $target->managedVillageCodes();
 
-            return $actorVillages === []
-                || ($targetVillages !== [] && array_diff($targetVillages, $actorVillages) === []);
+            return $targetVillages !== []
+                && array_diff($targetVillages, $actorVillages) === [];
         }
 
         return false;

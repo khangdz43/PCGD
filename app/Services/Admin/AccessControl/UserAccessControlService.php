@@ -372,7 +372,8 @@ class UserAccessControlService
                         $role,
                         $accountLevel,
                         $actor,
-                        $actorPermissionNames
+                        $actorPermissionNames,
+                        $accountLevels,
                     )) {
                         return true;
                     }
@@ -616,6 +617,7 @@ class UserAccessControlService
             || ($actorLevel !== 'global' && $actor->can('update-users'));
         $canResetAccounts = $isSystemAdmin || $actor->can('update-users');
         $assignableRoleIdsByLevel = [];
+        $actorVillageCodes = null;
         foreach ($assignableRoles ?? collect() as $role) {
             foreach ($role->getAttribute('assignable_scope_levels') ?? [] as $level) {
                 $assignableRoleIdsByLevel[$level][] = $role->id;
@@ -626,9 +628,25 @@ class UserAccessControlService
             $isOwned = $user->created_by === $actor->id;
             $targetLevel = $user->roleScopeLevel();
             $inActorArea = null;
-            $isInActorArea = function () use ($actor, $user, $targetLevel, &$inActorArea): bool {
+            $isInActorArea = function () use (
+                $actor,
+                $actorLevel,
+                $user,
+                $targetLevel,
+                &$actorVillageCodes,
+                &$inActorArea,
+            ): bool {
+                if ($actorLevel === 'commune' && $targetLevel === 'commune') {
+                    $actorVillageCodes ??= $actor->managedVillageCodes();
+                }
+
                 return $inActorArea ??= $targetLevel !== null
-                    && DelegatedAccess::userIsInActorArea($actor, $user, $targetLevel);
+                    && DelegatedAccess::userIsInActorArea(
+                        $actor,
+                        $user,
+                        $targetLevel,
+                        $actorVillageCodes,
+                    );
             };
 
             $canManage = $isOwned;
@@ -823,7 +841,8 @@ class UserAccessControlService
         Role $role,
         string $accountLevel,
         User $actor,
-        array $actorPermissionNames
+        array $actorPermissionNames,
+        ?array $manageableRoleLevels = null,
     ): bool
     {
         if ($role->scope_level !== $accountLevel || $role->created_by !== $actor->id) {
@@ -831,7 +850,7 @@ class UserAccessControlService
         }
 
         if (! $actor->hasRole(Role::SYSTEM_ADMIN)
-            && ! DelegatedAccess::roleBelongsToActorArea($actor, $role)) {
+            && ! DelegatedAccess::roleBelongsToActorArea($actor, $role, $manageableRoleLevels)) {
             return false;
         }
 
@@ -871,7 +890,8 @@ class UserAccessControlService
                 $role,
                 $accountLevel,
                 $actor,
-                $actorPermissionNames
+                $actorPermissionNames,
+                $accountLevels,
             )
         ));
     }

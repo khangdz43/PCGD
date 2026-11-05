@@ -12,10 +12,16 @@ class FormatApiResponse
 {
     public function handle(Request $request, Closure $next): Response
     {
+        $startedAt = hrtime(true);
         $response = $next($request);
 
         if ($response instanceof JsonResponse) {
-            return ApiResponse::fromJsonResponse($response);
+            $response = ApiResponse::fromJsonResponse($response);
+        }
+
+        if ($request->is('api/v1/users')) {
+            $duration = (hrtime(true) - $startedAt) / 1_000_000;
+            $response->headers->set('Server-Timing', sprintf('app;dur=%.1f', $duration));
         }
 
         return $response;

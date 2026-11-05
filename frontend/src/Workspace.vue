@@ -3225,6 +3225,7 @@ function closeConfigurationForm(): void {
     initialVillageFormState.value = null;
     showUserPassword.value = false;
     showUserPasswordConfirmation.value = false;
+    error.value = "";
     formErrors.value = {};
     userFormSubmitted.value = false;
 }

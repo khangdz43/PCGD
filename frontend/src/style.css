@@ -3175,6 +3175,14 @@ h2 {
     box-shadow: 0 24px 70px rgb(15 23 42 / 28%);
 }
 
+.workspace-modal-card > .workspace-form-heading {
+    position: sticky;
+    z-index: 4;
+    top: 0;
+    padding: 8px 0;
+    background: #fff;
+}
+
 .workspace-modal-card::-webkit-scrollbar {
     width: 0;
     height: 0;

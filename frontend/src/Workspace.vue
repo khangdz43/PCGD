@@ -664,6 +664,13 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         errors.email = "Email không đúng định dạng.";
     }
+    if (
+        form.value.date_of_birth &&
+        form.value.date_of_birth > latestBirthDate
+    ) {
+        errors.date_of_birth =
+            "Ngày sinh không được lớn hơn ngày hiện tại.";
+    }
 
     if (form.value.scope_level !== "global" && !form.value.province_code) {
         errors.province_code = "Vui lòng chọn tỉnh/thành phố.";
@@ -4676,6 +4683,15 @@ async function saveAccountProfile(): Promise<void> {
     if (!accountFormChanged.value) return;
 
     accountFormErrors.value = {};
+    if (
+        accountForm.value.date_of_birth &&
+        accountForm.value.date_of_birth > latestBirthDate
+    ) {
+        accountFormErrors.value.date_of_birth =
+            "Ngày sinh không được lớn hơn ngày hiện tại.";
+        return;
+    }
+
     busy.value = true;
     error.value = "";
     notice.value = "";
@@ -7665,7 +7681,6 @@ onMounted(() => void load());
                             <input
                                 v-model="accountForm.date_of_birth"
                                 type="date"
-                                :max="latestBirthDate"
                                 autocomplete="bday"
                             />
                             <small

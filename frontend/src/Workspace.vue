@@ -98,6 +98,7 @@ const userFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
+const initialUserFormState = ref<string | null>(null);
 const rows = ref<Row[]>([]);
 const selected = ref<Row | null>(null);
 const selectedRolePermissions = ref<Row | null>(null);
@@ -489,6 +490,7 @@ const moduleInfo: Record<
             "phone",
             "scope_level",
             "role_id",
+            "is_active",
             "province_code",
             "commune_code",
             "village_codes",
@@ -2741,6 +2743,9 @@ function newFormValues(): Record<string, string> {
             name: "",
             username: "",
             phone: "",
+            citizen_id: "",
+            date_of_birth: "",
+            email: "",
             password: "",
             password_confirmation: "",
             role_id: "",
@@ -2769,6 +2774,7 @@ async function beginEdit(row?: Row): Promise<void> {
     initialVillageFormState.value = null;
     initialSchoolFormState.value = null;
     initialHouseholdFormState.value = null;
+    initialUserFormState.value = null;
     formErrors.value = {};
     userFormSubmitted.value = false;
     userFormRequestError.value = "";
@@ -2912,8 +2918,17 @@ async function beginEdit(row?: Row): Promise<void> {
                 const value = user[key];
                 if (Array.isArray(value))
                     form.value[key] = value.map(String).join(", ");
-                else if (value !== undefined && value !== null)
-                    form.value[key] = String(value);
+                else if (value !== undefined && value !== null) {
+                    const stringValue = String(value);
+                    form.value[key] =
+                        key === "date_of_birth"
+                            ? stringValue.slice(0, 10)
+                            : key === "is_active"
+                              ? value === true || value === 1 || value === "1"
+                                  ? "1"
+                                  : "0"
+                              : stringValue;
+                }
             }
             form.value.scope_level = String(
                 user.scope_level ??
@@ -2955,6 +2970,10 @@ async function beginEdit(row?: Row): Promise<void> {
                     loadFormCommunes(form.value.province_code),
                     loadFormVillages(form.value.commune_code),
                 ]);
+            }
+            if (row) {
+                await nextTick();
+                initialUserFormState.value = userFormState();
             }
         } else {
             const modelKey =
@@ -3202,6 +3221,7 @@ function closeConfigurationForm(): void {
     initialVillageFormState.value = null;
     initialSchoolFormState.value = null;
     initialHouseholdFormState.value = null;
+    initialUserFormState.value = null;
     initialVillageFormState.value = null;
     showUserPassword.value = false;
     showUserPasswordConfirmation.value = false;
@@ -4208,12 +4228,58 @@ function userMatchesCurrentFilters(user: Row): boolean {
     );
 }
 
+function userFormState(): string {
+    const values = Object.keys(form.value)
+        .filter((field) => !["password", "password_confirmation"].includes(field))
+        .sort()
+        .map((field) => [field, form.value[field] ?? ""]);
+
+    return JSON.stringify({
+        values,
+        village_codes: [...selectedUserVillageCodes.value].sort(),
+    });
+}
+
+function updateUserList(userId: unknown, data: Row): void {
+    const role = roleOptions.value.find(
+        (option) => String(option.id) === String(data.role_id ?? ""),
+    );
+
+    rows.value = rows.value.map((row) =>
+        String(row.id) === String(userId)
+            ? {
+                  ...row,
+                  name: data.name,
+                  username: data.username,
+                  email: data.email,
+                  phone: data.phone,
+                  role_name: role?.name ?? row.role_name,
+                  scope_level: data.scope_level,
+                  is_active: data.is_active,
+              }
+            : row,
+    );
+}
+
+const userFormChanged = computed(
+    () =>
+        Boolean(form.value.password) ||
+        initialUserFormState.value !== userFormState(),
+);
+
 async function save(): Promise<void> {
     formErrors.value = {};
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
     if (props.moduleKey === "users") {
+        if (
+            editing.value &&
+            !userFormChanged.value
+        ) {
+            return;
+        }
+
         userFormSubmitted.value = true;
         if (!userFormReady.value) {
             error.value =
@@ -4353,6 +4419,18 @@ async function save(): Promise<void> {
                 `${endpoint}/${householdId}`,
                 body,
             );
+            if (props.moduleKey === "users") {
+                updateUserList(householdId, body);
+                configurationFormOpen.value = false;
+                selected.value = null;
+                form.value = {};
+                managementResult.value = {
+                    success: true,
+                    title: "Cập nhật tài khoản thành công",
+                    message: `Thông tin tài khoản “${String(body.name ?? "")}” đã được lưu.`,
+                };
+                return;
+            }
             if (props.moduleKey === "villages") {
                 const result = apiData<Row>(response.data);
                 savedVillage =
@@ -4395,14 +4473,13 @@ async function save(): Promise<void> {
             }
         }
         notice.value =
-            props.moduleKey === "households"
+            props.moduleKey === "households" ||
+            props.moduleKey === "users" ||
+            ["roles", "villages", "schools"].includes(props.moduleKey)
                 ? ""
-                : ["roles", "villages", "schools"].includes(props.moduleKey) ||
-                    (props.moduleKey === "users" && !wasEditing)
-                  ? ""
-                  : wasEditing
-                    ? "Đã cập nhật."
-                    : "";
+                : wasEditing
+                  ? "Đã cập nhật."
+                  : "";
         if (
             props.moduleKey === "households" &&
             typeof createdHouseholdIdValue === "number"
@@ -4487,8 +4564,6 @@ async function save(): Promise<void> {
             )
         ) {
             await load();
-        } else if (props.moduleKey === "users" && wasEditing) {
-            await load();
         }
         if (props.moduleKey === "merge") {
             deleteResult.value = {
@@ -4552,6 +4627,17 @@ async function save(): Promise<void> {
             if (Object.keys(formErrors.value).length === 0) {
                 userFormRequestError.value = `Chưa thể tạo tài khoản. ${error.value} Vui lòng thử lại.`;
             }
+            managementResult.value = {
+                success: false,
+                title: "Tạo tài khoản thất bại",
+                message: error.value,
+            };
+        } else if (props.moduleKey === "users") {
+            managementResult.value = {
+                success: false,
+                title: "Cập nhật tài khoản thất bại",
+                message: error.value,
+            };
         } else if (props.moduleKey === "roles") {
             roleFormRequestError.value =
                 Object.keys(formErrors.value).length === 0
@@ -5963,14 +6049,20 @@ onMounted(() => void load());
                         </select>
                         <select
                             v-else-if="
-                                moduleKey === 'schools' &&
+                                ['schools', 'users'].includes(moduleKey) &&
                                 field === 'is_active'
                             "
                             v-model="form[field]"
                             required
                         >
                             <option value="1">Đang hoạt động</option>
-                            <option value="0">Ngừng hoạt động</option>
+                            <option value="0">
+                                {{
+                                    moduleKey === 'users'
+                                        ? 'Vô hiệu hóa'
+                                        : 'Ngừng hoạt động'
+                                }}
+                            </option>
                         </select>
                         <select
                             v-else-if="field === 'level'"
@@ -6888,13 +6980,6 @@ onMounted(() => void load());
                     Mã thôn / xóm sẽ tự sinh theo cấu trúc [Mã xã]_[Số thứ tự],
                     ví dụ C01_001. Mã cũ được giữ nguyên.
                 </p>
-                <label v-if="moduleKey === 'users'" class="workspace-field">
-                    <span>Trạng thái</span>
-                    <select v-model="form.is_active">
-                        <option value="1">Đang hoạt động</option>
-                        <option value="0">Vô hiệu hóa</option>
-                    </select>
-                </label>
                 <section
                     v-if="moduleKey === 'households' && editing"
                     class="household-edit-members"
@@ -7474,6 +7559,9 @@ onMounted(() => void load());
                             busy ||
                             villageMergeBusy ||
                             formOptionsBusy ||
+                            (moduleKey === 'users' &&
+                                editing &&
+                                !userFormChanged) ||
                             !roleFormReady ||
                             !villageFormReady ||
                             (moduleKey === 'merge' &&

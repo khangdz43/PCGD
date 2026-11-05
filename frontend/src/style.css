@@ -5469,6 +5469,15 @@ h2 {
     font-size: .78rem;
 }
 
+.workspace-table th.table-numeric-heading {
+    text-align: right;
+}
+
+.workspace-table th.table-date-heading,
+.workspace-table th.table-status-heading {
+    text-align: center;
+}
+
 .workspace-table.village-management-table .village-row-number {
     width: 64px;
     color: #64748b;

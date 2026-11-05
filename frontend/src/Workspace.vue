@@ -8391,6 +8391,22 @@ onMounted(() => void load());
                             v-for="column in info.columns"
                             :key="column"
                             :class="{
+                                'table-numeric-heading': [
+                                    'phone',
+                                    'members_count',
+                                    'users_count',
+                                ].includes(column),
+                                'table-date-heading': [
+                                    'date_of_birth',
+                                    'dob',
+                                    'created_at',
+                                    'updated_at',
+                                ].includes(column),
+                                'table-status-heading': [
+                                    'is_active',
+                                    'operational_status',
+                                    'status',
+                                ].includes(column),
                                 'village-operational-status-cell':
                                     moduleKey === 'villages' &&
                                     column === 'operational_status',
@@ -8406,7 +8422,12 @@ onMounted(() => void load());
                             }}
                         </th>
                         <th v-if="moduleKey === 'roles'">Quyền hạn</th>
-                        <th v-if="moduleKey === 'users'">Trạng thái</th>
+                        <th
+                            v-if="moduleKey === 'users'"
+                            class="table-status-heading"
+                        >
+                            Trạng thái
+                        </th>
                         <th
                             :class="{
                                 'account-actions-heading':

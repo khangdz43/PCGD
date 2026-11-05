@@ -45,12 +45,14 @@ class UserRoleController extends Controller
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
         $filterRoles = $this->users->rolesForAccountFilter($actor, $filter);
+        $assignableRoles = $this->users->rolesForForm($actor, $accountLevels);
         $data = $this->users->indexData(
             $actor,
             $filter,
             $provinces,
             $filter['per_page'] ?? 10,
             includeOrganizationData: false,
+            assignableRoles: $assignableRoles,
         );
         $accounts = $data['allUsers'];
         $users = $accounts->getCollection()->map(fn (User $user): array => [
@@ -65,7 +67,11 @@ class UserRoleController extends Controller
             'province_name' => $user->province?->name,
             'is_active' => $user->is_active,
             'can_view_details' => $this->users->canViewUser($actor, $user),
-            'can_edit_configuration' => $this->users->canEditUserConfiguration($actor, $user),
+            'can_edit_configuration' => $this->users->canEditUserConfiguration(
+                $actor,
+                $user,
+                $assignableRoles,
+            ),
             'can_change_account_status' => $user->can_change_account_status,
             'can_reset_account_password' => $user->can_reset_account_password,
         ])->all();

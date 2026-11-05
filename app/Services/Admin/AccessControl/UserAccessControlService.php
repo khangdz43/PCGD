@@ -35,6 +35,7 @@ class UserAccessControlService
         Collection $provinces,
         int $perPage = 10,
         bool $includeOrganizationData = true,
+        ?Collection $assignableRoles = null,
     ): array
     {
         $isSystemAdmin = $actor->hasRole(Role::SYSTEM_ADMIN);
@@ -139,29 +140,28 @@ class UserAccessControlService
         $roleId = $filter['role_id'] ?? null;
         $isFiltering = filled($provinceCode) || filled($communeCode) || filled($villageCode)
             || filled($scopeLevel) || filled($roleId) || $search !== '';
-        $managementPriority = DB::table('model_has_roles as account_model_roles')
-            ->join('roles as account_roles', 'account_roles.id', '=', 'account_model_roles.role_id')
-            ->join('role_has_permissions as account_role_permissions', 'account_role_permissions.role_id', '=', 'account_roles.id')
-            ->join('permissions as account_permissions', 'account_permissions.id', '=', 'account_role_permissions.permission_id')
-            ->where('account_model_roles.model_type', User::class)
-            ->whereIn('account_roles.scope_level', ['province', 'commune'])
-            ->whereIn('account_permissions.name', [
-                AccessPermission::MANAGE_USER_ACCOUNTS,
-                AccessPermission::MANAGE_ACCESS_CONTROL,
-            ])
-            ->select('account_model_roles.model_id')
-            ->selectRaw(
-                'MIN(CASE WHEN account_roles.scope_level = ? THEN 0 ELSE 1 END) AS priority',
-                ['province'],
+        $query->select('users.*')
+            ->orderByRaw(
+                'COALESCE((
+                    SELECT MIN(CASE WHEN account_roles.scope_level = ? THEN 0 ELSE 1 END)
+                    FROM model_has_roles AS account_model_roles
+                    INNER JOIN roles AS account_roles ON account_roles.id = account_model_roles.role_id
+                    INNER JOIN role_has_permissions AS account_role_permissions ON account_role_permissions.role_id = account_roles.id
+                    INNER JOIN permissions AS account_permissions ON account_permissions.id = account_role_permissions.permission_id
+                    WHERE account_model_roles.model_id = users.id
+                        AND account_model_roles.model_type = ?
+                        AND account_roles.scope_level IN (?, ?)
+                        AND account_permissions.name IN (?, ?)
+                ), 2)',
+                [
+                    'province',
+                    User::class,
+                    'province',
+                    'commune',
+                    AccessPermission::MANAGE_USER_ACCOUNTS,
+                    AccessPermission::MANAGE_ACCESS_CONTROL,
+                ],
             )
-            ->groupBy('account_model_roles.model_id');
-
-        $query->leftJoinSub(
-            $managementPriority,
-            'user_management_priority',
-            fn ($join) => $join->on('users.id', '=', 'user_management_priority.model_id'),
-        )->select('users.*')
-            ->orderByRaw('COALESCE(user_management_priority.priority, 2)')
             ->orderBy('users.name');
 
         $allUsers = $query
@@ -170,7 +170,7 @@ class UserAccessControlService
         $usersForView = $allUsers->getCollection();
         $totalUserCount = $allUsers->total();
         $this->addStatusManagementFlags($actor, $usersForView);
-        $this->addPasswordResetFlags($actor, $usersForView);
+        $this->addPasswordResetFlags($actor, $usersForView, $assignableRoles);
         $hierarchy = [];
         $noLocationUsers = collect();
 
@@ -542,7 +542,11 @@ class UserAccessControlService
             || ($actor->roleScopeLevel() !== 'global' && $actor->can('update-users'));
     }
 
-    public function canResetUserPassword(User $actor, User $target): bool
+    public function canResetUserPassword(
+        User $actor,
+        User $target,
+        ?Collection $assignableRoles = null,
+    ): bool
     {
         if ($actor->is($target)) {
             return false;
@@ -552,7 +556,7 @@ class UserAccessControlService
             return false;
         }
 
-        return $this->canManageUser($actor, $target);
+        return $this->canManageUser($actor, $target, $assignableRoles);
     }
 
     public function resetPassword(User $user, string $password): void
@@ -591,10 +595,17 @@ class UserAccessControlService
         }
     }
 
-    private function addPasswordResetFlags(User $actor, SupportCollection $users): void
+    private function addPasswordResetFlags(
+        User $actor,
+        SupportCollection $users,
+        ?Collection $assignableRoles = null,
+    ): void
     {
         foreach ($users as $user) {
-            $user->setAttribute('can_reset_account_password', $this->canResetUserPassword($actor, $user));
+            $user->setAttribute(
+                'can_reset_account_password',
+                $this->canResetUserPassword($actor, $user, $assignableRoles),
+            );
         }
     }
 

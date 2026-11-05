@@ -5261,19 +5261,9 @@ function accountActionTitle(dialog: AccountActionDialog): string {
 }
 
 function accountActionMessage(dialog: AccountActionDialog): string {
-    if (dialog.mode === "result") {
-        return dialog.success
-            ? (dialog.message ?? "")
-            : `Thao tác thất bại: ${dialog.message ?? "Vui lòng thử lại."}`;
-    }
-
-    if (dialog.mode === "password-form") {
-        return `Nhập mật khẩu mới cho tài khoản “${dialog.accountName}”, hoặc tự động điền mật khẩu an toàn.`;
-    }
-
-    return dialog.action === "password"
-        ? `Bạn có chắc muốn đặt lại mật khẩu cho tài khoản “${dialog.accountName}”?`
-        : `Bạn có chắc muốn ${dialog.row.is_active ? "vô hiệu hóa" : "kích hoạt"} tài khoản “${dialog.accountName}”?`;
+    return dialog.success
+        ? (dialog.message ?? "")
+        : `Thao tác thất bại: ${dialog.message ?? "Vui lòng thử lại."}`;
 }
 
 async function changeUserPageSize(): Promise<void> {
@@ -11584,7 +11574,28 @@ onMounted(() => void load());
                 {{ accountActionTitle(accountActionDialog) }}
             </h3>
             <p id="account-action-message">
-                {{ accountActionMessage(accountActionDialog) }}
+                <template v-if="accountActionDialog.mode === 'confirm'">
+                    Bạn có chắc muốn
+                    {{
+                        accountActionDialog.action === "password"
+                            ? "đặt lại mật khẩu"
+                            : accountActionDialog.row.is_active
+                              ? "vô hiệu hóa"
+                              : "kích hoạt"
+                    }}
+                    tài khoản
+                    <strong>“{{ accountActionDialog.accountName }}”</strong>?
+                </template>
+                <template
+                    v-else-if="accountActionDialog.mode === 'password-form'"
+                >
+                    Nhập mật khẩu mới cho tài khoản
+                    <strong>“{{ accountActionDialog.accountName }}”</strong>,
+                    hoặc tự động điền mật khẩu an toàn.
+                </template>
+                <template v-else>
+                    {{ accountActionMessage(accountActionDialog) }}
+                </template>
             </p>
             <div
                 v-if="accountActionDialog.mode === 'password-form'"

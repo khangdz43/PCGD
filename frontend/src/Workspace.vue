@@ -95,6 +95,7 @@ const notice = ref("");
 const configurationFormOpen = ref(false);
 const formErrors = ref<Record<string, string>>({});
 const userFormSubmitted = ref(false);
+const roleFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
@@ -2897,6 +2898,7 @@ async function beginEdit(row?: Row): Promise<void> {
     initialUserFormState.value = null;
     formErrors.value = {};
     userFormSubmitted.value = false;
+    roleFormSubmitted.value = false;
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
@@ -4411,7 +4413,10 @@ async function save(): Promise<void> {
             return;
         }
     }
-    if (props.moduleKey === "roles" && !roleFormReady.value) return;
+    if (props.moduleKey === "roles") {
+        roleFormSubmitted.value = true;
+        if (!roleFormReady.value) return;
+    }
     if (props.moduleKey === "villages" && !villageFormReady.value) return;
     if (props.moduleKey === "schools" && !schoolFormReady.value) return;
     if (props.moduleKey === "merge") {
@@ -6353,13 +6358,15 @@ onMounted(() => void load());
                             v-else-if="field === 'scope_level'"
                             v-model="form[field]"
                             :required="
-                                moduleKey === 'users' || moduleKey === 'roles'
+                                moduleKey === 'users'
                             "
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
                                     (userFormSubmitted &&
-                                        userFormValidationErrors[field]),
+                                        userFormValidationErrors[field]) ||
+                                    (roleFormSubmitted &&
+                                        roleFormValidationErrors[field]),
                                 )
                             "
                         >
@@ -6383,7 +6390,9 @@ onMounted(() => void load());
                                 Boolean(
                                     formErrors[field] ||
                                     (userFormSubmitted &&
-                                        userFormValidationErrors[field]),
+                                        userFormValidationErrors[field]) ||
+                                    (roleFormSubmitted &&
+                                        roleFormValidationErrors[field]),
                                 )
                             "
                             @change="
@@ -6623,11 +6632,20 @@ onMounted(() => void load());
                                     formErrors[field] ||
                                     (userFormSubmitted &&
                                         userFormValidationErrors[field]) ||
+                                    (roleFormSubmitted &&
+                                        roleFormValidationErrors[field]) ||
                                     (field === 'username' &&
                                         userFormRequestError),
                                 )
                             "
                             :required="
+                                (moduleKey !== 'roles' &&
+                                    [
+                                        'name',
+                                        'username',
+                                        'role_id',
+                                        'scope_level',
+                                    ].includes(field)) ||
                                 (moduleKey === 'households' &&
                                     [
                                         'household_code',
@@ -6638,12 +6656,6 @@ onMounted(() => void load());
                                     field === 'name') ||
                                 (moduleKey === 'merge' &&
                                     field === 'target_code') ||
-                                [
-                                    'name',
-                                    'username',
-                                    'role_id',
-                                    'scope_level',
-                                ].includes(field) ||
                                 (moduleKey === 'users' &&
                                     field === 'citizen_id')
                             "
@@ -6664,6 +6676,17 @@ onMounted(() => void load());
                             role="alert"
                             >{{ formErrors[field] }}</small
                         >
+                        <small
+                            v-else-if="
+                                moduleKey === 'roles' &&
+                                roleFormSubmitted &&
+                                roleFormValidationErrors[field]
+                            "
+                            class="field-error"
+                            role="alert"
+                        >
+                            {{ roleFormValidationErrors[field] }}
+                        </small>
                         <small
                             v-else-if="
                                 userFormSubmitted &&
@@ -7090,27 +7113,30 @@ onMounted(() => void load());
                         Ma trận phân quyền · {{ permissionIds.length }} quyền đã
                         chọn
                     </span>
-                    <small
-                        v-if="
-                            rolePermissionError ||
-                            roleFormValidationErrors.permissions
-                        "
-                        class="field-error"
-                        role="alert"
-                    >
-                        {{
-                            rolePermissionError ||
-                            roleFormValidationErrors.permissions
-                        }}
-                    </small>
-                    <p
-                        v-if="!roleFormReady"
-                        class="muted form-validation-hint role-validation-hint"
-                        role="status"
-                    >
-                        Hoàn tất thông tin nhóm và chọn ít nhất một quyền để bật
-                        nút lưu.
-                    </p>
+                    <div class="role-validation-message-slot">
+                        <small
+                            v-if="
+                                rolePermissionError ||
+                                (roleFormSubmitted &&
+                                    roleFormValidationErrors.permissions)
+                            "
+                            class="field-error"
+                            role="alert"
+                        >
+                            {{
+                                rolePermissionError ||
+                                roleFormValidationErrors.permissions
+                            }}
+                        </small>
+                        <p
+                            v-else-if="!roleFormReady"
+                            class="muted form-validation-hint role-validation-hint"
+                            role="status"
+                        >
+                            Hoàn tất thông tin nhóm và chọn ít nhất một quyền
+                            trước khi lưu.
+                        </p>
+                    </div>
                     <div
                         v-if="permissionMatrixRows.length"
                         class="permission-matrix-wrap"
@@ -7817,7 +7843,6 @@ onMounted(() => void load());
                             (moduleKey === 'users' &&
                                 editing &&
                                 !userFormChanged) ||
-                            !roleFormReady ||
                             !villageFormReady ||
                             (moduleKey === 'merge' &&
                                 (!form.target_code ||

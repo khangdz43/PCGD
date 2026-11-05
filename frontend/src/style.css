@@ -3176,10 +3176,17 @@ h2 {
 }
 
 .workspace-modal-card > .workspace-form-heading {
-    position: sticky;
-    z-index: 4;
-    top: 0;
     padding: 8px 0;
+}
+
+.workspace-modal-card > .workspace-form-close {
+    position: sticky;
+    z-index: 5;
+    top: 0;
+    justify-self: end;
+    grid-column: 1 / -1;
+    margin-top: -46px;
+    margin-bottom: -46px;
     background: #fff;
 }
 

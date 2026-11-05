@@ -6190,16 +6190,16 @@ onMounted(() => void load());
                     >
                         {{ `${editing ? "Cập nhật" : "Tạo mới"} ${info.title.toLocaleLowerCase("vi")}` }}
                     </h3>
-                    <button
-                        v-if="isDialogForm && !isHouseholdCreatePage"
-                        class="modal-icon-button"
-                        type="button"
-                        aria-label="Đóng biểu mẫu"
-                        @click="closeConfigurationForm"
-                    >
-                        ×
-                    </button>
                 </div>
+                <button
+                    v-if="isDialogForm && !isHouseholdCreatePage"
+                    class="modal-icon-button workspace-form-close"
+                    type="button"
+                    aria-label="Đóng biểu mẫu"
+                    @click="closeConfigurationForm"
+                >
+                    ×
+                </button>
                 <p
                     v-if="
                         error &&
@@ -8844,14 +8844,6 @@ onMounted(() => void load());
                                         row.scope_level
                                     }}
                                 </small>
-                                <small
-                                    v-if="
-                                        row.scope_level === 'commune' &&
-                                        row.commune_name
-                                    "
-                                >
-                                    {{ row.commune_name }}
-                                </small>
                             </div>
                             <div
                                 v-else-if="
@@ -8863,11 +8855,17 @@ onMounted(() => void load());
                                 <span>{{ pathValue(row, column) }}</span>
                                 <small
                                     v-if="
-                                        row.scope_level === 'province' &&
-                                        row.province_name
+                                        row.scope_level === 'commune'
+                                            ? row.commune_name
+                                            : row.scope_level === 'province' &&
+                                              row.province_name
                                     "
                                 >
-                                    {{ row.province_name }}
+                                    {{
+                                        row.scope_level === 'commune'
+                                            ? row.commune_name
+                                            : row.province_name
+                                    }}
                                 </small>
                             </div>
                             <template v-else>

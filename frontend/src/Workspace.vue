@@ -9539,32 +9539,34 @@ onMounted(() => void load());
             v-if="['villages', 'schools'].includes(moduleKey)"
             class="user-pagination-footer village-pagination-footer"
         >
-            <label class="page-size-control">
-                <span>Mỗi trang</span>
-                <select
-                    v-if="moduleKey === 'villages'"
-                    v-model.number="villagePageSize"
-                    :disabled="busy"
-                    @change="changeVillagePageSize"
-                >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                </select>
-                <select
-                    v-else
-                    v-model.number="schoolPageSize"
-                    :disabled="busy"
-                    @change="changeSchoolPageSize"
-                >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                </select>
-            </label>
-            <span v-if="moduleKey === 'villages'" class="record-count">
-                {{ rows.length }} / {{ totalRecords }} bản ghi
-            </span>
+            <div class="village-pagination-summary">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-if="moduleKey === 'villages'"
+                        v-model.number="villagePageSize"
+                        :disabled="busy"
+                        @change="changeVillagePageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                    </select>
+                    <select
+                        v-else
+                        v-model.number="schoolPageSize"
+                        :disabled="busy"
+                        @change="changeSchoolPageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                    </select>
+                </label>
+                <span v-if="moduleKey === 'villages'" class="record-count">
+                    {{ rows.length }} / {{ totalRecords }} bản ghi
+                </span>
+            </div>
             <div
                 class="pagination-actions compact-pagination"
                 :aria-label="

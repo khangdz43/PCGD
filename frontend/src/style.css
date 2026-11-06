@@ -4240,6 +4240,12 @@ h2 {
     gap: 8px;
 }
 
+.village-pagination-summary {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .user-pagination-footer .compact-pagination {
     align-items: center;
 }

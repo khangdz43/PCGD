@@ -359,6 +359,8 @@ const currentPage = ref(1);
 const lastPage = ref(1);
 const totalRecords = ref(0);
 const userPageSize = ref(10);
+const rolePageSize = ref(10);
+const roleFilterQuery = ref("");
 const villagePageSize = ref(10);
 const schoolPageSize = ref(10);
 const householdPageSize = ref(10);
@@ -2418,6 +2420,11 @@ async function searchUsers(): Promise<void> {
     await load();
 }
 
+async function searchRoles(): Promise<void> {
+    currentPage.value = 1;
+    await load();
+}
+
 watch(
     () => form.value.scope_level,
     async (level) => {
@@ -2565,12 +2572,10 @@ async function load(): Promise<void> {
         } else if (props.moduleKey === "merge") {
             await loadVillageMergeOptions();
         } else {
-            let completeRoleRows: Row[] | null = null;
             const response = (
                 await api.get<unknown>(info.value.endpoint, {
                     params: {
-                        page:
-                            props.moduleKey === "roles" ? 1 : currentPage.value,
+                        page: currentPage.value,
                         ...(props.moduleKey === "households"
                             ? {
                                   ...(householdQuery.value.trim()
@@ -2632,13 +2637,16 @@ async function load(): Promise<void> {
                                   q: userFilterQuery.value.trim() || undefined,
                               }
                             : {}),
+                        ...(props.moduleKey === "roles"
+                            ? { q: roleFilterQuery.value.trim() || undefined }
+                            : {}),
                         ...(isCompactManagement.value
                             ? {
                                   per_page:
                                       props.moduleKey === "users"
                                           ? userPageSize.value
                                           : props.moduleKey === "roles"
-                                            ? 100
+                                            ? rolePageSize.value
                                             : 10,
                               }
                             : {}),
@@ -2654,24 +2662,6 @@ async function load(): Promise<void> {
                     },
                 })
             ).data;
-            if (props.moduleKey === "roles") {
-                const firstPage = apiPage<Row>(response);
-                const remainingPages = await Promise.all(
-                    Array.from(
-                        { length: Math.max(0, firstPage.last_page - 1) },
-                        (_, index) =>
-                            api.get<unknown>(info.value.endpoint, {
-                                params: { page: index + 2, per_page: 100 },
-                            }),
-                    ),
-                );
-                completeRoleRows = [
-                    ...apiRows<Row>(apiData<unknown>(response)),
-                    ...remainingPages.flatMap((page) =>
-                        apiRows<Row>(apiData<unknown>(page.data)),
-                    ),
-                ];
-            }
             const result = apiData<Row | unknown[]>(response);
             const data =
                 typeof result === "object" &&
@@ -2686,7 +2676,7 @@ async function load(): Promise<void> {
             else if (props.moduleKey === "villages")
                 rows.value = asRows(data.villages);
             else if (props.moduleKey === "roles")
-                rows.value = completeRoleRows ?? apiRows<Row>(result);
+                rows.value = apiPage<Row>(response, result).data;
             else if (props.moduleKey === "users")
                 rows.value = asRows(data.allUsers);
             else rows.value = asRows(data.items);
@@ -2705,8 +2695,7 @@ async function load(): Promise<void> {
                             : data.items;
             const page = apiPage<Row>(response, collection);
             lastPage.value = page.last_page;
-            currentPage.value =
-                props.moduleKey === "roles" ? 1 : page.current_page;
+            currentPage.value = page.current_page;
             totalRecords.value = page.total;
             if (Array.isArray(data.provinces))
                 provinces.value = asRows(data.provinces);
@@ -5405,6 +5394,12 @@ async function changeUserPageSize(): Promise<void> {
     await load();
 }
 
+async function changeRolePageSize(): Promise<void> {
+    if (busy.value) return;
+    currentPage.value = 1;
+    await load();
+}
+
 async function changeVillagePageSize(): Promise<void> {
     if (busy.value) return;
     currentPage.value = 1;
@@ -5963,10 +5958,31 @@ onMounted(() => void load());
                 </button>
             </div>
             <template v-else-if="moduleKey === 'roles'">
-                <div class="role-management-toolbar-bottom">
-                    <span class="record-count"
-                        >{{ totalRecords }} nhóm quyền</span
+                <form
+                    class="user-search-control role-search-control"
+                    role="search"
+                    @submit.prevent="searchRoles"
+                >
+                    <input
+                        v-model.trim="roleFilterQuery"
+                        type="search"
+                        aria-label="Tìm theo tên nhóm người dùng"
+                        placeholder="Tìm theo tên nhóm…"
+                    />
+                    <button
+                        class="secondary-button management-tool-button user-search-button"
+                        type="submit"
+                        :disabled="busy"
+                        aria-label="Tìm nhóm người dùng"
+                        title="Tìm nhóm người dùng"
                     >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="10.8" cy="10.8" r="6.8" />
+                            <path d="m16 16 4.5 4.5" />
+                        </svg>
+                    </button>
+                </form>
+                <div class="role-management-toolbar-bottom">
                     <button
                         v-if="canCreate"
                         class="primary-button management-tool-button"
@@ -9310,6 +9326,16 @@ onMounted(() => void load());
                     : "Chưa có phiếu điều tra tại địa bàn này."
             }}
         </p>
+        <p
+            v-if="moduleKey === 'roles' && !busy && rows.length === 0"
+            class="village-empty-state"
+        >
+            {{
+                    roleFilterQuery.trim()
+                        ? "Không tìm thấy nhóm người dùng phù hợp."
+                        : "Chưa có nhóm người dùng."
+            }}
+        </p>
         <div v-if="moduleKey === 'users'" class="user-pagination-footer">
             <div class="user-pagination-footer-info">
                 <label class="page-size-control">
@@ -9346,6 +9372,68 @@ onMounted(() => void load());
                     <select
                         v-model.number="currentPage"
                         aria-label="Chọn trang tài khoản"
+                        :disabled="busy || lastPage <= 1"
+                        @change="load"
+                    >
+                        <option
+                            v-for="pageNumber in lastPage"
+                            :key="pageNumber"
+                            :value="pageNumber"
+                        >
+                            {{ pageNumber }}
+                        </option>
+                    </select>
+                    <span>/ {{ lastPage }}</span>
+                </label>
+                <button
+                    class="secondary-button management-tool-button"
+                    type="button"
+                    :disabled="currentPage >= lastPage || busy"
+                    @click="changePage(1)"
+                >
+                    Sau
+                </button>
+            </div>
+        </div>
+        <div
+            v-if="moduleKey === 'roles'"
+            class="user-pagination-footer role-pagination-footer"
+        >
+            <div class="user-pagination-footer-info">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-model.number="rolePageSize"
+                        :disabled="busy"
+                        @change="changeRolePageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                        <option :value="100">100</option>
+                    </select>
+                </label>
+                <span class="record-count"
+                    >{{ rows.length }} / {{ totalRecords }} bản ghi</span
+                >
+            </div>
+            <div
+                class="pagination-actions compact-pagination"
+                aria-label="Phân trang danh sách nhóm người dùng"
+            >
+                <button
+                    class="secondary-button management-tool-button"
+                    type="button"
+                    :disabled="currentPage <= 1 || busy"
+                    @click="changePage(-1)"
+                >
+                    Trước
+                </button>
+                <label class="page-number-control">
+                    <span>Trang</span>
+                    <select
+                        v-model.number="currentPage"
+                        aria-label="Chọn trang nhóm người dùng"
                         :disabled="busy || lastPage <= 1"
                         @change="load"
                     >

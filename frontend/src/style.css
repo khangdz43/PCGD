@@ -4160,7 +4160,7 @@ h2 {
 }
 
 .role-management-toolbar {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
 }
 
@@ -4170,6 +4170,14 @@ h2 {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+.role-search-control {
+    width: min(100%, 380px);
+}
+
+.role-management-toolbar-bottom>.management-tool-button {
+    margin-left: 0;
 }
 
 .user-management-toolbar-bottom {
@@ -4517,7 +4525,9 @@ h2 {
 }
 
 .permission-matrix-table thead input {
-    accent-color: #fff;
+    width: 16px;
+    height: 16px;
+    accent-color: #0f172a;
 }
 
 .permission-matrix-input:disabled {

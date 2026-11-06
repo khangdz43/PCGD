@@ -67,6 +67,7 @@ type TrashActionDialog = {
 const props = defineProps<{
     moduleKey: ModuleKey;
     permissions: string[];
+    scopeLevel?: string | null;
     importView?: "upload" | "history";
     accountSection?: "profile" | "password";
     householdFilters?: {
@@ -5808,20 +5809,19 @@ onMounted(() => void load());
             </div>
         </div>
 
-        <slot v-if="moduleKey === 'villages'" name="toolbar" />
-        <div
-            v-if="moduleKey === 'villages'"
-            class="village-management-toolbar-bottom"
-        >
-            <button
-                v-if="canCreate"
-                class="primary-button management-tool-button"
-                type="button"
-                :disabled="busy"
-                @click="beginEdit()"
-            >
-                Thêm mới
-            </button>
+        <div v-if="moduleKey === 'villages'" class="village-toolbar-row">
+            <slot name="toolbar" />
+            <div class="village-management-toolbar-bottom">
+                <button
+                    v-if="canCreate"
+                    class="primary-button management-tool-button"
+                    type="button"
+                    :disabled="busy"
+                    @click="beginEdit()"
+                >
+                    Thêm mới
+                </button>
+            </div>
         </div>
 
         <div
@@ -5830,6 +5830,9 @@ onMounted(() => void load());
             :class="{
                 'user-management-toolbar': moduleKey === 'users',
                 'role-management-toolbar': moduleKey === 'roles',
+                'commune-management-toolbar':
+                    props.scopeLevel === 'commune' &&
+                    ['users', 'roles'].includes(moduleKey),
                 'trash-management-toolbar-wrapper': moduleKey === 'trash',
             }"
         >

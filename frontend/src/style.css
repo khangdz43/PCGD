@@ -4169,6 +4169,20 @@ h2 {
     gap: 10px;
 }
 
+.commune-management-toolbar.management-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+}
+
+.commune-management-toolbar .user-location-filters {
+    width: auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.commune-management-toolbar .user-management-toolbar-bottom {
+    width: auto;
+}
+
 .role-management-toolbar-bottom {
     display: flex;
     min-width: 0;
@@ -4197,16 +4211,36 @@ h2 {
     margin-left: auto;
 }
 
-.village-management-toolbar-bottom {
+.village-toolbar-row {
     display: flex;
     width: 100%;
-    align-items: center;
+    align-items: flex-end;
     gap: 10px;
-    margin: 0 0 12px;
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #fff;
+}
+
+.village-toolbar-row>.village-unified-filter {
+    min-width: 0;
+    flex: 1 1 auto;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.village-management-toolbar-bottom {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: flex-end;
+    margin: 0;
 }
 
 .village-management-toolbar-bottom>.management-tool-button {
-    margin-left: auto;
+    flex: 0 0 auto;
 }
 
 .village-management-toolbar-bottom .record-count {
@@ -5125,6 +5159,10 @@ h2 {
         grid-template-columns: minmax(0, 1fr);
     }
 
+    .commune-management-toolbar.management-toolbar {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .user-search-control {
         grid-column: 1;
     }
@@ -5793,9 +5831,19 @@ h2 {
 }
 
 @media (max-width: 560px) {
+    .village-toolbar-row {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 0;
+    }
+
     .village-unified-filter {
         grid-template-columns: minmax(0, 1fr);
         padding: 12px;
+    }
+
+    .village-management-toolbar-bottom {
+        justify-content: flex-end;
     }
 
     .village-unified-search {

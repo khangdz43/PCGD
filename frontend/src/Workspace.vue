@@ -409,6 +409,9 @@ const selectedHouseholdPerson = ref<Row | null>(null);
 const pendingHouseholdPersonDelete = ref<Row | null>(null);
 const memberBusy = ref(false);
 const memberFormErrors = ref<Record<string, string>>({});
+const restoringHouseholdMemberDraft = ref(false);
+const householdRouteRestoreActive = ref(false);
+const householdMemberDraftPrefix = "pcgd:household-member-draft";
 const householdEditPageCount = computed(() =>
     Math.max(
         1,
@@ -3504,6 +3507,12 @@ function openRolePermissionDetails(row: Row): void {
 }
 
 function closeConfigurationForm(): void {
+    if (
+        props.moduleKey === "households" &&
+        window.location.pathname.startsWith("/households/")
+    ) {
+        setHouseholdUrl("/households", true);
+    }
     configurationFormOpen.value = false;
     selected.value = null;
     createdHouseholdId.value = null;
@@ -3523,6 +3532,172 @@ function closeConfigurationForm(): void {
     roleFormSubmitted.value = false;
     villageFormSubmitted.value = false;
     householdFormSubmitted.value = false;
+}
+
+function householdMemberDraftKey(
+    householdId: number | string,
+    personId: number | null,
+): string {
+    return `${householdMemberDraftPrefix}:${householdId}:${personId ?? "new"}`;
+}
+
+function setHouseholdUrl(path: string, replace = false): void {
+    const url = new URL(path, window.location.origin);
+    if (
+        `${url.pathname}${url.search}` ===
+        `${window.location.pathname}${window.location.search}`
+    ) {
+        return;
+    }
+
+    if (replace) {
+        window.history.replaceState({ module: "households" }, "", url);
+    } else {
+        window.history.pushState({ module: "households" }, "", url);
+    }
+}
+
+function mergeStoredStringFields(
+    target: Record<string, string>,
+    source: unknown,
+): void {
+    const stored = asRow(source);
+    for (const key of Object.keys(target)) {
+        if (typeof stored[key] === "string") target[key] = stored[key] as string;
+    }
+}
+
+function mergeStoredDisabilityFields(source: unknown): void {
+    const stored = asRow(source);
+    for (const key of Object.keys(disabilityForm.value)) {
+        const value = stored[key];
+        if (typeof value === "string" || typeof value === "boolean") {
+            disabilityForm.value[key] = value;
+        }
+    }
+}
+
+function saveHouseholdMemberDraft(): void {
+    const householdId = createdHouseholdId.value;
+    if (householdId === null || !isHouseholdWizardMemberPage.value) return;
+
+    try {
+        sessionStorage.setItem(
+            householdMemberDraftKey(householdId, memberId.value),
+            JSON.stringify({
+                member: memberForm.value,
+                education: educationForm.value,
+                disability: disabilityForm.value,
+            }),
+        );
+    } catch (cause) {
+        console.error("Không thể lưu bản nháp nhân khẩu trong phiên.", cause);
+        error.value = "Không thể lưu bản nháp trên trình duyệt.";
+    }
+}
+
+function restoreHouseholdMemberDraft(
+    householdId: number,
+    personId: number | null,
+): void {
+    const key = householdMemberDraftKey(householdId, personId);
+    let raw: string | null;
+    try {
+        raw = sessionStorage.getItem(key);
+    } catch (cause) {
+        console.error("Không thể đọc bản nháp nhân khẩu trong phiên.", cause);
+        error.value = "Không thể khôi phục bản nháp trên trình duyệt.";
+        return;
+    }
+    if (raw === null) return;
+
+    try {
+        const draft = asRow(JSON.parse(raw));
+        restoringHouseholdMemberDraft.value = true;
+        mergeStoredStringFields(memberForm.value, draft.member);
+        mergeStoredStringFields(educationForm.value, draft.education);
+        mergeStoredDisabilityFields(draft.disability);
+    } catch (cause) {
+        console.error("Bản nháp nhân khẩu trong phiên không hợp lệ.", cause);
+        error.value = "Không thể khôi phục bản nháp nhân khẩu đã lưu.";
+    } finally {
+        restoringHouseholdMemberDraft.value = false;
+    }
+}
+
+function clearHouseholdMemberDraft(
+    householdId: number,
+    personId: number | null,
+): void {
+    try {
+        sessionStorage.removeItem(
+            householdMemberDraftKey(householdId, personId),
+        );
+    } catch (cause) {
+        console.error("Không thể xóa bản nháp nhân khẩu trong phiên.", cause);
+        error.value = "Không thể xóa bản nháp nhân khẩu trên trình duyệt.";
+    }
+}
+
+async function restoreHouseholdRoute(): Promise<void> {
+    if (props.moduleKey !== "households" || householdRouteRestoreActive.value) {
+        return;
+    }
+
+    const path = window.location.pathname;
+    const route =
+        /^\/households\/(\d+)\/persons(?:\/create|\/(\d+)\/edit)?\/?$/.exec(
+            path,
+        );
+    if (!route) {
+        if (path === "/households" && createdHouseholdId.value !== null) {
+            configurationFormOpen.value = false;
+            memberEditorOpen.value = false;
+            householdDetail.value = null;
+            createdHouseholdId.value = null;
+            createHouseholdWizardStep.value = 1;
+            selected.value = null;
+        }
+        return;
+    }
+
+    const householdId = Number(route[1]);
+    const personId = route[2] ? Number(route[2]) : null;
+    const isCreateRoute = path.includes("/persons/create");
+    const isHead = isCreateRoute
+        ? new URLSearchParams(window.location.search).get("is_head") !== "0"
+        : false;
+    householdRouteRestoreActive.value = true;
+    try {
+        const response = await api.get<unknown>(`/households/${householdId}`);
+        const responseData = apiData<Row>(response.data);
+        householdDetail.value = asRow(responseData.household ?? responseData);
+        householdDetailReadOnly.value = false;
+        householdListRow.value = householdDetail.value;
+        createdHouseholdId.value = householdId;
+        createHouseholdWizardStep.value = isCreateRoute && isHead ? 2 : 3;
+        configurationFormOpen.value = true;
+        selected.value = null;
+        form.value.school_year = String(
+            householdDetail.value.school_year ?? "",
+        );
+        await refreshHouseholdEditPersons(householdId);
+
+        if (isCreateRoute || personId !== null) {
+            const person =
+                personId === null
+                    ? undefined
+                    : householdEditPersons.value.find(
+                          (row) => Number(row.id) === personId,
+                      ) ?? { id: personId };
+            await beginMember(isHead, person);
+            restoreHouseholdMemberDraft(householdId, personId);
+        }
+    } catch (cause) {
+        error.value = errorMessage(cause);
+    } finally {
+        householdRouteRestoreActive.value = false;
+    }
 }
 
 async function beginMember(isHead: boolean, person?: Row): Promise<void> {
@@ -3620,6 +3795,13 @@ async function beginMember(isHead: boolean, person?: Row): Promise<void> {
     error.value = "";
     householdFormSchoolYears.value = memberSchoolYearOptions;
     memberEditorOpen.value = true;
+    if (isHouseholdCreatePage.value && createdHouseholdId.value !== null) {
+        const route =
+            memberId.value === null
+                ? `/households/${createdHouseholdId.value}/persons/create?is_head=${memberIsHead.value ? "1" : "0"}`
+                : `/households/${createdHouseholdId.value}/persons/${memberId.value}/edit`;
+        setHouseholdUrl(route);
+    }
     try {
         const path =
             memberId.value === null
@@ -3741,6 +3923,8 @@ async function saveMember(): Promise<void> {
     };
     memberBusy.value = true;
     error.value = "";
+    const householdWizardMember = isHouseholdWizardMemberPage.value;
+    const savedMemberId = memberId.value;
     try {
         if (memberId.value === null) {
             await api.post(`/households/${householdId}/persons`, body);
@@ -3753,6 +3937,16 @@ async function saveMember(): Promise<void> {
             memberEditorOpen.value = false;
         }
         await refreshHouseholdEditPersons(householdId);
+        if (householdWizardMember && createdHouseholdId.value !== null) {
+            clearHouseholdMemberDraft(
+                createdHouseholdId.value,
+                savedMemberId,
+            );
+            setHouseholdUrl(
+                `/households/${createdHouseholdId.value}/persons`,
+                true,
+            );
+        }
         notice.value =
             memberId.value === null
                 ? "Đã thêm nhân khẩu."
@@ -3784,6 +3978,7 @@ async function finishHouseholdCreation(): Promise<void> {
     await openHousehold({ id: householdId });
     createdHouseholdId.value = null;
     createHouseholdWizardStep.value = 1;
+    setHouseholdUrl("/households", true);
 }
 
 function goBackHouseholdCreation(): void {
@@ -5790,21 +5985,37 @@ const previousBodyOverflow = document.body.style.overflow;
 watch(configurationFormOpen, (open) => {
     document.body.style.overflow = open ? "hidden" : previousBodyOverflow;
 });
+watch(
+    [memberForm, educationForm, disabilityForm],
+    () => {
+        if (!restoringHouseholdMemberDraft.value) {
+            saveHouseholdMemberDraft();
+        }
+    },
+    { deep: true, flush: "sync" },
+);
+
+function handleHouseholdRouteChange(): void {
+    void restoreHouseholdRoute();
+}
 
 onUnmounted(() => {
     document.body.style.overflow = previousBodyOverflow;
+    window.removeEventListener("popstate", handleHouseholdRouteChange);
     window.removeEventListener(
         HOUSEHOLD_IMPORT_COMPLETED_EVENT,
         handleImportCompleted,
     );
 });
 
-onMounted(() => {
+onMounted(async () => {
     window.addEventListener(
         HOUSEHOLD_IMPORT_COMPLETED_EVENT,
         handleImportCompleted,
     );
-    void load();
+    window.addEventListener("popstate", handleHouseholdRouteChange);
+    await load();
+    await restoreHouseholdRoute();
 });
 </script>
 

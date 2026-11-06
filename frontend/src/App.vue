@@ -97,6 +97,13 @@ function moduleFromUrl(): ModuleKey {
 
 function syncModuleUrl(module: ModuleKey): void {
     const url = new URL(window.location.href);
+    if (
+        module === "households" &&
+        /^\/households\/\d+(?:\/|$)/.test(url.pathname)
+    ) {
+        window.history.replaceState({ module }, "", url);
+        return;
+    }
     const path = module === "import-file" ? "imports" : module;
     url.pathname = path ? `/${path}` : "/";
     window.history.replaceState({ module }, "", url);

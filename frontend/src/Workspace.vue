@@ -6370,14 +6370,14 @@ onMounted(() => void load());
                             v-model="form[field]"
                             required
                         >
-                            <option value="active">Đang nhận phiếu</option>
-                            <option value="paused">Tạm dừng nhận phiếu</option>
+                            <option value="active">Đang hoạt động</option>
+                            <option value="paused">Đã vô hiệu hóa</option>
                         </select>
                         <select
                             v-else-if="field === 'scope_level'"
                             v-model="form[field]"
                             :required="
-                                moduleKey === 'users'
+                                ['roles', 'users'].includes(moduleKey)
                             "
                             :aria-invalid="
                                 Boolean(
@@ -6658,13 +6658,15 @@ onMounted(() => void load());
                                 )
                             "
                             :required="
-                                (moduleKey !== 'roles' &&
+                                ((moduleKey !== 'roles' &&
                                     [
                                         'name',
                                         'username',
                                         'role_id',
                                         'scope_level',
                                     ].includes(field)) ||
+                                    (moduleKey === 'roles' &&
+                                        field === 'name')) ||
                                 (moduleKey === 'households' &&
                                     [
                                         'household_code',
@@ -7128,7 +7130,7 @@ onMounted(() => void load());
                     v-if="moduleKey === 'roles'"
                     class="workspace-field role-permissions-field"
                 >
-                    <span :class="{ 'required-field-label': !editing }">
+                    <span class="required-field-label">
                         Ma trận phân quyền · {{ permissionIds.length }} quyền đã
                         chọn
                     </span>
@@ -8817,11 +8819,9 @@ onMounted(() => void load());
                                 }"
                             >
                                 {{
-                                    row.operational_status === 'paused'
-                                        ? 'Tạm dừng nhận phiếu'
-                                        : row.operational_status === 'merged'
-                                          ? 'Đã gộp'
-                                          : 'Đang hoạt động'
+                                    row.operational_status === 'active'
+                                        ? 'Đang hoạt động'
+                                        : 'Đã vô hiệu hóa'
                                 }}
                             </span>
                             <span

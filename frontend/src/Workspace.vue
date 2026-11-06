@@ -354,7 +354,12 @@ function importStatusLabel(status: unknown): string {
 }
 
 const importFile = ref<File | null>(null);
+const importFileError = ref("");
+const importFileInput = ref<HTMLInputElement | null>(null);
+const importDropActive = ref(false);
+const importSubmitAttempted = ref(false);
 const importHistory = ref<Row[]>([]);
+const importFormLoaded = ref(false);
 const profile = ref<Row | null>(null);
 const selectedSourceCodes = ref<string[]>([]);
 const villageMergeBusy = ref(false);
@@ -2623,7 +2628,8 @@ async function load(): Promise<void> {
             }
             if (
                 props.importView !== "history" &&
-                props.permissions.includes("create-imports")
+                props.permissions.includes("create-imports") &&
+                !importFormLoaded.value
             ) {
                 const settingsResponse = await api.get<unknown>(
                     "/household-imports/form",
@@ -2652,6 +2658,7 @@ async function load(): Promise<void> {
                 }
                 if (form.value.commune_code && !hasInitialVillages)
                     await loadFormVillages(form.value.commune_code);
+                importFormLoaded.value = true;
             }
         } else if (props.moduleKey === "merge") {
             await loadVillageMergeOptions();
@@ -5112,25 +5119,52 @@ async function changePassword(): Promise<void> {
     }
 }
 
-function setImportFile(event: Event): void {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement)) return;
-
-    const file = input.files?.[0] ?? null;
+function setImportFile(file: File | null, input?: HTMLInputElement): void {
     if (file && !/\.(xls|xlsx)$/i.test(file.name)) {
         importFile.value = null;
-        input.value = "";
-        error.value = "Chỉ chấp nhận tệp Excel định dạng .xls hoặc .xlsx.";
+        importFileError.value =
+            "Chỉ chấp nhận tệp Excel định dạng .xls hoặc .xlsx.";
+        if (input) input.value = "";
         return;
     }
 
     importFile.value = file;
+    importFileError.value = "";
     error.value = "";
 }
 
+function handleImportFileChange(event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    setImportFile(input.files?.[0] ?? null, input);
+}
+
+function handleImportDrop(event: DragEvent): void {
+    importDropActive.value = false;
+    setImportFile(event.dataTransfer?.files[0] ?? null);
+    if (importFileInput.value) importFileInput.value.value = "";
+}
+
+function handleImportDragLeave(event: DragEvent): void {
+    const nextTarget = event.relatedTarget;
+    if (
+        nextTarget instanceof Node &&
+        event.currentTarget instanceof Node &&
+        event.currentTarget.contains(nextTarget)
+    ) {
+        return;
+    }
+    importDropActive.value = false;
+}
+
 async function submitImport(): Promise<void> {
-    if (!importFile.value) {
-        error.value = "Vui lòng chọn file Excel.";
+    importSubmitAttempted.value = true;
+    if (
+        !importFile.value ||
+        !form.value.province_code ||
+        !form.value.commune_code ||
+        !form.value.village_code
+    ) {
         return;
     }
     const data = new FormData();
@@ -8448,6 +8482,7 @@ onMounted(() => void load());
                 <form
                     v-if="permissions.includes('create-imports')"
                     class="excel-import-panel excel-import-form"
+                    novalidate
                     @submit.prevent="submitImport"
                 >
                     <div class="excel-location-grid">
@@ -8463,7 +8498,7 @@ onMounted(() => void load());
                             <span>Tỉnh / thành phố</span>
                             <select
                                 v-model="form.province_code"
-                                required
+                                aria-required="true"
                                 @change="changeFormProvince"
                             >
                                 <option value="">Chọn tỉnh / thành phố</option>
@@ -8475,12 +8510,19 @@ onMounted(() => void load());
                                     {{ province.name }}
                                 </option>
                             </select>
+                            <small
+                                v-if="importSubmitAttempted && !form.province_code"
+                                class="field-error"
+                                role="alert"
+                            >
+                                Yêu cầu chọn tỉnh / thành phố.
+                            </small>
                         </label>
                         <label class="workspace-field">
                             <span>Xã / phường</span>
                             <select
                                 v-model="form.commune_code"
-                                required
+                                aria-required="true"
                                 :disabled="!form.province_code"
                                 @change="changeFormCommune"
                             >
@@ -8493,12 +8535,19 @@ onMounted(() => void load());
                                     {{ commune.name }}
                                 </option>
                             </select>
+                            <small
+                                v-if="importSubmitAttempted && !form.commune_code"
+                                class="field-error"
+                                role="alert"
+                            >
+                                Yêu cầu chọn xã / phường.
+                            </small>
                         </label>
                         <label class="workspace-field">
                             <span>Thôn / xóm</span>
                             <select
                                 v-model="form.village_code"
-                                required
+                                aria-required="true"
                                 :disabled="!form.commune_code"
                             >
                                 <option value="">Chọn thôn / xóm</option>
@@ -8510,15 +8559,30 @@ onMounted(() => void load());
                                     {{ village.name }}
                                 </option>
                             </select>
+                            <small
+                                v-if="importSubmitAttempted && !form.village_code"
+                                class="field-error"
+                                role="alert"
+                            >
+                                Yêu cầu chọn thôn / xóm.
+                            </small>
                         </label>
                     </div>
 
-                    <label class="excel-file-drop">
+                    <label
+                        class="excel-file-drop"
+                        :class="{ 'is-drag-active': importDropActive }"
+                        @dragenter.prevent="importDropActive = true"
+                        @dragover.prevent="importDropActive = true"
+                        @dragleave.prevent="handleImportDragLeave"
+                        @drop.prevent="handleImportDrop"
+                    >
                         <input
+                            ref="importFileInput"
                             type="file"
                             accept=".xls,.xlsx"
-                            required
-                            @change="setImportFile"
+                            aria-required="true"
+                            @change="handleImportFileChange"
                         />
                         <span class="excel-file-icon" aria-hidden="true"
                             >↑</span
@@ -8532,12 +8596,26 @@ onMounted(() => void load());
                             >Chỉ hỗ trợ định dạng Excel .xls hoặc .xlsx</small
                         >
                     </label>
+                    <small
+                        v-if="
+                            importFileError ||
+                            (importSubmitAttempted && !importFile)
+                        "
+                        class="field-error excel-file-error"
+                        role="alert"
+                        style="color: #b42318"
+                    >
+                        {{
+                            importFileError ||
+                            "Yêu cầu chọn tệp Excel."
+                        }}
+                    </small>
 
                     <div class="excel-import-actions">
                         <button
                             class="primary-button"
                             type="submit"
-                            :disabled="busy || !importFile"
+                            :disabled="busy"
                         >
                             {{ busy ? "Đang tải lên…" : "Tải dữ liệu lên" }}
                         </button>

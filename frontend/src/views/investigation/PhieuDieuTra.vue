@@ -18,6 +18,7 @@ const villageCode = ref('');
 const locationError = ref('');
 const loadingLocations = ref(false);
 const importModalOpen = ref(false);
+const importModalInitialized = ref(false);
 const importModalView = ref<'upload' | 'history'>('upload');
 
 const householdFilters = computed(() => ({
@@ -34,6 +35,7 @@ const showVillageFilter = computed(() => villages.value.length > 1);
 
 function openImportModal(view: 'upload' | 'history'): void {
     importModalView.value = view;
+    importModalInitialized.value = true;
     importModalOpen.value = true;
 }
 
@@ -89,6 +91,10 @@ watch(communeCode, async (value, previous) => {
 });
 
 onMounted(async () => {
+    if (props.permissions.includes('create-imports')) {
+        importModalInitialized.value = true;
+    }
+
     loadingLocations.value = true;
     try {
         if (!provinceLocked.value) {
@@ -157,7 +163,8 @@ onUnmounted(() => {
             </template>
         </Workspace>
         <div
-            v-if="importModalOpen"
+            v-if="importModalInitialized"
+            v-show="importModalOpen"
             class="workspace-modal-backdrop investigation-import-backdrop"
             role="presentation"
             @click.self="closeImportModal"
@@ -192,7 +199,6 @@ onUnmounted(() => {
                     @click="closeImportModal"
                 >×</button>
                 <Workspace
-                    :key="importModalView"
                     module-key="imports"
                     :permissions="permissions"
                     :import-view="importModalView"

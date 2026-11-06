@@ -8340,6 +8340,11 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     color: #8190a5;
 }
 
+.excel-file-error {
+    display: block;
+    margin-top: 8px;
+}
+
 .excel-import-actions {
     display: flex;
     flex-wrap: wrap;
@@ -8712,7 +8717,9 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-location-grid .workspace-field {
+    align-content: start;
     gap: 7px;
+    grid-template-rows: auto 44px minmax(20px, auto);
 }
 
 .excel-location-grid .workspace-field>span {
@@ -8723,10 +8730,17 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-location-grid input,
 .excel-location-grid select {
+    height: 44px;
     min-height: 44px;
     border-color: #dce4ef;
     border-radius: 10px;
     background-color: #fbfcfe;
+}
+
+.excel-location-grid .field-error {
+    align-self: start;
+    font-size: .76rem;
+    line-height: 20px;
 }
 
 .excel-file-drop {
@@ -8740,7 +8754,8 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-file-drop:hover,
-.excel-file-drop:focus-within {
+.excel-file-drop:focus-within,
+.excel-file-drop.is-drag-active {
     transform: translateY(-1px);
     border-color: #4b83ca;
     background: #f0f6ff;
@@ -9261,9 +9276,9 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     }
 }
 
-.workspace-field:has(input:required, select:required, textarea:required)>span:first-child::after,
+.workspace-field:has(input:required, select:required, textarea:required, [aria-required="true"])>span:first-child::after,
 .login-field:has(input:required, select:required, textarea:required)>span:first-child::after,
-.excel-file-drop:has(input:required)>strong::after,
+.excel-file-drop:has(input[aria-required="true"])>strong::after,
 .required-field-label::after,
 th.is-required::after {
     content: "*";

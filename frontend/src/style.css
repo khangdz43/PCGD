@@ -5749,6 +5749,14 @@ h2 {
     font-size: .78rem;
 }
 
+.workspace-table.household-management-table th.table-numeric-heading {
+    text-align: right;
+}
+
+.workspace-table.household-management-table td.household-members-cell {
+    text-align: right;
+}
+
 .workspace-table.household-management-table .village-row-number {
     width: 58px;
     color: #64748b;
@@ -5783,8 +5791,8 @@ h2 {
     justify-content: flex-end;
 }
 
-.household-management-toolbar-bottom {
-    margin: 0 0 12px;
+.household-toolbar-actions {
+    align-items: center;
 }
 
 .household-list-actions {
@@ -5814,7 +5822,6 @@ h2 {
 
 .household-pagination-footer {
     justify-content: space-between;
-    padding-top: 2px;
 }
 
 .household-pagination-footer .pagination-actions {
@@ -5889,11 +5896,6 @@ h2 {
 
     .household-clear-filter {
         grid-column: auto;
-    }
-
-    .household-management-toolbar-bottom {
-        align-items: flex-start;
-        flex-direction: column;
     }
 
     .household-list-actions {
@@ -7989,17 +7991,13 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .household-unified-filter {
-    grid-template-columns:
-        minmax(180px, 240px)
-        minmax(280px, 360px)
-        minmax(155px, 190px)
-        auto;
-    justify-content: start;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: end;
 }
 
 .household-unified-filter .village-unified-search {
     min-width: 0;
-    max-width: 360px;
+    max-width: none;
     grid-column: auto;
 }
 
@@ -9359,8 +9357,7 @@ th.is-required::after {
 
     .management-toolbar-actions,
     .role-management-toolbar-bottom,
-    .user-management-toolbar-bottom,
-    .household-management-toolbar-bottom {
+    .user-management-toolbar-bottom {
         min-width: 0;
         flex-wrap: wrap;
     }

@@ -5760,75 +5760,73 @@ onMounted(() => void load());
             </div>
         </div>
 
-        <form
-            v-if="moduleKey === 'households'"
-            class="village-unified-filter household-unified-filter"
-            role="search"
-            @submit.prevent="applyHouseholdFilters"
-        >
-            <slot name="toolbar" />
-            <label class="village-unified-search">
-                <span>Tìm theo mã phiếu hoặc tên chủ hộ</span>
-                <span class="village-search-control">
-                    <input
-                        v-model.trim="householdQuery"
-                        type="search"
-                        placeholder="Nhập mã phiếu hoặc tên chủ hộ"
-                    />
-                    <button
-                        class="secondary-button management-tool-button user-search-button"
-                        type="submit"
-                        :disabled="busy"
-                        aria-label="Tìm phiếu điều tra"
-                        title="Tìm phiếu điều tra"
-                    >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="10.8" cy="10.8" r="6.8" />
-                            <path d="m16 16 4.5 4.5" />
-                        </svg>
-                    </button>
-                </span>
-            </label>
-            <label>
-                <span>Năm học</span>
-                <select
-                    v-model="householdSchoolYear"
-                    aria-label="Lọc theo năm học"
-                    @change="applyHouseholdFilters"
-                >
-                    <option value="">Năm học hiện tại</option>
-                    <option value="all">Tất cả năm học</option>
-                    <option
-                        v-for="schoolYear in householdSchoolYearOptions"
-                        :key="schoolYear"
-                        :value="schoolYear"
-                    >
-                        {{ schoolYear }}
-                    </option>
-                </select>
-            </label>
-            <button
-                v-if="householdQuery || householdSchoolYear"
-                class="secondary-button management-tool-button household-clear-filter"
-                type="button"
-                :disabled="busy"
-                @click="
-                    householdQuery = '';
-                    householdSchoolYear = '';
-                    applyHouseholdFilters();
-                "
-            >
-                Xóa lọc
-            </button>
-        </form>
         <div
             v-if="moduleKey === 'households'"
-            class="village-management-toolbar-bottom household-management-toolbar-bottom"
+            class="village-toolbar-row household-toolbar-row"
         >
-            <span class="record-count"
-                >{{ rows.length }} / {{ totalRecords }} bản ghi</span
+            <form
+                class="village-unified-filter household-unified-filter"
+                role="search"
+                @submit.prevent="applyHouseholdFilters"
             >
-            <div class="household-list-actions">
+                <slot name="toolbar" />
+                <label>
+                    <span>Năm học</span>
+                    <select
+                        v-model="householdSchoolYear"
+                        aria-label="Lọc theo năm học"
+                        @change="applyHouseholdFilters"
+                    >
+                        <option value="">Năm học hiện tại</option>
+                        <option value="all">Tất cả năm học</option>
+                        <option
+                            v-for="schoolYear in householdSchoolYearOptions"
+                            :key="schoolYear"
+                            :value="schoolYear"
+                        >
+                            {{ schoolYear }}
+                        </option>
+                    </select>
+                </label>
+                <label class="village-unified-search">
+                    <span>Tìm theo mã phiếu hoặc tên chủ hộ</span>
+                    <span class="village-search-control">
+                        <input
+                            v-model.trim="householdQuery"
+                            type="search"
+                            placeholder="Nhập mã phiếu hoặc tên chủ hộ"
+                        />
+                        <button
+                            class="secondary-button management-tool-button user-search-button"
+                            type="submit"
+                            :disabled="busy"
+                            aria-label="Tìm phiếu điều tra"
+                            title="Tìm phiếu điều tra"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="10.8" cy="10.8" r="6.8" />
+                                <path d="m16 16 4.5 4.5" />
+                            </svg>
+                        </button>
+                    </span>
+                </label>
+                <button
+                    v-if="householdQuery || householdSchoolYear"
+                    class="secondary-button management-tool-button household-clear-filter"
+                    type="button"
+                    :disabled="busy"
+                    @click="
+                        householdQuery = '';
+                        householdSchoolYear = '';
+                        applyHouseholdFilters();
+                    "
+                >
+                    Xóa lọc
+                </button>
+            </form>
+            <div
+                class="village-management-toolbar-bottom household-toolbar-actions household-list-actions"
+            >
                 <button
                     v-if="canDelete && selectedHouseholdIds.length"
                     class="secondary-button danger-button management-tool-button household-bulk-delete-button"
@@ -8784,12 +8782,6 @@ onMounted(() => void load());
                             />
                         </th>
                         <th
-                            v-if="moduleKey === 'households'"
-                            class="village-row-number"
-                        >
-                            STT
-                        </th>
-                        <th
                             v-for="column in info.columns"
                             :key="column"
                             :class="{
@@ -8840,10 +8832,7 @@ onMounted(() => void load());
                     </tr>
                 </thead>
                 <tbody>
-                    <tr
-                        v-for="(row, rowIndex) in rows"
-                        :key="String(row.id ?? row.code)"
-                    >
+                    <tr v-for="row in rows" :key="String(row.id ?? row.code)">
                         <td
                             v-if="moduleKey === 'households' && canDelete"
                             class="household-selection-cell"
@@ -8866,16 +8855,6 @@ onMounted(() => void load());
                             />
                         </td>
                         <td
-                            v-if="moduleKey === 'households'"
-                            class="village-row-number"
-                        >
-                            {{
-                                (currentPage - 1) * householdPageSize +
-                                rowIndex +
-                                1
-                            }}
-                        </td>
-                        <td
                             v-for="column in info.columns"
                             :key="column"
                             :class="{
@@ -8884,6 +8863,9 @@ onMounted(() => void load());
                                 'role-members-cell':
                                     moduleKey === 'roles' &&
                                     column === 'users_count',
+                                'household-members-cell':
+                                    moduleKey === 'households' &&
+                                    column === 'members_count',
                                 'village-name-cell':
                                     ['villages', 'schools'].includes(moduleKey) &&
                                     column === 'name',
@@ -9568,6 +9550,9 @@ onMounted(() => void load());
                     <option :value="100">100</option>
                 </select>
             </label>
+            <span class="record-count">
+                {{ rows.length }} / {{ totalRecords }} bản ghi
+            </span>
             <div
                 class="pagination-actions compact-pagination"
                 aria-label="Phân trang thùng rác"
@@ -9692,19 +9677,24 @@ onMounted(() => void load());
             v-if="moduleKey === 'households'"
             class="user-pagination-footer village-pagination-footer household-pagination-footer"
         >
-            <label class="page-size-control">
-                <span>Mỗi trang</span>
-                <select
-                    v-model.number="householdPageSize"
-                    :disabled="busy"
-                    @change="changeHouseholdPageSize"
-                >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                    <option :value="100">100</option>
-                </select>
-            </label>
+            <div class="village-pagination-summary">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-model.number="householdPageSize"
+                        :disabled="busy"
+                        @change="changeHouseholdPageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                        <option :value="100">100</option>
+                    </select>
+                </label>
+                <span class="record-count">
+                    {{ rows.length }} / {{ totalRecords }} bản ghi
+                </span>
+            </div>
             <div
                 class="pagination-actions compact-pagination"
                 aria-label="Phân trang danh sách phiếu điều tra"

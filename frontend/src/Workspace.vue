@@ -8911,6 +8911,19 @@ onMounted(() => void load());
                                     }}
                                 </small>
                             </div>
+                            <span
+                                v-else-if="
+                                    moduleKey === 'roles' &&
+                                    column === 'users_count'
+                                "
+                                :title="
+                                    row.has_multiple_members
+                                        ? 'Có thêm thành viên ngoài phạm vi đang hiển thị.'
+                                        : undefined
+                                "
+                            >
+                                {{ row.total_users_count ?? pathValue(row, column) }}
+                            </span>
                             <template v-else>
                                 {{ pathValue(row, column) }}
                             </template>
@@ -9239,23 +9252,54 @@ onMounted(() => void load());
                                             <path d="m12.5 4.5 3 3" />
                                         </svg>
                                     </button>
-                                    <button
+                                    <span
                                         v-if="canDelete"
-                                        class="role-icon-button role-delete-button"
-                                        type="button"
-                                        :aria-label="`Xóa nhóm ${row.name}`"
-                                        title="Xóa nhóm"
-                                        @click="remove(row)"
+                                        class="role-delete-control"
+                                        :data-tooltip="
+                                            row.has_members
+                                                ? 'Không thể xóa vì nhóm vẫn còn thành viên.'
+                                                : undefined
+                                        "
+                                        :title="
+                                            row.has_members
+                                                ? 'Không thể xóa vì nhóm vẫn còn thành viên.'
+                                                : undefined
+                                        "
+                                        :aria-label="
+                                            row.has_members
+                                                ? 'Không thể xóa vì nhóm vẫn còn thành viên.'
+                                                : undefined
+                                        "
+                                        :tabindex="
+                                            row.has_members ? 0 : undefined
+                                        "
                                     >
-                                        <svg
-                                            viewBox="0 0 20 20"
-                                            aria-hidden="true"
+                                        <button
+                                            class="role-icon-button role-delete-button"
+                                            type="button"
+                                            :disabled="Boolean(row.has_members)"
+                                            :aria-label="
+                                                row.has_members
+                                                    ? `Không thể xóa nhóm ${row.name} vì còn thành viên`
+                                                    : `Xóa nhóm ${row.name}`
+                                            "
+                                            :title="
+                                                row.has_members
+                                                    ? undefined
+                                                    : 'Xóa nhóm'
+                                            "
+                                            @click="remove(row)"
                                         >
-                                            <path
-                                                d="M4 6h12M8 6V4h4v2m3 0-.7 10H5.7L5 6m3 3v4m4-4v4"
-                                            />
-                                        </svg>
-                                    </button>
+                                            <svg
+                                                viewBox="0 0 20 20"
+                                                aria-hidden="true"
+                                            >
+                                                <path
+                                                    d="M4 6h12M8 6V4h4v2m3 0-.7 10H5.7L5 6m3 3v4m4-4v4"
+                                                />
+                                            </svg>
+                                        </button>
+                                    </span>
                                 </div>
                                 <button
                                     v-if="

@@ -4355,9 +4355,48 @@ h2 {
     color: #b42332;
 }
 
+.role-delete-control {
+    position: relative;
+    display: inline-flex;
+}
+
+.role-delete-control[data-tooltip]::after {
+    position: absolute;
+    z-index: 20;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: max-content;
+    max-width: 240px;
+    padding: 7px 10px;
+    border-radius: 6px;
+    background: #1e293b;
+    color: #fff;
+    content: attr(data-tooltip);
+    font-size: .75rem;
+    font-weight: 500;
+    line-height: 1.4;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(3px);
+    transition: opacity .12s ease, transform .12s ease;
+    visibility: hidden;
+}
+
+.role-delete-control[data-tooltip]:hover::after,
+.role-delete-control[data-tooltip]:focus-visible::after {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
+}
+
 .role-icon-button.role-delete-button:hover {
     border-color: #f3c1c6;
     background: #fff4f4;
+}
+
+.role-icon-button.role-delete-button:disabled {
+    cursor: not-allowed;
+    opacity: .4;
 }
 
 .role-permissions-button {

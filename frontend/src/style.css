@@ -6610,115 +6610,56 @@ button {
     margin: 0 0 20px;
 }
 
-.import-toast-stack {
-    position: fixed;
-    z-index: 1200;
-    top: 20px;
-    right: 24px;
-    display: grid;
-    width: min(440px, calc(100vw - 32px));
-    gap: 10px;
-    pointer-events: none;
+.import-result-backdrop {
+    z-index: 1300;
 }
 
-.import-toast {
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) 28px;
-    align-items: start;
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid #dce5ef;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 14px 40px rgb(25 42 70 / 18%);
-    color: #263b59;
-    pointer-events: auto;
-    animation: import-toast-enter .22s ease-out;
+.import-result-pending-icon {
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px #dbeafe, 0 0 0 6px #f7faff;
+    color: #2563eb;
 }
 
-.import-toast-icon {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    place-items: center;
-    border-radius: 50%;
-    background: #edf4ff;
-    color: #3973c5;
-    font-weight: 800;
-}
-
-.import-toast-content {
-    display: grid;
-    gap: 4px;
-    padding-top: 2px;
-}
-
-.import-toast-content strong {
-    font-size: .88rem;
-}
-
-.import-toast-content p {
-    margin: 0;
-    color: #687991;
-    font-size: .78rem;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-}
-
-.import-toast-history {
-    justify-self: start;
-    margin-top: 4px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: #3973c5;
-    font: inherit;
-    font-size: .75rem;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.import-toast>button {
-    width: 28px;
-    height: 28px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: #8190a5;
-    font-size: 1.25rem;
-    cursor: pointer;
-}
-
-.import-toast>button:hover {
-    background: #f0f3f8;
-    color: #354963;
-}
-
-.import-toast-success .import-toast-icon {
-    background: #e7f6ed;
-    color: #21845a;
-}
-
-.import-toast-partial .import-toast-icon {
-    background: #fff4dc;
+.import-result-partial .account-creation-result-icon {
+    background: #fff8e8;
+    box-shadow: inset 0 0 0 1px #f5d58b, 0 0 0 6px #fffcf4;
     color: #a87310;
 }
 
-.import-toast-failed .import-toast-icon {
-    background: #fdebed;
-    color: #b42335;
+.import-result-partial .account-creation-result-eyebrow,
+.import-result-partial h3 {
+    color: #8a5b08;
 }
 
-@keyframes import-toast-enter {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
+.import-result-success .account-creation-result-eyebrow {
+    color: #19824a;
+}
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.import-result-success h3 {
+    color: #172b22;
+}
+
+.import-result-success>p:not(.account-creation-result-eyebrow) {
+    color: #586b60;
+    font-size: .92rem;
+}
+
+.import-result-queued .account-creation-result-eyebrow {
+    color: #2563eb;
+}
+
+.import-result-queued h3 {
+    color: #1e3a5f;
+}
+
+.import-result-failed h3 {
+    color: #a12622;
+}
+
+.import-result-failed>p:not(.account-creation-result-eyebrow) {
+    color: #6f4845;
+    font-size: .92rem;
+    overflow-wrap: anywhere;
 }
 
 .app-footer {
@@ -9054,12 +8995,6 @@ button {
         flex-basis: 100%;
         margin: 0;
         text-align: center;
-    }
-
-    .import-toast-stack {
-        top: 10px;
-        right: 10px;
-        width: calc(100vw - 20px);
     }
 
     .excel-import-actions {

@@ -15,6 +15,7 @@ import {
     apiRows,
     errorMessage,
     getLocationOptions,
+    HOUSEHOLD_IMPORT_COMPLETED_EVENT,
     HOUSEHOLD_IMPORT_SUBMITTED_EVENT,
     validationErrors,
 } from "./api";
@@ -376,6 +377,8 @@ const importDropActive = ref(false);
 const importSubmitAttempted = ref(false);
 const importHistory = ref<Row[]>([]);
 const importFormLoaded = ref(false);
+let importHistoryRefreshActive = false;
+let importHistoryRefreshPending = false;
 const profile = ref<Row | null>(null);
 const selectedSourceCodes = ref<string[]>([]);
 const villageMergeBusy = ref(false);
@@ -2912,6 +2915,9 @@ async function load(): Promise<void> {
         error.value = errorMessage(cause);
     } finally {
         busy.value = false;
+        if (importHistoryRefreshPending) {
+            void refreshImportHistory();
+        }
     }
 }
 
@@ -5212,6 +5218,14 @@ async function submitImport(): Promise<void> {
     error.value = "";
     notice.value = "";
     try {
+        window.dispatchEvent(
+            new CustomEvent(HOUSEHOLD_IMPORT_SUBMITTED_EVENT, {
+                detail: {
+                    stage: "uploading",
+                    imports: files.map((file) => ({ fileName: file.name })),
+                },
+            }),
+        );
         const response = await api.post<unknown>("/household-imports", data);
         const result = apiData<Record<string, unknown>>(response.data);
         const imports = Array.isArray(result.imports)
@@ -5231,14 +5245,22 @@ async function submitImport(): Promise<void> {
         }
         window.dispatchEvent(
             new CustomEvent(HOUSEHOLD_IMPORT_SUBMITTED_EVENT, {
-                detail: { imports: submittedImports },
+                detail: { stage: "accepted", imports: submittedImports },
             }),
         );
         importFiles.value = [];
         importSubmitAttempted.value = false;
         await load();
     } catch (cause) {
-        error.value = errorMessage(cause);
+        window.dispatchEvent(
+            new CustomEvent(HOUSEHOLD_IMPORT_SUBMITTED_EVENT, {
+                detail: {
+                    stage: "failed",
+                    message: errorMessage(cause),
+                },
+            }),
+        );
+        error.value = "";
     } finally {
         busy.value = false;
     }
@@ -5631,10 +5653,10 @@ async function changePage(direction: -1 | 1): Promise<void> {
 }
 
 watch(
-    () => props.moduleKey,
-    () => {
+    [() => props.moduleKey, () => props.importView],
+    ([moduleKey, importView], [previousModuleKey, previousImportView]) => {
         selectedHouseholdIds.value = [];
-        if (props.moduleKey !== "households") {
+        if (moduleKey !== "households") {
             householdDetail.value = null;
             householdListRow.value = null;
             selectedHouseholdPerson.value = null;
@@ -5644,9 +5666,9 @@ watch(
         form.value = {};
         notice.value = "";
         pendingDelete.value = null;
-        if (props.moduleKey === "users")
+        if (moduleKey === "users")
             canEditAccountConfigurations.value = false;
-        if (props.moduleKey !== "users") {
+        if (moduleKey !== "users") {
             userFiltersInitialized.value = false;
             userFilterProvince.value = "";
             userFilterCommune.value = "";
@@ -5654,7 +5676,17 @@ watch(
             userFilterRole.value = "";
             userFilterQuery.value = "";
         }
-        void load();
+        if (
+            moduleKey !== previousModuleKey ||
+            importView !== previousImportView
+        ) {
+            currentPage.value = 1;
+            if (importView === "upload") {
+                importSubmitAttempted.value = false;
+                importFileError.value = "";
+            }
+            void load();
+        }
     },
 );
 
@@ -5671,24 +5703,6 @@ watch(
 );
 
 watch(
-    () => props.importView,
-    (view, previous) => {
-        if (
-            props.moduleKey === "imports" &&
-            previous !== undefined &&
-            view !== previous
-        ) {
-            currentPage.value = 1;
-            if (view === "upload") {
-                importSubmitAttempted.value = false;
-                importFileError.value = "";
-            }
-            void load();
-        }
-    },
-);
-
-watch(
     () => props.villageFilters,
     () => {
         if (props.moduleKey === "villages") {
@@ -5700,6 +5714,45 @@ watch(
     { deep: true },
 );
 
+async function refreshImportHistory(): Promise<void> {
+    if (
+        props.moduleKey !== "imports" ||
+        props.importView !== "history" ||
+        !props.permissions.includes("view-imports")
+    ) {
+        return;
+    }
+    if (importHistoryRefreshActive || busy.value) {
+        importHistoryRefreshPending = true;
+        return;
+    }
+
+    importHistoryRefreshPending = false;
+    importHistoryRefreshActive = true;
+    try {
+        const response = await api.get<unknown>("/household-imports", {
+            params: { page: currentPage.value, per_page: 4 },
+        });
+        const history = apiData<Row>(response.data);
+        importHistory.value = asRows(history.imports);
+        const page = apiPage<Row>(response.data, history.imports);
+        currentPage.value = page.current_page;
+        lastPage.value = page.last_page;
+        totalRecords.value = page.total;
+    } catch (cause) {
+        console.error("Không thể cập nhật trạng thái lịch sử nhập file.", cause);
+    } finally {
+        importHistoryRefreshActive = false;
+        if (importHistoryRefreshPending && !busy.value) {
+            void refreshImportHistory();
+        }
+    }
+}
+
+function handleImportCompleted(): void {
+    void refreshImportHistory();
+}
+
 const previousBodyOverflow = document.body.style.overflow;
 watch(configurationFormOpen, (open) => {
     document.body.style.overflow = open ? "hidden" : previousBodyOverflow;
@@ -5707,9 +5760,19 @@ watch(configurationFormOpen, (open) => {
 
 onUnmounted(() => {
     document.body.style.overflow = previousBodyOverflow;
+    window.removeEventListener(
+        HOUSEHOLD_IMPORT_COMPLETED_EVENT,
+        handleImportCompleted,
+    );
 });
 
-onMounted(() => void load());
+onMounted(() => {
+    window.addEventListener(
+        HOUSEHOLD_IMPORT_COMPLETED_EVENT,
+        handleImportCompleted,
+    );
+    void load();
+});
 </script>
 
 <template>
@@ -8732,7 +8795,13 @@ onMounted(() => void load());
                 class="excel-import-panel excel-import-history"
             >
                 <p
-                    v-if="importHistory.length === 0"
+                    v-if="busy && importHistory.length === 0"
+                    class="excel-history-empty"
+                >
+                    Đang tải lịch sử tệp…
+                </p>
+                <p
+                    v-else-if="!busy && !error && importHistory.length === 0"
                     class="excel-history-empty"
                 >
                     Chưa có tệp nào được nhập.

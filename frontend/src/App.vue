@@ -12,6 +12,7 @@ import Navbar from "./components/Navbar.vue";
 import Sidebar, { type ModuleKey } from "./components/Sidebar.vue";
 import {
     ACCOUNT_DISABLED_EVENT,
+    HOUSEHOLD_IMPORT_COMPLETED_EVENT,
     HOUSEHOLD_IMPORT_SUBMITTED_EVENT,
     SESSION_EXPIRED_EVENT,
     api,
@@ -45,17 +46,12 @@ const GopTruong = defineAsyncComponent(
     () => import("./views/business/GopTruong.vue"),
 );
 
-type ImportStatus = {
-    status: string;
-    success_rows?: number;
-    error_rows?: number;
-    error_message?: string | null;
-};
 type ImportNotice = {
     id: number;
     type: "queued" | "success" | "partial" | "failed";
     title: string;
     message: string;
+    sourceImportId?: number;
 };
 
 const user = ref<User | null>(null);
@@ -64,12 +60,14 @@ const busy = ref(false);
 const error = ref("");
 const activeModule = ref<ModuleKey>("");
 const accountSection = ref<"profile" | "password">("profile");
-const trackedImports = new Map<number, string>();
 const importNotices = ref<ImportNotice[]>([]);
-const importNoticeTimers = new Map<number, number>();
-let importStatusTimer: number | null = null;
-let importStatusRequestActive = false;
+const activeImportNotice = ref<ImportNotice | null>(null);
+const notifiedImportIds = new Set<number>();
+const pendingImportNotificationAcks = new Set<number>();
+let importNotificationTimer: number | null = null;
+let importNotificationRequestActive = false;
 let nextImportNoticeId = 0;
+let activeUploadNotice: ImportNotice | null = null;
 
 const moduleKeys: ModuleKey[] = [
     "",
@@ -109,10 +107,10 @@ function restoreModuleFromUrl(): void {
 
 const permissions = computed(() => user.value?.permissions ?? []);
 
-function stopImportStatusPolling(): void {
-    if (importStatusTimer !== null) {
-        window.clearInterval(importStatusTimer);
-        importStatusTimer = null;
+function stopImportNotificationPolling(): void {
+    if (importNotificationTimer !== null) {
+        window.clearInterval(importNotificationTimer);
+        importNotificationTimer = null;
     }
 }
 
@@ -120,111 +118,139 @@ function showImportNotice(
     type: ImportNotice["type"],
     title: string,
     message: string,
-): void {
+    sourceImportId?: number,
+): number {
     const id = ++nextImportNoticeId;
-    importNotices.value.push({ id, type, title, message });
-    if (importNotices.value.length > 4) {
-        dismissImportNotice(importNotices.value[0].id);
+    const notice = { id, type, title, message, sourceImportId };
+    importNotices.value.push(notice);
+    if (!activeImportNotice.value) {
+        activeImportNotice.value = notice;
     }
+    return id;
+}
 
-    importNoticeTimers.set(
-        id,
-        window.setTimeout(
-            () => dismissImportNotice(id),
-            type === "queued" ? 6000 : 10000,
-        ),
-    );
+function showNextImportNotice(): void {
+    if (!activeImportNotice.value) {
+        activeImportNotice.value = importNotices.value[0] ?? null;
+    }
 }
 
 function dismissImportNotice(id: number): void {
-    const timer = importNoticeTimers.get(id);
-    if (timer !== undefined) window.clearTimeout(timer);
-    importNoticeTimers.delete(id);
+    const notice = importNotices.value.find((item) => item.id === id);
     importNotices.value = importNotices.value.filter(
         (notice) => notice.id !== id,
     );
+    if (activeImportNotice.value?.id === id) activeImportNotice.value = null;
+    if (notice?.sourceImportId !== undefined) {
+        pendingImportNotificationAcks.add(notice.sourceImportId);
+        void acknowledgeImportNotifications();
+    }
+    showNextImportNotice();
 }
 
-function importCompletionMessage(
-    fileName: string,
-    status: ImportStatus,
-): string {
-    const successRows = status.success_rows ?? 0;
-    const errorRows = status.error_rows ?? 0;
-
-    if (status.status === "SUCCESS") {
-        return `File "${fileName}" đã xử lý xong. Nhập thành công ${successRows} dòng.`;
+function closeImportNotice(notice: ImportNotice): void {
+    if (activeUploadNotice?.id === notice.id) {
+        activeImportNotice.value = null;
+        showNextImportNotice();
+    } else {
+        dismissImportNotice(notice.id);
     }
-    if (status.status === "PARTIAL") {
-        return `File "${fileName}" đã xử lý xong: ${successRows} dòng thành công, ${errorRows} dòng lỗi.`;
-    }
-
-    if (status.error_message) {
-        return `Không thể xử lý file "${fileName}". ${status.error_message}`;
-    }
-
-    return errorRows > 0
-        ? `File "${fileName}" đã xử lý xong nhưng không có dòng nào được nhập: ${errorRows} dòng lỗi. Hãy xem file dòng lỗi trong lịch sử nhập.`
-        : `Hệ thống không thể đọc nội dung file "${fileName}". Hãy kiểm tra lại file Excel.`;
 }
 
-async function pollTrackedImports(): Promise<void> {
-    if (importStatusRequestActive || trackedImports.size === 0) return;
-    if (!user.value) {
-        trackedImports.clear();
-        stopImportStatusPolling();
+async function acknowledgeImportNotifications(): Promise<void> {
+    if (pendingImportNotificationAcks.size === 0) return;
+
+    const ids = [...pendingImportNotificationAcks].slice(0, 5);
+    try {
+        await api.patch("/household-import-notifications/read", { ids });
+        ids.forEach((id) => pendingImportNotificationAcks.delete(id));
+    } catch (cause) {
+        console.error("Không thể đánh dấu thông báo nhập file đã đọc.", cause);
+    }
+}
+
+async function pollImportNotifications(): Promise<void> {
+    if (
+        importNotificationRequestActive ||
+        !permissions.value.includes("create-imports")
+    ) {
         return;
     }
 
-    importStatusRequestActive = true;
+    importNotificationRequestActive = true;
     try {
-        const response = await api.get<unknown>("/household-imports/statuses", {
-            params: { ids: [...trackedImports.keys()] },
-        });
-        const payload = apiData<{ statuses?: unknown }>(response.data);
-        if (
-            typeof payload.statuses !== "object" ||
-            payload.statuses === null ||
-            Array.isArray(payload.statuses)
-        ) {
-            throw new Error(
-                "Máy chủ trả về trạng thái file nhập không hợp lệ.",
-            );
+        const response = await api.get<unknown>(
+            "/household-import-notifications",
+        );
+        const payload = apiData<{ notifications?: unknown }>(response.data);
+        if (!Array.isArray(payload.notifications)) {
+            throw new Error("Máy chủ trả về thông báo nhập file không hợp lệ.");
         }
 
-        const statuses = payload.statuses as Record<string, unknown>;
-        for (const [id, fileName] of trackedImports) {
-            const value = statuses[String(id)];
+        for (const value of payload.notifications) {
             if (typeof value !== "object" || value === null) continue;
-
-            const status = value as ImportStatus;
-            if (!["SUCCESS", "PARTIAL", "FAILED"].includes(status.status)) {
+            const notification = value as Record<string, unknown>;
+            const id = notification.id;
+            const status = notification.status;
+            const message = notification.message;
+            if (
+                typeof id !== "number" ||
+                !Number.isSafeInteger(id) ||
+                typeof message !== "string" ||
+                !["SUCCESS", "PARTIAL", "FAILED"].includes(String(status))
+            ) {
                 continue;
             }
-
-            trackedImports.delete(id);
+            if (notifiedImportIds.has(id)) continue;
+            notifiedImportIds.add(id);
+            window.dispatchEvent(
+                new CustomEvent(HOUSEHOLD_IMPORT_COMPLETED_EVENT, {
+                    detail: { id },
+                }),
+            );
             const type: ImportNotice["type"] =
-                status.status === "SUCCESS"
+                status === "SUCCESS"
                     ? "success"
-                    : status.status === "PARTIAL"
+                    : status === "PARTIAL"
                       ? "partial"
                       : "failed";
             showImportNotice(
                 type,
-                status.status === "SUCCESS"
+                status === "SUCCESS"
                     ? "Nhập dữ liệu thành công"
-                    : status.status === "PARTIAL"
+                    : status === "PARTIAL"
                       ? "Đã xử lý xong, cần kiểm tra"
                       : "Chưa thể nhập dữ liệu",
-                importCompletionMessage(fileName, status),
+                message,
+                id,
             );
         }
-        if (trackedImports.size === 0) stopImportStatusPolling();
+
+        await acknowledgeImportNotifications();
     } catch (cause) {
-        console.error("Không thể kiểm tra trạng thái file nhập.", cause);
+        console.error("Không thể đồng bộ thông báo nhập file.", cause);
     } finally {
-        importStatusRequestActive = false;
+        importNotificationRequestActive = false;
     }
+}
+
+function startImportNotificationPolling(): void {
+    stopImportNotificationPolling();
+    if (!permissions.value.includes("create-imports")) return;
+    void pollImportNotifications();
+    importNotificationTimer = window.setInterval(
+        () => void pollImportNotifications(),
+        5000,
+    );
+}
+
+function clearImportNotifications(): void {
+    stopImportNotificationPolling();
+    notifiedImportIds.clear();
+    pendingImportNotificationAcks.clear();
+    importNotices.value = [];
+    activeImportNotice.value = null;
+    activeUploadNotice = null;
 }
 
 function handleHouseholdImportSubmitted(event: Event): void {
@@ -232,26 +258,93 @@ function handleHouseholdImportSubmitted(event: Event): void {
     if (typeof detail !== "object" || detail === null) return;
 
     const importData = detail as Record<string, unknown>;
+    if (importData.stage === "dismiss") {
+        if (activeUploadNotice) {
+            if (activeImportNotice.value?.id === activeUploadNotice.id) {
+                activeImportNotice.value = null;
+            }
+            activeUploadNotice = null;
+        }
+        showNextImportNotice();
+        return;
+    }
+
+    if (importData.stage === "failed") {
+        if (activeUploadNotice) {
+            if (activeImportNotice.value?.id === activeUploadNotice.id) {
+                activeImportNotice.value = null;
+            }
+            activeUploadNotice = null;
+        }
+        showImportNotice(
+            "failed",
+            "Không thể tải tệp lên",
+            typeof importData.message === "string"
+                ? importData.message
+                : "Đã xảy ra lỗi khi gửi tệp. Vui lòng thử lại.",
+        );
+        return;
+    }
+
     const candidates = Array.isArray(importData.imports)
         ? importData.imports
         : [importData];
     const submittedImports = candidates.flatMap((candidate) => {
         if (typeof candidate !== "object" || candidate === null) return [];
         const item = candidate as Record<string, unknown>;
-        const id = item.id;
         const fileName = item.fileName ?? item.file_name;
-        return typeof id === "number" &&
-            Number.isSafeInteger(id) &&
-            typeof fileName === "string"
-            ? [{ id, fileName }]
+        return typeof fileName === "string"
+            ? [{ fileName }]
             : [];
     });
     if (submittedImports.length === 0) return;
 
-    for (const item of submittedImports) {
-        trackedImports.set(item.id, item.fileName);
-    }
     const count = submittedImports.length;
+    if (importData.stage === "uploading") {
+        if (activeUploadNotice) {
+            if (activeImportNotice.value?.id === activeUploadNotice.id) {
+                activeImportNotice.value = null;
+            }
+        }
+        activeUploadNotice = {
+            id: ++nextImportNoticeId,
+            type: "queued",
+            title:
+                count === 1
+                    ? "Đang tải tệp Excel lên"
+                    : `Đang tải ${count} tệp Excel lên`,
+            message:
+                count === 1
+                    ? `Tệp "${submittedImports[0].fileName}" đang được gửi. Bạn có thể tiếp tục làm việc sau khi đóng thông báo này.`
+                    : `${count} tệp đang được gửi. Bạn có thể tiếp tục làm việc sau khi đóng thông báo này.`,
+        };
+        if (!activeImportNotice.value) {
+            activeImportNotice.value = activeUploadNotice;
+        }
+        return;
+    }
+
+    if (importData.stage === "accepted") {
+        if (activeUploadNotice) {
+            const notice: ImportNotice = {
+                ...activeUploadNotice,
+                title:
+                    count === 1
+                        ? "Đã nhận tệp Excel"
+                        : `Đã nhận ${count} tệp Excel`,
+                message:
+                    count === 1
+                        ? `Tệp "${submittedImports[0].fileName}" đã được tiếp nhận và đang xử lý. Bạn có thể tiếp tục làm việc; hệ thống sẽ thông báo khi hoàn tất.`
+                        : `${count} tệp đã được tiếp nhận và đang xử lý. Bạn có thể tiếp tục làm việc; hệ thống sẽ thông báo khi hoàn tất.`,
+            };
+            if (activeImportNotice.value?.id === notice.id) {
+                activeImportNotice.value = notice;
+            }
+            activeUploadNotice = null;
+        }
+        return;
+    }
+
     showImportNotice(
         "queued",
         count === 1 ? "Đã nhận tệp Excel" : `Đã nhận ${count} tệp Excel`,
@@ -259,13 +352,6 @@ function handleHouseholdImportSubmitted(event: Event): void {
             ? `Tệp "${submittedImports[0].fileName}" đang chờ hệ thống xử lý. Bạn có thể tiếp tục làm việc.`
             : `${count} tệp đang chờ hệ thống xử lý. Bạn có thể tiếp tục làm việc; hệ thống sẽ thông báo kết quả từng tệp.`,
     );
-    if (importStatusTimer === null) {
-        importStatusTimer = window.setInterval(
-            () => void pollTrackedImports(),
-            10000,
-        );
-    }
-    void pollTrackedImports();
 }
 
 const pageTitles: Record<ModuleKey, string> = {
@@ -303,8 +389,7 @@ const activeView = computed(() => {
 });
 
 function handleAccountDisabled(): void {
-    trackedImports.clear();
-    stopImportStatusPolling();
+    clearImportNotifications();
     user.value = null;
     activeModule.value = "";
     error.value =
@@ -313,8 +398,7 @@ function handleAccountDisabled(): void {
 
 function handleSessionExpired(): void {
     if (!user.value) return;
-    trackedImports.clear();
-    stopImportStatusPolling();
+    clearImportNotifications();
     user.value = null;
     activeModule.value = "";
     error.value = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
@@ -337,6 +421,7 @@ onMounted(async () => {
         sessionChecked.value = true;
         restoreModuleFromUrl();
         syncModuleUrl(activeModule.value);
+        startImportNotificationPolling();
     }
 });
 
@@ -363,9 +448,7 @@ watch(
 );
 window.addEventListener("popstate", restoreModuleFromUrl);
 onUnmounted(() => {
-    stopImportStatusPolling();
-    for (const timer of importNoticeTimers.values()) window.clearTimeout(timer);
-    importNoticeTimers.clear();
+    clearImportNotifications();
     window.removeEventListener("popstate", restoreModuleFromUrl);
     window.removeEventListener(ACCOUNT_DISABLED_EVENT, handleAccountDisabled);
     window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
@@ -388,6 +471,7 @@ async function submitLogin(credentials: {
             credentials.password,
             credentials.remember,
         );
+        startImportNotificationPolling();
         activeModule.value = "";
     } catch (cause) {
         error.value = errorMessage(cause);
@@ -401,8 +485,7 @@ async function submitLogout(): Promise<void> {
     error.value = "";
     try {
         await logout();
-        trackedImports.clear();
-        stopImportStatusPolling();
+        clearImportNotifications();
         user.value = null;
         activeModule.value = "";
     } catch (cause) {
@@ -471,50 +554,76 @@ function updateCurrentUserName(profile: { name: string }): void {
                     {{ error }}
                 </p>
                 <div
-                    class="import-toast-stack"
-                    aria-live="polite"
-                    aria-relevant="additions"
+                    v-if="activeImportNotice"
+                    class="workspace-modal-backdrop account-creation-result-backdrop import-result-backdrop"
+                    role="presentation"
+                    @click.self="closeImportNotice(activeImportNotice)"
+                    @keydown.esc="closeImportNotice(activeImportNotice)"
                 >
                     <section
-                        v-for="notice in importNotices"
-                        :key="notice.id"
-                        class="import-toast"
-                        :class="`import-toast-${notice.type}`"
-                        role="status"
+                        class="confirm-dialog account-creation-result-dialog import-result-dialog"
+                        :class="`import-result-${activeImportNotice.type}`"
+                        role="alertdialog"
+                        aria-modal="true"
+                        aria-labelledby="import-result-title"
+                        aria-describedby="import-result-message"
+                        tabindex="-1"
                     >
-                        <span class="import-toast-icon" aria-hidden="true">
+                        <span
+                            class="confirm-dialog-icon account-creation-result-icon"
+                            :class="{
+                                'account-creation-success-icon':
+                                    activeImportNotice.type === 'success',
+                                'import-result-pending-icon':
+                                    activeImportNotice.type === 'queued',
+                                'import-result-partial-icon':
+                                    activeImportNotice.type === 'partial',
+                                'account-action-failure-icon':
+                                    activeImportNotice.type === 'failed',
+                            }"
+                            aria-hidden="true"
+                        >
                             {{
-                                notice.type === "success"
+                                activeImportNotice.type === "success"
                                     ? "✓"
-                                    : notice.type === "failed"
+                                    : activeImportNotice.type === "failed"
                                       ? "!"
-                                      : notice.type === "partial"
+                                      : activeImportNotice.type === "partial"
                                         ? "•"
                                         : "↻"
                             }}
                         </span>
-                        <div class="import-toast-content">
-                            <strong>{{ notice.title }}</strong>
-                            <p>{{ notice.message }}</p>
+                        <p class="account-creation-result-eyebrow">
+                            {{
+                                activeImportNotice.type === "success"
+                                    ? "HOÀN TẤT"
+                                    : activeImportNotice.type === "failed"
+                                      ? "CHƯA THÀNH CÔNG"
+                                      : activeImportNotice.type === "partial"
+                                        ? "CẦN KIỂM TRA"
+                                        : "ĐANG XỬ LÝ"
+                            }}
+                        </p>
+                        <h3 id="import-result-title">
+                            {{ activeImportNotice.title }}
+                        </h3>
+                        <p id="import-result-message">
+                            {{ activeImportNotice.message }}
+                        </p>
+                        <div class="confirm-dialog-actions">
                             <button
-                                v-if="notice.type !== 'queued'"
-                                class="import-toast-history"
+                                class="primary-button management-tool-button"
                                 type="button"
-                                @click="
-                                    activeModule = 'import-history';
-                                    dismissImportNotice(notice.id);
-                                "
+                                autofocus
+                                @click="closeImportNotice(activeImportNotice)"
                             >
-                                Xem lịch sử nhập
+                                {{
+                                    activeImportNotice.type === "queued"
+                                        ? "Tiếp tục làm việc"
+                                        : "Đóng"
+                                }}
                             </button>
                         </div>
-                        <button
-                            type="button"
-                            aria-label="Đóng thông báo"
-                            @click="dismissImportNotice(notice.id)"
-                        >
-                            ×
-                        </button>
                     </section>
                 </div>
                 <Dashboard

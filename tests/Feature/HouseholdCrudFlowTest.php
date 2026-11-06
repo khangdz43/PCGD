@@ -1889,6 +1889,7 @@ class HouseholdCrudFlowTest extends TestCase
             'success_rows' => 3,
             'error_rows' => 2,
             'file_path' => 'household-imports/failed/source.xlsx',
+            'context' => ['processing_error' => 'Tác vụ gặp lỗi khi đọc file.'],
         ]);
         $partial = $this->createImportLog($user, [
             'status' => 'PARTIAL',
@@ -1915,6 +1916,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'id' => $failed->id,
                 'status' => 'FAILED',
                 'action_label' => 'Xem',
+                'message' => 'Không thể xử lý file "households.xlsx". Tác vụ gặp lỗi khi đọc file.',
             ])
             ->assertJsonFragment([
                 'id' => $partial->id,
@@ -1936,6 +1938,32 @@ class HouseholdCrudFlowTest extends TestCase
         $this->getJson('/api/v1/household-import-notifications')
             ->assertOk()
             ->assertJsonPath('data.notifications', []);
+    }
+
+    public function test_failed_import_job_sets_a_terminal_status_and_notifies_the_owner(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $importLog = $this->createImportLog($user, ['status' => 'PROCESSING']);
+
+        (new ProcessHouseholdImport($importLog->id))->failed(new \RuntimeException('Internal queue failure.'));
+
+        $this->assertDatabaseHas('import_logs', [
+            'id' => $importLog->id,
+            'status' => 'FAILED',
+        ]);
+        self::assertSame(
+            'Tác vụ nhập dữ liệu kết thúc ngoài dự kiến. Hãy xem nhật ký hệ thống để biết thêm chi tiết.',
+            $importLog->fresh()->context['processing_error'],
+        );
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/household-import-notifications')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $importLog->id,
+                'status' => 'FAILED',
+                'message' => 'Không thể xử lý file "households.xlsx". Tác vụ nhập dữ liệu kết thúc ngoài dự kiến. Hãy xem nhật ký hệ thống để biết thêm chi tiết.',
+            ]);
     }
 
     private function createSchema(): void

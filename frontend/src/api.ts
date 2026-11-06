@@ -23,6 +23,7 @@ export const api = axios.create({
 export const ACCOUNT_DISABLED_EVENT = 'pcgd:account-disabled';
 export const SESSION_EXPIRED_EVENT = 'pcgd:session-expired';
 export const HOUSEHOLD_IMPORT_SUBMITTED_EVENT = 'pcgd:household-import-submitted';
+export const HOUSEHOLD_IMPORT_COMPLETED_EVENT = 'pcgd:household-import-completed';
 
 let refreshCsrfPromise: Promise<unknown> | null = null;
 const locationOptionsCache = new Map<string, {

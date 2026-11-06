@@ -755,6 +755,40 @@ h2 {
     font-size: .76rem;
 }
 
+.household-detail-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e7edf5;
+    border-top: 0;
+    border-radius: 0 0 10px 10px;
+    color: #64748b;
+    font-size: .8rem;
+}
+
+.household-detail-pagination > div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.household-detail-pagination button {
+    min-height: 32px;
+    padding: 5px 10px;
+    border: 1px solid #dbe3ee;
+    border-radius: 7px;
+    background: #fff;
+    color: #334155;
+    font: inherit;
+}
+
+.household-detail-pagination button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
 .household-view-member-table td {
     height: 36px;
     overflow: hidden;
@@ -3315,6 +3349,13 @@ h2 {
 
 .household-edit-members-heading h4 {
     margin: 3px 0 0;
+}
+
+.household-edit-members-heading .household-view-member-count {
+    color: #718198;
+    font-size: .76rem;
+    font-weight: 400;
+    letter-spacing: normal;
 }
 
 .household-edit-members-table-wrap {

@@ -122,6 +122,54 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
     }
 
+    public function test_household_edit_loads_current_education_and_only_necessary_fallback(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::UPDATE_HOUSEHOLDS]);
+        $household = $this->createHousehold(['school_year' => '2026-2027']);
+        $currentPerson = $this->createPerson($household, [
+            'first_name' => 'A',
+            'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $fallbackPerson = $this->createPerson($household, [
+            'first_name' => 'B',
+            'relationship_with_head' => 'Con',
+        ]);
+        DB::table('person_educations')->insert([
+            [
+                'person_id' => $currentPerson->id,
+                'school_year' => '2024-2025',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'person_id' => $currentPerson->id,
+                'school_year' => '2026-2027',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'person_id' => $fallbackPerson->id,
+                'school_year' => '2023-2024',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'person_id' => $fallbackPerson->id,
+                'school_year' => '2024-2025',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.households.edit', $household))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.persons.0.educations')
+            ->assertJsonPath('data.persons.0.educations.0.school_year', '2026-2027')
+            ->assertJsonCount(1, 'data.persons.1.educations')
+            ->assertJsonPath('data.persons.1.educations.0.school_year', '2023-2024');
+    }
+
     public function test_user_cannot_open_a_household_outside_their_commune_even_with_view_permission(): void
     {
         $user = $this->userWithPermissions([AccessPermission::VIEW_HOUSEHOLDS]);

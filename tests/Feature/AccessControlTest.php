@@ -5389,6 +5389,24 @@ class AccessControlTest extends TestCase
 
     public function test_household_access_is_limited_to_assigned_commune(): void
     {
+        Schema::table('persons', function (Blueprint $table): void {
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->string('gender')->nullable();
+            $table->string('ethnicity_code')->nullable();
+            $table->string('relationship_with_head')->nullable();
+        });
+        Schema::create('ethnicities', function (Blueprint $table): void {
+            $table->string('code')->primary();
+            $table->string('name');
+            $table->timestamps();
+        });
+        Schema::create('person_disabilities', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('person_id');
+            $table->timestamps();
+        });
+
         DB::table('provinces')->insert([
             ['code' => 'P1', 'name' => 'Tỉnh một', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'P2', 'name' => 'Tỉnh hai', 'created_at' => now(), 'updated_at' => now()],
@@ -5401,6 +5419,17 @@ class AccessControlTest extends TestCase
             ['household_code' => '01', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'head_first_name' => 'Trong vùng', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '02', 'school_year' => '2026-2027', 'province_code' => 'P2', 'commune_code' => 'C2', 'head_first_name' => 'Ngoài vùng', 'created_at' => now(), 'updated_at' => now()],
         ]);
+        DB::table('persons')->insert(array_map(
+            fn (int $index): array => [
+                'household_id' => 1,
+                'first_name' => 'Tên '.$index,
+                'last_name' => 'Họ',
+                'relationship_with_head' => $index === 1 ? 'Chủ hộ' : 'Con',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            range(1, 17),
+        ));
 
         $role = Role::create(['name' => 'commune-viewer', 'scope_level' => 'commune', 'guard_name' => 'web']);
         $permission = Permission::create([
@@ -5430,6 +5459,14 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.household_code', '01')
             ->assertJsonCount(0, 'data.persons');
+        $this->getJson(route('api.households.persons.index', 1).'?page=1&per_page=15')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 17)
+            ->assertJsonCount(15, 'data')
+            ->assertJsonPath('data.0.relationship_with_head', 'Chủ hộ');
+        $this->getJson(route('api.households.persons.index', 1).'?page=2&per_page=15')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
         $this->actingAs($user)->getJson(route('api.households.show', 2))->assertNotFound();
     }
 

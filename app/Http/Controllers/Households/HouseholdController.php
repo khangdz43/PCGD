@@ -94,7 +94,7 @@ class HouseholdController extends Controller
         /** @var User $user */
         $user = request()->user();
         $provinces = $this->households->provincesFor($user);
-        ['persons' => $persons] = $this->households->details($household);
+        ['persons' => $persons] = $this->households->details($household, $household->school_year);
 
         return response()->json([
             'household' => $household,

@@ -104,21 +104,38 @@ class HouseholdService
         return $query->get(['code', 'name']);
     }
 
-    public function details(Household $household): array
+    public function details(Household $household, ?string $schoolYear = null): array
     {
         $household->load('province', 'commune', 'village');
-        $persons = $household->persons()
-            ->withDetails()
+        $personsQuery = $household->persons()
             ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get();
+            ->orderBy('first_name');
+        if ($schoolYear === null) {
+            $personsQuery->withDetails();
+        } else {
+            $personsQuery->with([
+                'ethnicity',
+                'disability',
+                'educations' => fn ($query) => $query
+                    ->where(function ($educationQuery) use ($schoolYear): void {
+                        $educationQuery->where('school_year', $schoolYear)
+                            ->orWhereRaw(
+                                '(NOT EXISTS (SELECT 1 FROM person_educations AS matching_education WHERE matching_education.person_id = person_educations.person_id AND matching_education.school_year = ?) AND id = (SELECT MIN(fallback_education.id) FROM person_educations AS fallback_education WHERE fallback_education.person_id = person_educations.person_id))',
+                                [$schoolYear],
+                            );
+                    })
+                    ->with('school')
+                    ->orderBy('id'),
+            ]);
+        }
+        $persons = $personsQuery->get();
 
         return [
             'persons' => $persons,
             'headPerson' => $persons->firstWhere('relationship_with_head', 'Chủ hộ'),
-            'hasAnyHouseholdHead' => $household->persons()
-                ->where('relationship_with_head', 'Chủ hộ')
-                ->exists(),
+            'hasAnyHouseholdHead' => $persons->contains(
+                fn ($person): bool => $person->relationship_with_head === 'Chủ hộ'
+            ),
         ];
     }
 

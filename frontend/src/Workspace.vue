@@ -367,16 +367,34 @@ const roleFilterQuery = ref("");
 const villagePageSize = ref(10);
 const schoolPageSize = ref(10);
 const householdPageSize = ref(10);
+const householdDetailPageSize = 15;
+const householdEditPageSize = 15;
 const householdDetail = ref<Row | null>(null);
 const householdDetailReadOnly = ref(false);
 const householdListRow = ref<Row | null>(null);
+const householdDetailPage = ref(1);
+const householdDetailLastPage = ref(1);
+const householdDetailTotal = ref(0);
+const householdEditPage = ref(1);
 const householdEditPersons = ref<Row[]>([]);
 const inlineHouseholdPersonBaseline = ref<Record<string, string>>({});
 const householdLoading = ref(false);
+const householdDetailPageLoading = ref(false);
 const selectedHouseholdPerson = ref<Row | null>(null);
 const pendingHouseholdPersonDelete = ref<Row | null>(null);
 const memberBusy = ref(false);
 const memberFormErrors = ref<Record<string, string>>({});
+const householdEditPageCount = computed(() =>
+    Math.max(
+        1,
+        Math.ceil(householdEditPersons.value.length / householdEditPageSize),
+    ),
+);
+watch(householdEditPageCount, (lastPage) => {
+    if (householdEditPage.value > lastPage) {
+        householdEditPage.value = lastPage;
+    }
+});
 const householdQuery = ref("");
 const householdSchoolYear = ref("");
 const householdFormSchoolYears = ref<string[]>([]);
@@ -1696,7 +1714,7 @@ const householdPersons = computed(() => {
     const persons = asRows(householdDetail.value?.persons);
     const head = asRow(householdDetail.value?.head);
     let members = persons;
-    if (Object.keys(head).length) {
+    if (householdDetailPage.value === 1 && Object.keys(head).length) {
         const headId = head.id;
         const headIndex =
             headId === undefined
@@ -2939,6 +2957,7 @@ function newFormValues(): Record<string, string> {
 }
 
 async function beginEdit(row?: Row): Promise<void> {
+    householdEditPage.value = 1;
     householdDetailReadOnly.value = false;
     configurationFormOpen.value = true;
     selected.value = row ?? null;
@@ -3221,35 +3240,75 @@ async function openHousehold(row: Row): Promise<void> {
     householdDetailReadOnly.value = true;
     householdLoading.value = true;
     householdListRow.value = row;
-    const cachedPersons = asRows(row.persons);
-    if (householdDetail.value?.id !== id) {
-        householdDetail.value = {
-            ...row,
-            persons: cachedPersons,
-            members_count:
-                cachedPersons.length ||
-                Number(row.members_count ?? row.persons_count ?? 0),
-        };
-    }
+    householdDetailPage.value = 1;
+    householdDetailLastPage.value = 1;
+    householdDetailTotal.value = Number(row.members_count ?? row.persons_count ?? 0);
+    householdDetail.value = {
+        ...(householdDetail.value?.id === id
+            ? householdDetail.value
+            : row),
+        persons: [],
+    };
     try {
-        const householdResponse = await api.get<unknown>(`/households/${id}`);
+        const [householdResponse, personsResponse] = await Promise.all([
+            api.get<unknown>(`/households/${id}`),
+            api.get<unknown>(`/households/${id}/persons`, {
+                params: { page: 1, per_page: householdDetailPageSize },
+            }),
+        ]);
         const responseData = apiData<Row>(householdResponse.data);
         const household = asRow(responseData.household ?? responseData);
-        const persons = asRows(
-            responseData.persons ?? household.persons ?? cachedPersons,
-        );
+        const personsPage = apiPage<Row>(personsResponse.data);
         householdDetail.value = {
             ...household,
             head: responseData.head,
             has_household_head: responseData.has_household_head,
-            persons,
+            persons: personsPage.data,
         };
+        householdDetailPage.value = personsPage.current_page;
+        householdDetailLastPage.value = personsPage.last_page;
+        householdDetailTotal.value = personsPage.total;
         memberEditorOpen.value = false;
         error.value = "";
     } catch (cause) {
         error.value = errorMessage(cause);
     } finally {
         householdLoading.value = false;
+    }
+}
+
+async function loadHouseholdDetailPage(
+    page: number,
+    forceReload = false,
+): Promise<void> {
+    const householdId = householdDetail.value?.id;
+    if (
+        householdId === undefined ||
+        page < 1 ||
+        page > householdDetailLastPage.value ||
+        (!forceReload && page === householdDetailPage.value) ||
+        householdDetailPageLoading.value
+    ) {
+        return;
+    }
+
+    householdDetailPageLoading.value = true;
+    error.value = "";
+    try {
+        const response = await api.get<unknown>(
+            `/households/${householdId}/persons`,
+            { params: { page, per_page: householdDetailPageSize } },
+        );
+        const personsPage = apiPage<Row>(response.data);
+        if (householdDetail.value?.id !== householdId) return;
+        householdDetail.value.persons = personsPage.data;
+        householdDetailPage.value = personsPage.current_page;
+        householdDetailLastPage.value = personsPage.last_page;
+        householdDetailTotal.value = personsPage.total;
+    } catch (cause) {
+        error.value = errorMessage(cause);
+    } finally {
+        householdDetailPageLoading.value = false;
     }
 }
 
@@ -3288,6 +3347,9 @@ function closeHouseholdDetail(): void {
     householdDetail.value = null;
     householdDetailReadOnly.value = false;
     householdListRow.value = null;
+    householdDetailPage.value = 1;
+    householdDetailLastPage.value = 1;
+    householdDetailTotal.value = 0;
     selectedHouseholdPerson.value = null;
     memberEditorOpen.value = false;
 }
@@ -3714,9 +3776,8 @@ async function refreshHouseholdEditPersons(
     const page = apiPage<Row>(response.data);
     householdEditPersons.value = normalizeInlineHouseholdPersons(page.data);
     saveInlineHouseholdPersonBaseline(householdEditPersons.value);
-    if (householdDetail.value?.id === householdId) {
-        householdDetail.value.persons = page.data;
-        householdDetail.value.members_count = page.data.length;
+    if (String(householdDetail.value?.id) === String(householdId)) {
+        await loadHouseholdDetailPage(householdDetailPage.value, true);
     }
 }
 
@@ -3977,6 +4038,7 @@ async function addInlineHouseholdMember(): Promise<void> {
         },
     });
 
+    householdEditPage.value = householdEditPageCount.value;
     await nextTick();
     const newRowIndex = householdEditPersons.value.length - 1;
     const input = document.querySelector<HTMLInputElement>(
@@ -4153,17 +4215,6 @@ async function confirmDeleteMember(): Promise<void> {
         const result = apiData<Row>(response.data);
         if (householdDetail.value) await openHousehold({ id: householdId });
         await refreshHouseholdEditPersons(householdId);
-        const currentDetail = householdDetail.value;
-        if (currentDetail) {
-            currentDetail.persons = asRows(currentDetail.persons).filter(
-                (member) => String(member.id) !== String(person.id),
-            );
-            currentDetail.members_count = asRows(currentDetail.persons).length;
-            if (result.is_household_head === true) {
-                currentDetail.head = null;
-                currentDetail.has_household_head = false;
-            }
-        }
         pendingHouseholdPersonDelete.value = null;
         managementResult.value = {
             success: true,
@@ -7381,6 +7432,9 @@ onMounted(() => void load());
                             <span>THEO MẪU EXCEL</span>
                             <h4>Danh sách nhân khẩu</h4>
                         </div>
+                        <span class="household-view-member-count">
+                            {{ householdEditPersons.length }} nhân khẩu
+                        </span>
                         <button
                             v-if="permissions.includes('create-households')"
                             class="secondary-button"
@@ -7462,7 +7516,7 @@ onMounted(() => void load());
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr
+                                <template
                                     v-for="(
                                         person, index
                                     ) in householdEditPersons"
@@ -7470,6 +7524,15 @@ onMounted(() => void load());
                                         person.id === undefined
                                             ? `new-${index}`
                                             : String(person.id)
+                                    "
+                                >
+                                <tr
+                                    v-if="
+                                        Math.floor(
+                                            index / householdEditPageSize,
+                                        ) +
+                                            1 ===
+                                        householdEditPage
                                     "
                                 >
                                     <td>{{ index + 1 }}</td>
@@ -7931,8 +7994,51 @@ onMounted(() => void load());
                                         </button>
                                     </td>
                                 </tr>
+                                </template>
                             </tbody>
                         </table>
+                    </div>
+                    <div
+                        v-if="householdEditPageCount > 1"
+                        class="household-detail-pagination"
+                        aria-label="Phân trang nhân khẩu"
+                    >
+                        <span aria-live="polite">
+                            {{
+                                (householdEditPage - 1) *
+                                    householdEditPageSize +
+                                1
+                            }}–{{
+                                Math.min(
+                                    householdEditPage *
+                                        householdEditPageSize,
+                                    householdEditPersons.length,
+                                )
+                            }}
+                            / {{ householdEditPersons.length }} nhân khẩu
+                        </span>
+                        <div>
+                            <button
+                                type="button"
+                                :disabled="householdEditPage <= 1"
+                                @click="householdEditPage--"
+                            >
+                                Trước
+                            </button>
+                            <span>
+                                Trang {{ householdEditPage }} /
+                                {{ householdEditPageCount }}
+                            </span>
+                            <button
+                                type="button"
+                                :disabled="
+                                    householdEditPage >= householdEditPageCount
+                                "
+                                @click="householdEditPage++"
+                            >
+                                Sau
+                            </button>
+                        </div>
                     </div>
                 </section>
                 <div
@@ -9853,7 +9959,6 @@ onMounted(() => void load());
             v-if="moduleKey === 'households' && householdDetail"
             class="workspace-modal-backdrop household-detail-backdrop"
             role="presentation"
-            @click.self="closeHouseholdDetail"
             @keydown.esc="closeHouseholdDetail"
         >
             <section
@@ -9932,8 +10037,8 @@ onMounted(() => void load());
                     </div>
                 </header>
 
-                <p
-                    v-if="householdLoading"
+                        <p
+                            v-if="householdLoading || householdDetailPageLoading"
                     class="household-detail-loading"
                     role="status"
                 >
@@ -10088,7 +10193,7 @@ onMounted(() => void load());
                                 <h4 id="household-members-title">Danh sách nhân khẩu</h4>
                             </div>
                             <span class="household-view-member-count">
-                                {{ householdPersons.length }} nhân khẩu
+                                {{ householdDetailTotal }} nhân khẩu
                             </span>
                         </div>
                         <div class="household-edit-members-table-wrap">
@@ -10151,7 +10256,14 @@ onMounted(() => void load());
                                         v-for="(person, index) in householdPersons"
                                         :key="`readonly-${String(person.id ?? index)}`"
                                     >
-                                        <td>{{ index + 1 }}</td>
+                                        <td>
+                                            {{
+                                                (householdDetailPage - 1) *
+                                                    householdDetailPageSize +
+                                                index +
+                                                1
+                                            }}
+                                        </td>
                                         <td
                                             v-for="column in householdViewMemberColumns"
                                             :key="column.key"
@@ -10227,6 +10339,61 @@ onMounted(() => void load());
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+                        <div
+                            v-if="householdDetailLastPage > 1"
+                            class="household-detail-pagination"
+                            aria-label="Phân trang nhân khẩu"
+                        >
+                            <span aria-live="polite">
+                                {{
+                                    (householdDetailPage - 1) *
+                                        householdDetailPageSize +
+                                    1
+                                }}–{{
+                                    Math.min(
+                                        householdDetailPage *
+                                            householdDetailPageSize,
+                                        householdDetailTotal,
+                                    )
+                                }}
+                                / {{ householdDetailTotal }} nhân khẩu
+                            </span>
+                            <div>
+                                <button
+                                    type="button"
+                                    :disabled="
+                                        householdDetailPageLoading ||
+                                        householdDetailPage <= 1
+                                    "
+                                    @click="
+                                        loadHouseholdDetailPage(
+                                            householdDetailPage - 1,
+                                        )
+                                    "
+                                >
+                                    Trước
+                                </button>
+                                <span>
+                                    Trang {{ householdDetailPage }} /
+                                    {{ householdDetailLastPage }}
+                                </span>
+                                <button
+                                    type="button"
+                                    :disabled="
+                                        householdDetailPageLoading ||
+                                        householdDetailPage >=
+                                            householdDetailLastPage
+                                    "
+                                    @click="
+                                        loadHouseholdDetailPage(
+                                            householdDetailPage + 1,
+                                        )
+                                    "
+                                >
+                                    Sau
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div class="household-section-title">

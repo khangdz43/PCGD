@@ -66,6 +66,7 @@ const notifiedImportIds = new Set<number>();
 const pendingImportNotificationAcks = new Set<number>();
 let importNotificationTimer: number | null = null;
 let importNotificationRequestActive = false;
+let importNotificationPollRequested = false;
 let nextImportNoticeId = 0;
 let activeUploadNotice: ImportNotice | null = null;
 
@@ -109,7 +110,7 @@ const permissions = computed(() => user.value?.permissions ?? []);
 
 function stopImportNotificationPolling(): void {
     if (importNotificationTimer !== null) {
-        window.clearInterval(importNotificationTimer);
+        window.clearTimeout(importNotificationTimer);
         importNotificationTimer = null;
     }
 }
@@ -170,22 +171,33 @@ async function acknowledgeImportNotifications(): Promise<void> {
 }
 
 async function pollImportNotifications(): Promise<void> {
-    if (
-        importNotificationRequestActive ||
-        !permissions.value.includes("create-imports")
-    ) {
+    if (!permissions.value.includes("create-imports")) {
+        return;
+    }
+    if (importNotificationRequestActive) {
+        importNotificationPollRequested = true;
         return;
     }
 
     importNotificationRequestActive = true;
+    let shouldContinuePolling = false;
     try {
         const response = await api.get<unknown>(
             "/household-import-notifications",
         );
-        const payload = apiData<{ notifications?: unknown }>(response.data);
-        if (!Array.isArray(payload.notifications)) {
+        const payload = apiData<{
+            notifications?: unknown;
+            pending_count?: unknown;
+        }>(response.data);
+        if (
+            !Array.isArray(payload.notifications) ||
+            typeof payload.pending_count !== "number" ||
+            !Number.isSafeInteger(payload.pending_count) ||
+            payload.pending_count < 0
+        ) {
             throw new Error("Máy chủ trả về thông báo nhập file không hợp lệ.");
         }
+        shouldContinuePolling = payload.pending_count > 0;
 
         for (const value of payload.notifications) {
             if (typeof value !== "object" || value === null) continue;
@@ -229,8 +241,21 @@ async function pollImportNotifications(): Promise<void> {
         await acknowledgeImportNotifications();
     } catch (cause) {
         console.error("Không thể đồng bộ thông báo nhập file.", cause);
+        shouldContinuePolling = true;
     } finally {
         importNotificationRequestActive = false;
+        shouldContinuePolling =
+            shouldContinuePolling || importNotificationPollRequested;
+        importNotificationPollRequested = false;
+        if (shouldContinuePolling && permissions.value.includes("create-imports")) {
+            importNotificationTimer = window.setTimeout(
+                () => {
+                    importNotificationTimer = null;
+                    void pollImportNotifications();
+                },
+                5000,
+            );
+        }
     }
 }
 
@@ -238,10 +263,6 @@ function startImportNotificationPolling(): void {
     stopImportNotificationPolling();
     if (!permissions.value.includes("create-imports")) return;
     void pollImportNotifications();
-    importNotificationTimer = window.setInterval(
-        () => void pollImportNotifications(),
-        5000,
-    );
 }
 
 function clearImportNotifications(): void {
@@ -325,6 +346,7 @@ function handleHouseholdImportSubmitted(event: Event): void {
     }
 
     if (importData.stage === "accepted") {
+        startImportNotificationPolling();
         if (activeUploadNotice) {
             const notice: ImportNotice = {
                 ...activeUploadNotice,

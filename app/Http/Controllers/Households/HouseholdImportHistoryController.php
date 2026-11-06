@@ -71,7 +71,9 @@ class HouseholdImportHistoryController extends Controller
 
         $errorFilePath = $historyService->errorFilePath($importLog);
 
-        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME) . '-loi.xlsx';
+        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME)
+            . '-loi.'
+            . strtolower(pathinfo($errorFilePath, PATHINFO_EXTENSION));
 
         return response()->download(
             Storage::disk('local')->path($errorFilePath),

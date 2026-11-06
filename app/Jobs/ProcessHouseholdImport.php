@@ -54,7 +54,12 @@ class ProcessHouseholdImport implements ShouldQueue
     {
         $importLog = ImportLog::find($this->importLogId);
         if ($importLog !== null) {
-            $importLog->update(['status' => 'FAILED']);
+            $context = $importLog->context ?? [];
+            $context['processing_error'] = 'Tác vụ nhập dữ liệu kết thúc ngoài dự kiến. Hãy xem nhật ký hệ thống để biết thêm chi tiết.';
+            $importLog->update([
+                'status' => 'FAILED',
+                'context' => $context,
+            ]);
         }
 
         Log::error('Không thể xử lý file nhập hộ gia đình.', [

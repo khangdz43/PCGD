@@ -8896,6 +8896,9 @@ onMounted(() => {
                                         v-if="
                                             permissions.includes(
                                                 'delete-imports',
+                                            ) &&
+                                            !['PENDING', 'PROCESSING'].includes(
+                                                String(item.status),
                                             )
                                         "
                                         class="excel-history-action excel-history-action-delete"

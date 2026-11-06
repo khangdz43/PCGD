@@ -63,7 +63,7 @@ class SchoolController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->validate($this->rules($request, true), [
+        $data = $request->validate($this->rules($request), [
             'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
             'level.in' => 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.',
         ]);
@@ -88,7 +88,7 @@ class SchoolController extends Controller
     {
         $user = $request->user();
         $school = $this->schools->findAccessible($user, $id);
-        $data = $request->validate($this->rules($request, false, $school), [
+        $data = $request->validate($this->rules($request, $school), [
             'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
             'level.in' => 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.',
         ]);
@@ -109,18 +109,16 @@ class SchoolController extends Controller
         return response()->json(['message' => 'Đã xóa trường học.']);
     }
 
-    private function rules(Request $request, bool $creating = false, ?School $school = null): array
+    private function rules(Request $request, ?School $school = null): array
     {
-        $requiredOnUpdate = $creating ? [] : ['present'];
         $allowedLevels = $this->schools->levelsForUser($request->user());
         if ($request->input('type') === 'multi_level') {
             $allowedLevels = array_values(array_intersect($allowedLevels, ['THCS', 'THPT']));
         }
-        $levelRules = [...$requiredOnUpdate, 'nullable', Rule::in($allowedLevels)];
-        $provinceRules = [...$requiredOnUpdate, 'nullable', 'exists:provinces,code'];
+        $levelRules = ['required', Rule::in($allowedLevels)];
+        $provinceRules = ['required', 'exists:provinces,code'];
         $communeRules = [
-            ...$requiredOnUpdate,
-            'nullable',
+            'required',
             Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
         ];
 
@@ -136,15 +134,11 @@ class SchoolController extends Controller
                     ->ignore($school?->id),
             ],
             'type' => ['required', Rule::in(['single_level', 'multi_level'])],
-            'is_active' => ['sometimes', 'boolean'],
+            'is_active' => ['required', 'boolean'],
             'level' => $levelRules,
             'province_code' => $provinceRules,
             'commune_code' => $communeRules,
         ];
-
-        if (! $creating) {
-            return $rules;
-        }
 
         return $rules;
     }

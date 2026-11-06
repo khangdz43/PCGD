@@ -4174,6 +4174,13 @@ class AccessControlTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('communes')->insert([
+            'code' => 'C1',
+            'name' => 'Xã một',
+            'province_code' => 'P1',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
         $role = Role::create([
             'name' => 'school-activity-manager',
             'scope_level' => 'province',
@@ -4197,7 +4204,7 @@ class AccessControlTest extends TestCase
                 'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P1',
-                'commune_code' => null,
+                'commune_code' => 'C1',
                 'is_active' => false,
             ])
             ->assertCreated()
@@ -4210,7 +4217,7 @@ class AccessControlTest extends TestCase
             'type' => 'single_level',
             'level' => 'TH',
             'province_code' => 'P1',
-            'commune_code' => null,
+            'commune_code' => 'C1',
             'is_active' => true,
         ])
             ->assertOk()

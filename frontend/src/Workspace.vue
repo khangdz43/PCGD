@@ -471,8 +471,8 @@ const moduleInfo: Record<
         title: "Danh mục Thôn / Xóm / Tổ dân phố",
         endpoint: "/villages",
         columns: [
-            "code",
             "name",
+            "code",
             "commune.province.name",
             "commune.name",
             "operational_status",
@@ -8791,6 +8791,9 @@ onMounted(() => void load());
                                 'role-members-cell':
                                     moduleKey === 'roles' &&
                                     column === 'users_count',
+                                'village-name-cell':
+                                    moduleKey === 'villages' &&
+                                    column === 'name',
                                 'village-code-cell':
                                     ['villages', 'schools'].includes(
                                         moduleKey,
@@ -8808,28 +8811,18 @@ onMounted(() => void load());
                                     moduleKey === 'villages' &&
                                     column === 'operational_status'
                                 "
-                                class="record-status-icon"
-                                :class="{ inactive: row.operational_status !== 'active' }"
-                                role="img"
-                                :aria-label="row.operational_status === 'active' ? 'Đang hoạt động' : 'Không hoạt động'"
-                                :title="row.operational_status === 'active' ? 'Đang hoạt động' : 'Không hoạt động'"
+                                class="status-pill"
+                                :class="{
+                                    inactive: row.operational_status !== 'active',
+                                }"
                             >
-                                <svg
-                                    v-if="row.operational_status === 'active'"
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
-                                >
-                                    <circle cx="10" cy="10" r="8" />
-                                    <path d="m6.5 10 2.2 2.2 4.8-4.8" />
-                                </svg>
-                                <svg
-                                    v-else
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
-                                >
-                                    <circle cx="10" cy="10" r="8" />
-                                    <path d="m7 7 6 6m0-6-6 6" />
-                                </svg>
+                                {{
+                                    row.operational_status === 'paused'
+                                        ? 'Tạm dừng nhận phiếu'
+                                        : row.operational_status === 'merged'
+                                          ? 'Đã gộp'
+                                          : 'Đang hoạt động'
+                                }}
                             </span>
                             <span
                                 v-else-if="

@@ -1759,7 +1759,7 @@ h2 {
 }
 
 .village-operational-status-cell {
-    min-width: 88px;
+    min-width: 180px;
     text-align: center !important;
 }
 
@@ -4057,6 +4057,11 @@ h2 {
 .village-search-control input {
     min-width: 0;
     flex: 1 1 auto;
+    font-weight: 400;
+}
+
+.village-search-control input::placeholder {
+    font-weight: 400;
 }
 
 .village-unified-filter input:focus-visible,
@@ -5616,6 +5621,11 @@ h2 {
     width: 190px;
     color: #334155;
     font-weight: 400;
+}
+
+.workspace-table.village-management-table .village-name-cell {
+    color: #263b59;
+    font-weight: 700;
 }
 
 .workspace-table.village-management-table .table-actions {

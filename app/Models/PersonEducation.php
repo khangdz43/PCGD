@@ -9,9 +9,12 @@ class PersonEducation extends Model
 {
     protected $table = 'person_educations';
 
+    protected $appends = ['school_year'];
+
     protected $fillable = [
         'person_id',
         'import_log_id',
+        'school_year_id',
         'school_year',
         'academic_block',
         'current_class',
@@ -36,9 +39,26 @@ class PersonEducation extends Model
         'is_complementary' => 'boolean',
     ];
 
+    private ?string $schoolYearLabel = null;
+
+    public function getSchoolYearAttribute(): ?string
+    {
+        return $this->schoolYearLabel ?? $this->schoolYear?->label();
+    }
+
+    public function setSchoolYearAttribute(?string $value): void
+    {
+        $this->schoolYearLabel = $value;
+    }
+
     public function person(): BelongsTo
     {
         return $this->belongsTo(Person::class);
+    }
+
+    public function schoolYear(): BelongsTo
+    {
+        return $this->belongsTo(SchoolYear::class, 'school_year_id');
     }
 
     public function school(): BelongsTo

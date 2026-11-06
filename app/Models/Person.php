@@ -66,7 +66,7 @@ class Person extends Model
 
     public function scopeWithDetails(Builder $query): Builder
     {
-        return $query->with(['ethnicity', 'educations.school', 'disability']);
+        return $query->with(['ethnicity', 'educations.school', 'educations.schoolYear', 'disability']);
     }
 
     public function importLog(): BelongsTo

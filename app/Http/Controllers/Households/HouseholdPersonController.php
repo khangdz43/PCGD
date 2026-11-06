@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Household;
 use App\Models\Person;
 use App\Models\PersonEducation;
+use App\Models\SchoolYear;
 use App\Models\Role;
 use App\Services\Households\HouseholdPersonService;
 use App\Support\DataAccessScope;
@@ -238,14 +239,20 @@ class HouseholdPersonController extends Controller
         // chỉ cho phép những cái có
         $schoolYearRules = ['required', Rule::in($this->people->schoolYears())];
         if ($person?->exists) {
-            // 1 person chỉ được có 1 education trong 1 năm
-            $uniqueSchoolYear = Rule::unique('person_educations', 'school_year')->where('person_id', $person->id);
-            if ($education?->exists) {
-                // cái trên chỉ chấp nhận unique mà người dùng k sửa thì sẽ k sao
-                $uniqueSchoolYear->ignore($education->id);
-            }
-            // thêm đối tượng rule vào mảng
-            $schoolYearRules[] = $uniqueSchoolYear;
+            $schoolYearRules[] = function ($attribute, $value, $fail) use ($person, $education): void {
+                $schoolYearId = SchoolYear::findByLabel((string) $value)?->id;
+                if ($schoolYearId === null) {
+                    return;
+                }
+
+                $query = $person->educations()->where('school_year_id', $schoolYearId);
+                if ($education?->exists) {
+                    $query->whereKeyNot($education->id);
+                }
+                if ($query->exists()) {
+                    $fail('Nhân khẩu đã có thông tin học tập trong năm học này.');
+                }
+            };
         }
 
         $notFutureYear = function ($attribute, $value, $fail) {

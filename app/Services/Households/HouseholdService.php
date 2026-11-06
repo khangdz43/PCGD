@@ -5,6 +5,7 @@ namespace App\Services\Households;
 use App\Models\Household;
 use App\Models\Province;
 use App\Models\Role;
+use App\Models\SchoolYear;
 use App\Models\User;
 use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
@@ -113,18 +114,26 @@ class HouseholdService
         if ($schoolYear === null) {
             $personsQuery->withDetails();
         } else {
+            $schoolYearId = SchoolYear::findByLabel($schoolYear)?->id;
             $personsQuery->with([
                 'ethnicity',
                 'disability',
                 'educations' => fn ($query) => $query
-                    ->where(function ($educationQuery) use ($schoolYear): void {
-                        $educationQuery->where('school_year', $schoolYear)
-                            ->orWhereRaw(
-                                '(NOT EXISTS (SELECT 1 FROM person_educations AS matching_education WHERE matching_education.person_id = person_educations.person_id AND matching_education.school_year = ?) AND id = (SELECT MIN(fallback_education.id) FROM person_educations AS fallback_education WHERE fallback_education.person_id = person_educations.person_id))',
-                                [$schoolYear],
-                            );
+                    ->when($schoolYearId !== null, function ($educationQuery) use ($schoolYearId): void {
+                        $educationQuery->where(function ($query) use ($schoolYearId): void {
+                            $query->where('school_year_id', $schoolYearId)
+                                ->orWhereRaw(
+                                    '(NOT EXISTS (SELECT 1 FROM person_educations AS matching_education WHERE matching_education.person_id = person_educations.person_id AND matching_education.school_year_id = ?) AND id = (SELECT MIN(fallback_education.id) FROM person_educations AS fallback_education WHERE fallback_education.person_id = person_educations.person_id))',
+                                    [$schoolYearId],
+                                );
+                        });
+                    }, function ($educationQuery): void {
+                        $educationQuery->whereRaw(
+                            'id = (SELECT MIN(fallback_education.id) FROM person_educations AS fallback_education WHERE fallback_education.person_id = person_educations.person_id)'
+                        );
                     })
                     ->with('school')
+                    ->with('schoolYear')
                     ->orderBy('id'),
             ]);
         }

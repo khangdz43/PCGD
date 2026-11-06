@@ -10,6 +10,7 @@ use App\Models\PersonEducation;
 use App\Models\Province;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\SchoolYear;
 use App\Models\User;
 use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
@@ -48,6 +49,7 @@ class HouseholdPersonService
             'ethnicity',
             'educations',
             'educations.school',
+            'educations.schoolYear',
             'disability',
         ])->findOrFail($personId);
     }
@@ -59,7 +61,11 @@ class HouseholdPersonService
 
     public function latestEducation(Person $person): ?PersonEducation
     {
-        return $person->educations()->orderByDesc('school_year')->first();
+        return $person->educations()
+            ->with('schoolYear')
+            ->get()
+            ->sortByDesc(fn (PersonEducation $education): ?string => $education->schoolYear?->start_time?->toDateString())
+            ->first();
     }
 
     public function formData(
@@ -68,9 +74,11 @@ class HouseholdPersonService
         User $user,
         ?string $householdSchoolYear = null
     ): array {
-        $educationQuery = $person->educations()->with('school');
+        $educationQuery = $person->educations()->with(['school', 'schoolYear']);
         $education = $person->exists
-            ? $educationQuery->orderByDesc('school_year')->first()
+            ? $educationQuery->get()
+                ->sortByDesc(fn (PersonEducation $item): ?string => $item->schoolYear?->start_time?->toDateString())
+                ->first()
             : null;
         $education ??= new PersonEducation([
             'school_year' => $householdSchoolYear ?: $this->currentSchoolYear(),
@@ -256,6 +264,9 @@ class HouseholdPersonService
         unset($personData['education'], $personData['disability'], $personData['school_province_code'], $personData['school_commune_code']);
 
         $educationData = $data['education'];
+        $schoolYear = SchoolYear::resolveOrCreateFromLabel($educationData['school_year']);
+        $educationData['school_year_id'] = $schoolYear->id;
+        unset($educationData['school_year']);
         $educationData['is_complementary'] = (bool) ($educationData['is_complementary'] ?? false);
         preg_match('/\d+/u', (string) ($educationData['current_class'] ?? ''), $classNumber);
         $educationData['academic_block'] = $classNumber[0] ?? null;

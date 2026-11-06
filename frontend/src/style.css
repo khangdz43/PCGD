@@ -1242,7 +1242,7 @@ h2 {
     position: absolute;
     z-index: 5;
     top: -40px;
-    right: clamp(-34px, -2.4vw, -18px);
+    right: 0;
     left: clamp(-34px, -2.4vw, -18px);
     display: block;
     height: calc(100dvh - 82px);
@@ -1256,7 +1256,7 @@ h2 {
     width: 100%;
     min-height: 100%;
     max-height: none;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     align-content: start;
     overflow: visible;
     margin: 0;
@@ -1270,6 +1270,12 @@ h2 {
 .household-create-page-form.household-configuration-form .workspace-field input,
 .household-create-page-form.household-configuration-form .workspace-field select {
     width: 100%;
+}
+
+.household-create-page-form.household-configuration-form .household-validation-slot {
+    min-height: 14px;
+    font-size: .72rem;
+    line-height: 1.25;
 }
 
 .household-create-page-form.household-configuration-form .household-form-actions {

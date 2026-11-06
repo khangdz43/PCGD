@@ -100,6 +100,7 @@ const userFormSubmitted = ref(false);
 const roleFormSubmitted = ref(false);
 const schoolFormSubmitted = ref(false);
 const villageFormSubmitted = ref(false);
+const householdFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
@@ -861,6 +862,29 @@ const villageFormReady = computed(
             form.value.operational_status,
         ),
 );
+const householdFormValidationErrors = computed<Record<string, string>>(() => {
+    if (props.moduleKey !== "households") return {};
+
+    const errors: Record<string, string> = {};
+    const requiredFields: Record<string, string> = {
+        school_year: "Vui lòng chọn năm học.",
+        household_code: "Vui lòng nhập mã phiếu.",
+        head_last_name: "Vui lòng nhập họ chủ hộ.",
+        head_first_name: "Vui lòng nhập tên chủ hộ.",
+        province_code: "Vui lòng chọn tỉnh / thành phố.",
+        commune_code: "Vui lòng chọn xã / phường.",
+        village_code: "Vui lòng chọn thôn / xóm.",
+        residence_type: "Vui lòng chọn loại cư trú.",
+    };
+
+    for (const [field, message] of Object.entries(requiredFields)) {
+        if (!String(form.value[field] ?? "").trim()) {
+            errors[field] = message;
+        }
+    }
+
+    return errors;
+});
 const villageFormValidationErrors = computed<Record<string, string>>(() => {
     if (props.moduleKey !== "villages") return {};
 
@@ -2996,6 +3020,7 @@ async function beginEdit(row?: Row): Promise<void> {
     roleFormSubmitted.value = false;
     schoolFormSubmitted.value = false;
     villageFormSubmitted.value = false;
+    householdFormSubmitted.value = false;
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
@@ -3497,6 +3522,7 @@ function closeConfigurationForm(): void {
     schoolFormSubmitted.value = false;
     roleFormSubmitted.value = false;
     villageFormSubmitted.value = false;
+    householdFormSubmitted.value = false;
 }
 
 async function beginMember(isHead: boolean, person?: Row): Promise<void> {
@@ -4552,6 +4578,13 @@ async function save(): Promise<void> {
     if (props.moduleKey === "villages") {
         villageFormSubmitted.value = true;
         if (!villageFormReady.value) return;
+    }
+    if (props.moduleKey === "households") {
+        householdFormSubmitted.value = true;
+        if (Object.keys(householdFormValidationErrors.value).length > 0) {
+            error.value = "";
+            return;
+        }
     }
     if (props.moduleKey === "schools") {
         schoolFormSubmitted.value = true;
@@ -6428,9 +6461,13 @@ onMounted(() => {
                     'household-configuration-form': moduleKey === 'households',
                 }"
                 :novalidate="
-                    ['users', 'schools', 'villages', 'roles'].includes(
-                        moduleKey,
-                    )
+                    [
+                        'users',
+                        'schools',
+                        'villages',
+                        'roles',
+                        'households',
+                    ].includes(moduleKey)
                 "
                 :role="
                     isDialogForm && !isHouseholdCreatePage
@@ -6557,15 +6594,26 @@ onMounted(() => {
                         <span
                             :class="{
                                 'required-field-label':
-                                    moduleKey === 'schools' &&
-                                    [
-                                        'name',
-                                        'type',
-                                        'level',
-                                        'province_code',
-                                        'commune_code',
-                                        'is_active',
-                                    ].includes(field),
+                                    (moduleKey === 'schools' &&
+                                        [
+                                            'name',
+                                            'type',
+                                            'level',
+                                            'province_code',
+                                            'commune_code',
+                                            'is_active',
+                                        ].includes(field)) ||
+                                    (moduleKey === 'households' &&
+                                        [
+                                            'school_year',
+                                            'household_code',
+                                            'head_last_name',
+                                            'head_first_name',
+                                            'province_code',
+                                            'commune_code',
+                                            'village_code',
+                                            'residence_type',
+                                        ].includes(field)),
                             }"
                         >
                             {{
@@ -6906,6 +6954,8 @@ onMounted(() => {
                                         userFormValidationErrors[field]) ||
                                     (roleFormSubmitted &&
                                         roleFormValidationErrors[field]) ||
+                                    (householdFormSubmitted &&
+                                        householdFormValidationErrors[field]) ||
                                     (field === 'username' &&
                                         userFormRequestError),
                                 )
@@ -6989,8 +7039,20 @@ onMounted(() => {
                             "
                             class="field-error"
                             role="alert"
-                            >{{ userFormValidationErrors[field] }}</small
                         >
+                            {{ userFormValidationErrors[field] }}
+                        </small>
+                        <small
+                            v-if="moduleKey === 'households'"
+                            class="field-error household-validation-slot"
+                            role="alert"
+                        >
+                            {{
+                                householdFormSubmitted
+                                    ? householdFormValidationErrors[field]
+                                    : ""
+                            }}
+                        </small>
                         <small
                             v-if="field === 'username' && userFormRequestError"
                             class="field-error"

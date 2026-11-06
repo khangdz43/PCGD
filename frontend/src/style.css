@@ -4723,9 +4723,9 @@ h2 {
     z-index: 1010;
 }
 
-.role-permissions-dialog {
+.confirm-dialog.role-permissions-dialog {
     display: grid;
-    width: min(100%, 620px);
+    width: min(94vw, 1040px);
     max-height: min(82vh, 720px);
     grid-template-rows: auto minmax(0, 1fr);
     overflow: hidden;
@@ -4764,62 +4764,72 @@ h2 {
 }
 
 .role-permissions-dialog-content {
-    display: grid;
-    align-content: start;
-    gap: 12px;
     overflow: auto;
     padding: 18px 22px;
 }
 
-.role-permissions-category {
-    padding: 13px 15px;
-    border: 1px solid #e4eaf2;
-    border-radius: 10px;
-    background: #fff;
-}
-
-.role-permissions-category-heading {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.role-permissions-category-heading h4 {
-    margin: 0;
-    color: #34445c;
-    font-size: .85rem;
-}
-
-.role-permissions-category-heading>span {
-    display: inline-grid;
-    min-width: 24px;
-    height: 24px;
-    place-items: center;
-    border-radius: 50%;
-    background: #eef3f8;
-    color: #596b83;
-    font-size: .7rem;
-    font-weight: 700;
-}
-
-.role-permissions-category ul {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px 14px;
-    margin: 12px 0 0;
-    padding: 0;
-    color: #53647b;
-    font-size: .8rem;
-    list-style: none;
-}
-
-.role-permissions-category li {
-    display: flex;
+.role-permissions-table {
+    width: 100%;
     min-width: 0;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 0;
+    color: #53647b;
+    font-size: .82rem;
+}
+
+.role-permissions-table th,
+.role-permissions-table td {
+    padding: 11px 13px;
+    border-right: 1px solid #e4eaf2;
+    border-bottom: 1px solid #e4eaf2;
+    text-align: left;
+}
+
+.role-permissions-table thead th {
+    position: sticky;
+    z-index: 1;
+    top: 0;
+    background: #f3f6fa;
+    color: #34445c;
+    font-size: .74rem;
+    font-weight: 750;
+    white-space: nowrap;
+}
+
+.role-permissions-table thead th:first-child,
+.role-permissions-table tbody th {
+    border-left: 1px solid #e4eaf2;
+}
+
+.role-permissions-table thead th:first-child {
+    border-top-left-radius: 8px;
+}
+
+.role-permissions-table thead th:last-child {
+    border-top-right-radius: 8px;
+}
+
+.role-permissions-table tbody th {
+    width: 24%;
+    background: #f8fafc;
+    color: #34445c;
+    font-weight: 700;
+    vertical-align: top;
+}
+
+.role-permissions-table tbody td:last-child {
+    width: 150px;
+}
+
+.role-permission-status {
+    display: inline-flex;
     align-items: center;
     gap: 7px;
-    line-height: 1.45;
+    color: #32754a;
+    font-size: .76rem;
+    font-weight: 650;
+    white-space: nowrap;
 }
 
 .role-permission-check {
@@ -5220,8 +5230,12 @@ h2 {
         padding-left: 16px;
     }
 
-    .role-permissions-category ul {
-        grid-template-columns: minmax(0, 1fr);
+    .confirm-dialog.role-permissions-dialog {
+        width: min(94vw, 1040px);
+    }
+
+    .role-permissions-table {
+        min-width: 560px;
     }
 }
 

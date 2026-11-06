@@ -9209,25 +9209,6 @@ onMounted(() => void load());
                                         <circle cx="12" cy="12" r="2.7" />
                                     </svg>
                                 </button>
-                                <span
-                                    v-if="
-                                        moduleKey === 'roles' && row.is_system
-                                    "
-                                    class="role-system-lock"
-                                    title="Nhóm hệ thống: không thể sửa hoặc xóa"
-                                >
-                                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                                        <rect
-                                            x="4"
-                                            y="10"
-                                            width="16"
-                                            height="11"
-                                            rx="2"
-                                        />
-                                        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-                                    </svg>
-                                    Nhóm hệ thống
-                                </span>
                                 <div
                                     v-if="
                                         moduleKey === 'roles' && row.can_manage
@@ -9762,39 +9743,62 @@ onMounted(() => void load());
                     </button>
                 </header>
                 <div class="role-permissions-dialog-content">
-                    <section
-                        v-for="group in permissionGroupsForDisplay(
-                            selectedRolePermissions.permissions,
-                        )"
-                        :key="group.key"
-                        class="role-permissions-category"
+                    <table
+                        v-if="
+                            permissionGroupsForDisplay(
+                                selectedRolePermissions.permissions,
+                            ).length > 0
+                        "
+                        class="role-permissions-table"
                     >
-                        <div class="role-permissions-category-heading">
-                            <h4>{{ group.label }}</h4>
-                            <span>{{ group.options.length }}</span>
-                        </div>
-                        <ul>
-                            <li
-                                v-for="permission in group.options"
-                                :key="permissionName(permission)"
+                        <thead>
+                            <tr>
+                                <th scope="col">Nhóm quyền</th>
+                                <th scope="col">Quyền được cấp</th>
+                                <th scope="col">Trạng thái</th>
+                            </tr>
+                        </thead>
+                        <tbody
+                            v-for="group in permissionGroupsForDisplay(
+                                selectedRolePermissions.permissions,
+                            )"
+                            :key="group.key"
+                        >
+                            <tr
+                                v-for="(permission, index) in group.options"
+                                :key="`${group.key}-${permissionName(permission)}`"
                             >
-                                <span
-                                    class="role-permission-check"
-                                    aria-hidden="true"
-                                    >✓</span
+                                <th
+                                    v-if="index === 0"
+                                    scope="rowgroup"
+                                    :rowspan="group.options.length"
                                 >
-                                {{
-                                    typeof permission === "object" &&
-                                    permission !== null &&
-                                    "label" in permission
-                                        ? String(permission.label)
-                                        : permissionLabel(
-                                              permissionName(permission),
-                                          )
-                                }}
-                            </li>
-                        </ul>
-                    </section>
+                                    {{ group.label }}
+                                </th>
+                                <td>
+                                    {{
+                                        typeof permission === "object" &&
+                                        permission !== null &&
+                                        "label" in permission
+                                            ? String(permission.label)
+                                            : permissionLabel(
+                                                  permissionName(permission),
+                                              )
+                                    }}
+                                </td>
+                                <td>
+                                    <span class="role-permission-status">
+                                        <span
+                                            class="role-permission-check"
+                                            aria-hidden="true"
+                                            >✓</span
+                                        >
+                                        Đã cấp
+                                    </span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                     <p
                         v-if="
                             permissionGroupsForDisplay(

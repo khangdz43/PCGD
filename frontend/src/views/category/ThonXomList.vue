@@ -118,7 +118,6 @@ async function receiveVillageOptions(data: VillageResponse): Promise<void> {
                         </select>
                     </label>
                     <label class="village-unified-search">
-                        <span>Tìm theo mã hoặc tên</span>
                         <span class="village-search-control">
                             <input v-model="searchQuery" type="search" placeholder="Nhập mã hoặc tên thôn / xóm">
                             <button class="secondary-button management-tool-button user-search-button" type="submit" :disabled="busy" aria-label="Tìm thôn / xóm" title="Tìm thôn / xóm">

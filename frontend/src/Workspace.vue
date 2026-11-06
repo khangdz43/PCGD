@@ -67,6 +67,7 @@ type TrashActionDialog = {
 const props = defineProps<{
     moduleKey: ModuleKey;
     permissions: string[];
+    scopeLevel?: string | null;
     importView?: "upload" | "history";
     accountSection?: "profile" | "password";
     householdFilters?: {
@@ -470,7 +471,13 @@ const moduleInfo: Record<
     villages: {
         title: "Danh mục Thôn / Xóm / Tổ dân phố",
         endpoint: "/villages",
-        columns: ["code", "name", "operational_status"],
+        columns: [
+            "name",
+            "code",
+            "commune.province.name",
+            "commune.name",
+            "operational_status",
+        ],
         fields: ["name", "province_code", "commune_code", "operational_status"],
     },
     roles: {
@@ -5802,23 +5809,19 @@ onMounted(() => void load());
             </div>
         </div>
 
-        <slot v-if="moduleKey === 'villages'" name="toolbar" />
-        <div
-            v-if="moduleKey === 'villages'"
-            class="village-management-toolbar-bottom"
-        >
-            <span class="record-count"
-                >{{ rows.length }} / {{ totalRecords }} bản ghi</span
-            >
-            <button
-                v-if="canCreate"
-                class="primary-button management-tool-button"
-                type="button"
-                :disabled="busy"
-                @click="beginEdit()"
-            >
-                Thêm mới
-            </button>
+        <div v-if="moduleKey === 'villages'" class="village-toolbar-row">
+            <slot name="toolbar" />
+            <div class="village-management-toolbar-bottom">
+                <button
+                    v-if="canCreate"
+                    class="primary-button management-tool-button"
+                    type="button"
+                    :disabled="busy"
+                    @click="beginEdit()"
+                >
+                    Thêm mới
+                </button>
+            </div>
         </div>
 
         <div
@@ -5827,6 +5830,9 @@ onMounted(() => void load());
             :class="{
                 'user-management-toolbar': moduleKey === 'users',
                 'role-management-toolbar': moduleKey === 'roles',
+                'commune-management-toolbar':
+                    props.scopeLevel === 'commune' &&
+                    ['users', 'roles'].includes(moduleKey),
                 'trash-management-toolbar-wrapper': moduleKey === 'trash',
             }"
         >
@@ -6367,14 +6373,14 @@ onMounted(() => void load());
                             v-model="form[field]"
                             required
                         >
-                            <option value="active">Đang nhận phiếu</option>
-                            <option value="paused">Tạm dừng nhận phiếu</option>
+                            <option value="active">Đang hoạt động</option>
+                            <option value="paused">Đã vô hiệu hóa</option>
                         </select>
                         <select
                             v-else-if="field === 'scope_level'"
                             v-model="form[field]"
                             :required="
-                                moduleKey === 'users'
+                                ['roles', 'users'].includes(moduleKey)
                             "
                             :aria-invalid="
                                 Boolean(
@@ -6655,13 +6661,15 @@ onMounted(() => void load());
                                 )
                             "
                             :required="
-                                (moduleKey !== 'roles' &&
+                                ((moduleKey !== 'roles' &&
                                     [
                                         'name',
                                         'username',
                                         'role_id',
                                         'scope_level',
                                     ].includes(field)) ||
+                                    (moduleKey === 'roles' &&
+                                        field === 'name')) ||
                                 (moduleKey === 'households' &&
                                     [
                                         'household_code',
@@ -7125,7 +7133,7 @@ onMounted(() => void load());
                     v-if="moduleKey === 'roles'"
                     class="workspace-field role-permissions-field"
                 >
-                    <span :class="{ 'required-field-label': !editing }">
+                    <span class="required-field-label">
                         Ma trận phân quyền · {{ permissionIds.length }} quyền đã
                         chọn
                     </span>
@@ -8675,7 +8683,7 @@ onMounted(() => void load());
                         </th>
                         <th
                             v-if="
-                                ['villages', 'schools', 'households'].includes(
+                                ['schools', 'households'].includes(
                                     moduleKey,
                                 )
                             "
@@ -8770,16 +8778,6 @@ onMounted(() => void load());
                             }}
                         </td>
                         <td
-                            v-if="moduleKey === 'villages'"
-                            class="village-row-number"
-                        >
-                            {{
-                                (currentPage - 1) * villagePageSize +
-                                rowIndex +
-                                1
-                            }}
-                        </td>
-                        <td
                             v-if="moduleKey === 'schools'"
                             class="village-row-number"
                         >
@@ -8798,6 +8796,9 @@ onMounted(() => void load());
                                 'role-members-cell':
                                     moduleKey === 'roles' &&
                                     column === 'users_count',
+                                'village-name-cell':
+                                    moduleKey === 'villages' &&
+                                    column === 'name',
                                 'village-code-cell':
                                     ['villages', 'schools'].includes(
                                         moduleKey,
@@ -8815,28 +8816,16 @@ onMounted(() => void load());
                                     moduleKey === 'villages' &&
                                     column === 'operational_status'
                                 "
-                                class="record-status-icon"
-                                :class="{ inactive: row.operational_status !== 'active' }"
-                                role="img"
-                                :aria-label="row.operational_status === 'active' ? 'Đang hoạt động' : 'Không hoạt động'"
-                                :title="row.operational_status === 'active' ? 'Đang hoạt động' : 'Không hoạt động'"
+                                class="status-pill"
+                                :class="{
+                                    inactive: row.operational_status !== 'active',
+                                }"
                             >
-                                <svg
-                                    v-if="row.operational_status === 'active'"
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
-                                >
-                                    <circle cx="10" cy="10" r="8" />
-                                    <path d="m6.5 10 2.2 2.2 4.8-4.8" />
-                                </svg>
-                                <svg
-                                    v-else
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
-                                >
-                                    <circle cx="10" cy="10" r="8" />
-                                    <path d="m7 7 6 6m0-6-6 6" />
-                                </svg>
+                                {{
+                                    row.operational_status === 'active'
+                                        ? 'Đang hoạt động'
+                                        : 'Đã vô hiệu hóa'
+                                }}
                             </span>
                             <span
                                 v-else-if="
@@ -9546,29 +9535,34 @@ onMounted(() => void load());
             v-if="['villages', 'schools'].includes(moduleKey)"
             class="user-pagination-footer village-pagination-footer"
         >
-            <label class="page-size-control">
-                <span>Mỗi trang</span>
-                <select
-                    v-if="moduleKey === 'villages'"
-                    v-model.number="villagePageSize"
-                    :disabled="busy"
-                    @change="changeVillagePageSize"
-                >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                </select>
-                <select
-                    v-else
-                    v-model.number="schoolPageSize"
-                    :disabled="busy"
-                    @change="changeSchoolPageSize"
-                >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                </select>
-            </label>
+            <div class="village-pagination-summary">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-if="moduleKey === 'villages'"
+                        v-model.number="villagePageSize"
+                        :disabled="busy"
+                        @change="changeVillagePageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                    </select>
+                    <select
+                        v-else
+                        v-model.number="schoolPageSize"
+                        :disabled="busy"
+                        @change="changeSchoolPageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                    </select>
+                </label>
+                <span v-if="moduleKey === 'villages'" class="record-count">
+                    {{ rows.length }} / {{ totalRecords }} bản ghi
+                </span>
+            </div>
             <div
                 class="pagination-actions compact-pagination"
                 :aria-label="

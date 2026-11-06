@@ -5845,11 +5845,6 @@ h2 {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .household-clear-filter {
-        grid-column: 1 / -1;
-        justify-self: start;
-    }
-
     .household-unified-filter .village-unified-search {
         grid-column: 1 / -1;
     }
@@ -5894,9 +5889,7 @@ h2 {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .household-clear-filter {
-        grid-column: auto;
-    }
+
 
     .household-list-actions {
         width: 100%;
@@ -7999,11 +7992,6 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     min-width: 0;
     max-width: none;
     grid-column: auto;
-}
-
-.household-unified-filter .household-clear-filter {
-    min-height: 34px;
-    align-self: end;
 }
 
 .household-filter-submit {

@@ -5810,19 +5810,6 @@ onMounted(() => void load());
                         </button>
                     </span>
                 </label>
-                <button
-                    v-if="householdQuery || householdSchoolYear"
-                    class="secondary-button management-tool-button household-clear-filter"
-                    type="button"
-                    :disabled="busy"
-                    @click="
-                        householdQuery = '';
-                        householdSchoolYear = '';
-                        applyHouseholdFilters();
-                    "
-                >
-                    Xóa lọc
-                </button>
             </form>
             <div
                 class="village-management-toolbar-bottom household-toolbar-actions household-list-actions"

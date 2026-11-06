@@ -48,35 +48,52 @@ class HouseholdImportProcessingService
                 ) {
                     $visibleDataWorksheet = $info['worksheetName'];
                 }
+            }
 
-                $reader->setLoadSheetsOnly([$info['worksheetName']]);
-                $reader->setReadFilter(new HouseholdImportChunkReadFilter(2, 2));
-                $headerWorkbook = $reader->load($data['file']->getRealPath());
-                $headerSheet = $headerWorkbook->getSheet(0);
-                $matchesTemplate = $this->normalize($this->cell($headerSheet, 'O2')) === 'sophieu'
-                    && $this->normalize($this->cell($headerSheet, 'AY2')) === 'ghichu';
-                $headerWorkbook->disconnectWorksheets();
-                if ($matchesTemplate) {
-                    $worksheetName = $info['worksheetName'];
-                    break;
+            $reader->setReadFilter(new HouseholdImportChunkReadFilter(2, 2));
+            $headerWorkbook = $reader->load($data['file']->getRealPath());
+            try {
+                foreach ($worksheetInfo as $info) {
+                    if (($info['sheetState'] ?? 'visible') !== 'visible') {
+                        continue;
+                    }
+
+                    $headerSheet = $headerWorkbook->getSheetByName($info['worksheetName']);
+                    if (
+                        $headerSheet !== null
+                        && $this->normalize($this->cell($headerSheet, 'O2')) === 'sophieu'
+                        && $this->normalize($this->cell($headerSheet, 'AY2')) === 'ghichu'
+                    ) {
+                        $worksheetName = $info['worksheetName'];
+                        break;
+                    }
                 }
+            } finally {
+                $headerWorkbook->disconnectWorksheets();
             }
             $worksheetName ??= $visibleDataWorksheet;
             if ($worksheetName === null) {
-                throw new \RuntimeException('File Excel không có trang tính dữ liệu.');
+                throw new \RuntimeException(
+                    'Không tìm thấy trang tính dữ liệu hợp lệ. Hãy dùng file mẫu mới nhất và giữ nguyên cấu trúc cột.',
+                );
             }
             $worksheet = collect($worksheetInfo)->firstWhere('worksheetName', $worksheetName);
             $highestDataRow = (int) ($worksheet['totalRows'] ?? 0);
         } catch (Throwable $exception) {
+            $message = str_contains($exception->getMessage(), 'Không tìm thấy trang tính dữ liệu')
+                ? $exception->getMessage()
+                : 'Không đọc được file Excel. Hãy kiểm tra file và thử tải lại theo mẫu mới nhất.';
+            $context['processing_error'] = $message;
             $importLog->update([
                 'status' => 'FAILED',
+                'context' => $context,
             ]);
             Log::error('Không đọc được file Excel khi xử lý nhập dữ liệu.', [
                 'import_log_id' => $importLog->id,
                 'exception' => $exception,
             ]);
 
-            return response()->json(['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.'], 422);
+            return response()->json(['message' => $message], 422);
         }
 
         $ethnicityCodes = [];
@@ -96,8 +113,9 @@ class HouseholdImportProcessingService
             'processed_rows' => 0,
         ]);
 
-        for ($chunkStart = 5; $chunkStart <= $highestDataRow; $chunkStart += 500) {
-            $chunkEnd = min($chunkStart + 499, $highestDataRow);
+        $chunkSize = 2000;
+        for ($chunkStart = 5; $chunkStart <= $highestDataRow; $chunkStart += $chunkSize) {
+            $chunkEnd = min($chunkStart + $chunkSize - 1, $highestDataRow);
             $reader->setLoadSheetsOnly([$worksheetName]);
             $reader->setReadFilter(new HouseholdImportChunkReadFilter($chunkStart, $chunkEnd));
             $chunkWorkbook = $reader->load($data['file']->getRealPath());
@@ -222,7 +240,6 @@ class HouseholdImportProcessingService
                 $recordsByCode[] = $record;
                 // value của mảng mà key đó sẽ bằng mảng mới
                 $groups[$householdCode] = $recordsByCode;
-                $totalRows++;
             }
             $chunkWorkbook->disconnectWorksheets();
         }
@@ -496,8 +513,9 @@ class HouseholdImportProcessingService
                 }
 
                 $lastErrorRow = 4;
-                $highestColumn = Coordinate::columnIndexFromString(
-                    $sheet->getHighestDataColumn(),
+                $highestColumn = min(
+                    Coordinate::columnIndexFromString($sheet->getHighestDataColumn()),
+                    Coordinate::columnIndexFromString('AY'),
                 );
                 foreach ($errorRows as $index => $sourceRow) {
                     $targetRow = 5 + $index;
@@ -505,7 +523,7 @@ class HouseholdImportProcessingService
                         $rowData = [];
                         for ($column = 1; $column <= $highestColumn; $column++) {
                             $source = $sheet->getCell(
-                                Coordinate::stringFromColumnIndex($column).$sourceRow,
+                                Coordinate::stringFromColumnIndex($column) . $sourceRow,
                             );
                             $rowData[] = [
                                 $source->getValue(),
@@ -515,7 +533,7 @@ class HouseholdImportProcessingService
                         }
                         foreach ($rowData as $columnIndex => [$value, $dataType, $style]) {
                             $target = $sheet->getCell(
-                                Coordinate::stringFromColumnIndex($columnIndex + 1).$targetRow,
+                                Coordinate::stringFromColumnIndex($columnIndex + 1) . $targetRow,
                             );
                             $target->setValueExplicit($value, $dataType);
                             $sheet->duplicateStyle(
@@ -550,12 +568,18 @@ class HouseholdImportProcessingService
             }
         }
 
+        $context = $importLog->context ?? [];
+        if ($errorFilePath !== null) {
+            $context['error_file_active_sheet_checked'] = true;
+        }
+
         $importLog->update([
             'status' => $successRows === 0 ? 'FAILED' : ($errors->hasErrors() ? 'PARTIAL' : 'SUCCESS'),
             'total_rows' => $totalRows,
             'success_rows' => $successRows,
             'error_rows' => $errors->errorRowCount(),
             'error_file_path' => $errorFilePath,
+            'context' => $context,
         ]);
     }
 

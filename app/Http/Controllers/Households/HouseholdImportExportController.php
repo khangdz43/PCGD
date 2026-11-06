@@ -79,17 +79,31 @@ class HouseholdImportExportController extends Controller
         StoreHouseholdImportRequest $request,
         HouseholdImportSubmissionService $submissionService,
     ) {
-        $importLog = $submissionService->submit($request->user(), $request->validated());
+        $importLogs = $submissionService->submitMany($request->user(), $request->validated());
+        $imports = $importLogs->map(fn(ImportLog $importLog): array => [
+            'id' => $importLog->id,
+            'file_name' => $importLog->file_name,
+        ])->values();
+        $firstImport = $importLogs->first();
+        $count = $importLogs->count();
         $request->session()->flash(
             'info',
-            'File đã được tải lên thành công và đang được hệ thống xử lý. Bạn có thể tiếp tục công việc khác; hệ thống sẽ thông báo khi hoàn tất.'
+            $count === 1
+                ? 'File đã được tải lên thành công và đang được hệ thống xử lý. Bạn có thể tiếp tục công việc khác; hệ thống sẽ thông báo khi hoàn tất.'
+                : "Đã tải lên {$count} tệp thành công. Hệ thống sẽ xử lý lần lượt và thông báo kết quả từng tệp."
         );
 
-        return response()->json([
-            'import_id' => $importLog->id,
-            'status_url' => route('api.households.import.status', $importLog, false),
-            'history_url' => route('api.households.import-history', ['import_id' => $importLog->id], false),
-        ], 202);
+        $response = [
+            'import_ids' => $importLogs->pluck('id')->all(),
+            'imports' => $imports,
+            'history_url' => route('api.households.import-history', ['import_id' => $firstImport->id], false),
+        ];
+        if ($count === 1) {
+            $response['import_id'] = $firstImport->id;
+            $response['status_url'] = route('api.households.import.status', $firstImport, false);
+        }
+
+        return response()->json($response, 202);
     }
 
     public function processQueuedImport(

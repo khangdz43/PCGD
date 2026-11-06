@@ -672,6 +672,79 @@ class HouseholdCrudFlowTest extends TestCase
         $workbook->disconnectWorksheets();
     }
 
+    public function test_error_workbook_download_reuses_existing_xlsx_without_rewriting_it(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $sourcePath = 'household-imports/failed/source.xlsx';
+        $errorPath = 'household-imports/failed/error-source.xlsx';
+        Storage::disk('local')->put($sourcePath, 'source workbook');
+        Storage::disk('local')->makeDirectory(dirname($errorPath));
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setCellValue('A1', 'Kết quả lỗi');
+        $spreadsheet->getActiveSheet()->setSelectedCell('A5');
+        IOFactory::createWriter($spreadsheet, 'Xlsx')
+            ->save(Storage::disk('local')->path($errorPath));
+        $spreadsheet->disconnectWorksheets();
+
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'source.xlsx',
+            'file_path' => $sourcePath,
+            'error_file_path' => $errorPath,
+            'status' => 'FAILED',
+        ]);
+
+        self::assertSame(
+            $errorPath,
+            app(HouseholdImportHistoryService::class)->errorFilePath($importLog),
+        );
+        self::assertTrue(Storage::disk('local')->exists($errorPath));
+        $workbook = IOFactory::load(Storage::disk('local')->path($errorPath));
+        self::assertSame('A5', $workbook->getActiveSheet()->getSelectedCells());
+        self::assertSame('Kết quả lỗi', $workbook->getActiveSheet()->getCell('A1')->getValue());
+        $workbook->disconnectWorksheets();
+    }
+
+    public function test_error_workbook_download_unhides_the_active_sheet_in_legacy_xlsx(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $sourcePath = 'household-imports/failed/source.xls';
+        $errorPath = 'household-imports/failed/error-source.xlsx';
+        Storage::disk('local')->put($sourcePath, 'source workbook');
+        Storage::disk('local')->makeDirectory(dirname($errorPath));
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setTitle('Danh sách phiếu điều tra');
+        $hiddenSheet = $spreadsheet->createSheet(0);
+        $hiddenSheet->setTitle('XXXX');
+        $hiddenSheet->setSheetState('veryHidden');
+        $hiddenSheet->setCellValue('A5', 'Lỗi cần kiểm tra');
+        $spreadsheet->setActiveSheetIndex(0);
+        IOFactory::createWriter($spreadsheet, 'Xlsx')
+            ->save(Storage::disk('local')->path($errorPath));
+        $spreadsheet->disconnectWorksheets();
+
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'source.xls',
+            'file_path' => $sourcePath,
+            'error_file_path' => $errorPath,
+            'status' => 'FAILED',
+        ]);
+
+        self::assertSame(
+            $errorPath,
+            app(HouseholdImportHistoryService::class)->errorFilePath($importLog),
+        );
+        $workbook = IOFactory::load(Storage::disk('local')->path($errorPath));
+        self::assertSame('XXXX', $workbook->getActiveSheet()->getTitle());
+        self::assertSame('visible', $workbook->getActiveSheet()->getSheetState());
+        self::assertSame('Lỗi cần kiểm tra', $workbook->getActiveSheet()->getCell('A5')->getValue());
+        self::assertTrue($importLog->fresh()->context['error_file_active_sheet_checked']);
+        $workbook->disconnectWorksheets();
+    }
+
     public function test_import_history_can_be_removed_without_deleting_imported_households(): void
     {
         Storage::fake('local');
@@ -787,6 +860,116 @@ class HouseholdCrudFlowTest extends TestCase
         }
     }
 
+    public function test_import_submission_accepts_multiple_files_and_queues_each_file(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-batch-');
+        $xlsxPath = $filePath . '.xlsx';
+        rename($filePath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $spreadsheet->getActiveSheet()->setCellValue('A1', 'fixture');
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $response = $this->actingAs($user)->postJson(route('api.household-imports.store'), [
+                'files' => [
+                    new UploadedFile(
+                        $xlsxPath,
+                        'households-one.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        null,
+                        true,
+                    ),
+                    new UploadedFile(
+                        $xlsxPath,
+                        'households-two.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        null,
+                        true,
+                    ),
+                ],
+                'school_year' => $this->currentSchoolYear(),
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'village_code' => 'V01',
+            ]);
+
+            $response->assertAccepted()
+                ->assertJsonCount(2, 'data.import_ids')
+                ->assertJsonPath('data.imports.0.file_name', 'households-one.xlsx')
+                ->assertJsonPath('data.imports.1.file_name', 'households-two.xlsx');
+            $this->assertDatabaseCount('import_logs', 2);
+            Queue::assertPushed(ProcessHouseholdImport::class, 2);
+
+            foreach (ImportLog::query()->get() as $importLog) {
+                $this->assertTrue(Storage::disk('local')->exists($importLog->file_path));
+                $this->assertSame('PENDING', $importLog->status);
+            }
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
+    public function test_import_reports_a_clear_message_when_no_data_sheet_is_found(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-invalid-import-');
+        $xlsxPath = $temporaryPath . '.xlsx';
+        rename($temporaryPath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $spreadsheet->getActiveSheet()->setTitle('Sheet1');
+            $spreadsheet->getActiveSheet()->setCellValue('A1', 'Không đúng mẫu');
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $storedPath = 'household-imports/invalid/source.xlsx';
+            Storage::disk('local')->put($storedPath, file_get_contents($xlsxPath));
+            $importLog = $this->createImportLog($user, [
+                'file_name' => 'source.xlsx',
+                'file_path' => $storedPath,
+                'context' => [
+                    'school_year' => $this->currentSchoolYear(),
+                    'province_code' => 'P01',
+                    'commune_code' => 'C01',
+                    'village_code' => 'V01',
+                ],
+            ]);
+
+            $response = app(HouseholdImportProcessingService::class)->process(
+                $importLog,
+                $user,
+                new UploadedFile($xlsxPath, 'source.xlsx', null, null, true),
+            );
+
+            self::assertSame(422, $response->getStatusCode());
+            self::assertSame('FAILED', $importLog->fresh()->status);
+            self::assertStringContainsString(
+                'Không tìm thấy trang tính dữ liệu hợp lệ',
+                $importLog->fresh()->context['processing_error'],
+            );
+            $this->actingAs($user)
+                ->getJson(route('api.households.import.status', $importLog))
+                ->assertOk()
+                ->assertJsonPath(
+                    'data.error_message',
+                    $importLog->fresh()->context['processing_error'],
+                );
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
     public function test_import_keeps_valid_rows_and_exports_only_invalid_rows(): void
     {
         Storage::fake('local');
@@ -798,6 +981,7 @@ class HouseholdCrudFlowTest extends TestCase
         try {
             $spreadsheet = new Spreadsheet;
             $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Danh sách phiếu điều tra');
             $sheet->setCellValue('O2', 'Số phiếu');
             $sheet->setCellValue('AY2', 'Ghi chú');
             foreach ([5 => ['GOOD', 'Kinh'], 6 => ['BAD', '']] as $row => [$code, $ethnicity]) {
@@ -813,6 +997,11 @@ class HouseholdCrudFlowTest extends TestCase
                 $sheet->setCellValue("P{$row}", 'Thường trú');
                 $sheet->setCellValue("AV{$row}", 'Chủ hộ');
             }
+            $hiddenSheet = $spreadsheet->createSheet(0);
+            $hiddenSheet->setTitle('XXXX');
+            $hiddenSheet->setSheetState('veryHidden');
+            $hiddenSheet->setCellValue('O2', 'Số phiếu');
+            $hiddenSheet->setCellValue('AY2', 'Ghi chú');
             IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
             $spreadsheet->disconnectWorksheets();
 
@@ -841,6 +1030,7 @@ class HouseholdCrudFlowTest extends TestCase
             $this->assertDatabaseHas('import_logs', [
                 'id' => $importLog->id,
                 'status' => 'PARTIAL',
+                'total_rows' => 2,
                 'success_rows' => 1,
                 'error_rows' => 1,
             ]);
@@ -848,6 +1038,7 @@ class HouseholdCrudFlowTest extends TestCase
 
             $errorWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
             $errorSheet = $errorWorkbook->getActiveSheet();
+            self::assertSame('Danh sách phiếu điều tra', $errorSheet->getTitle());
             self::assertSame('BAD', $errorSheet->getCell('O5')->getValue());
             self::assertSame(5, $errorSheet->getHighestDataRow());
             self::assertStringContainsString('dân tộc', strtolower((string) $errorSheet->getCell('A5')->getValue()));
@@ -1195,9 +1386,9 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonPath('error.details.0.field', 'source_codes.0');
 
         $this->postJson('/api/v1/village-merges', [
-                'source_codes' => ['V02'],
-                'target_code' => 'V01',
-            ])
+            'source_codes' => ['V02'],
+            'target_code' => 'V01',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'source_codes.0');
 
@@ -1393,14 +1584,14 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->postJson(route('api.schools.store'), [
-                'code' => 'P01_C01M',
-                'name' => 'Trường Một đã sửa',
-                'type' => 'single_level',
-                'level' => 'THCS',
-                'is_active' => true,
-                'province_code' => 'P01',
-                'commune_code' => 'C01',
-            ])
+            'code' => 'P01_C01M',
+            'name' => 'Trường Một đã sửa',
+            'type' => 'single_level',
+            'level' => 'THCS',
+            'is_active' => true,
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'name');
 
@@ -1483,13 +1674,13 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertNotNull($school);
 
         $this->putJson("/api/v1/schools/{$school->id}", [
-                'name' => 'Trường liên cấp THCS',
-                'type' => 'multi_level',
-                'level' => 'TH',
-                'is_active' => true,
-                'province_code' => 'P01',
-                'commune_code' => 'C01',
-            ])
+            'name' => 'Trường liên cấp THCS',
+            'type' => 'multi_level',
+            'level' => 'TH',
+            'is_active' => true,
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'level')
             ->assertJsonPath('error.details.0.issue', 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.');

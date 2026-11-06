@@ -25,9 +25,7 @@ import Login from "./views/auth/Login.vue";
 import type { User } from "./types";
 
 const Workspace = defineAsyncComponent(() => import("./Workspace.vue"));
-const Dashboard = defineAsyncComponent(
-    () => import("./views/Dashboard.vue"),
-);
+const Dashboard = defineAsyncComponent(() => import("./views/Dashboard.vue"));
 const ThonXomList = defineAsyncComponent(
     () => import("./views/category/ThonXomList.vue"),
 );
@@ -51,6 +49,7 @@ type ImportStatus = {
     status: string;
     success_rows?: number;
     error_rows?: number;
+    error_message?: string | null;
 };
 type ImportNotice = {
     id: number;
@@ -160,6 +159,10 @@ function importCompletionMessage(
         return `File "${fileName}" đã xử lý xong: ${successRows} dòng thành công, ${errorRows} dòng lỗi.`;
     }
 
+    if (status.error_message) {
+        return `Không thể xử lý file "${fileName}". ${status.error_message}`;
+    }
+
     return errorRows > 0
         ? `File "${fileName}" đã xử lý xong nhưng không có dòng nào được nhập: ${errorRows} dòng lỗi. Hãy xem file dòng lỗi trong lịch sử nhập.`
         : `Hệ thống không thể đọc nội dung file "${fileName}". Hãy kiểm tra lại file Excel.`;
@@ -175,17 +178,18 @@ async function pollTrackedImports(): Promise<void> {
 
     importStatusRequestActive = true;
     try {
-        const response = await api.get<unknown>(
-            "/household-imports/statuses",
-            { params: { ids: [...trackedImports.keys()] } },
-        );
+        const response = await api.get<unknown>("/household-imports/statuses", {
+            params: { ids: [...trackedImports.keys()] },
+        });
         const payload = apiData<{ statuses?: unknown }>(response.data);
         if (
             typeof payload.statuses !== "object" ||
             payload.statuses === null ||
             Array.isArray(payload.statuses)
         ) {
-            throw new Error("Máy chủ trả về trạng thái file nhập không hợp lệ.");
+            throw new Error(
+                "Máy chủ trả về trạng thái file nhập không hợp lệ.",
+            );
         }
 
         const statuses = payload.statuses as Record<string, unknown>;
@@ -228,18 +232,32 @@ function handleHouseholdImportSubmitted(event: Event): void {
     if (typeof detail !== "object" || detail === null) return;
 
     const importData = detail as Record<string, unknown>;
-    if (
-        typeof importData.id !== "number" ||
-        typeof importData.fileName !== "string"
-    ) {
-        return;
-    }
+    const candidates = Array.isArray(importData.imports)
+        ? importData.imports
+        : [importData];
+    const submittedImports = candidates.flatMap((candidate) => {
+        if (typeof candidate !== "object" || candidate === null) return [];
+        const item = candidate as Record<string, unknown>;
+        const id = item.id;
+        const fileName = item.fileName ?? item.file_name;
+        return typeof id === "number" &&
+            Number.isSafeInteger(id) &&
+            typeof fileName === "string"
+            ? [{ id, fileName }]
+            : [];
+    });
+    if (submittedImports.length === 0) return;
 
-    trackedImports.set(importData.id, importData.fileName);
+    for (const item of submittedImports) {
+        trackedImports.set(item.id, item.fileName);
+    }
+    const count = submittedImports.length;
     showImportNotice(
         "queued",
-        "Đã nhận tệp Excel",
-        `Tệp "${importData.fileName}" đang chờ hệ thống xử lý. Bạn có thể tiếp tục làm việc.`,
+        count === 1 ? "Đã nhận tệp Excel" : `Đã nhận ${count} tệp Excel`,
+        count === 1
+            ? `Tệp "${submittedImports[0].fileName}" đang chờ hệ thống xử lý. Bạn có thể tiếp tục làm việc.`
+            : `${count} tệp đang chờ hệ thống xử lý. Bạn có thể tiếp tục làm việc; hệ thống sẽ thông báo kết quả từng tệp.`,
     );
     if (importStatusTimer === null) {
         importStatusTimer = window.setInterval(
@@ -346,8 +364,7 @@ watch(
 window.addEventListener("popstate", restoreModuleFromUrl);
 onUnmounted(() => {
     stopImportStatusPolling();
-    for (const timer of importNoticeTimers.values())
-        window.clearTimeout(timer);
+    for (const timer of importNoticeTimers.values()) window.clearTimeout(timer);
     importNoticeTimers.clear();
     window.removeEventListener("popstate", restoreModuleFromUrl);
     window.removeEventListener(ACCOUNT_DISABLED_EVENT, handleAccountDisabled);
@@ -466,7 +483,15 @@ function updateCurrentUserName(profile: { name: string }): void {
                         role="status"
                     >
                         <span class="import-toast-icon" aria-hidden="true">
-                            {{ notice.type === "success" ? "✓" : notice.type === "failed" ? "!" : notice.type === "partial" ? "•" : "↻" }}
+                            {{
+                                notice.type === "success"
+                                    ? "✓"
+                                    : notice.type === "failed"
+                                      ? "!"
+                                      : notice.type === "partial"
+                                        ? "•"
+                                        : "↻"
+                            }}
                         </span>
                         <div class="import-toast-content">
                             <strong>{{ notice.title }}</strong>

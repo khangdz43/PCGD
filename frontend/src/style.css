@@ -758,7 +758,7 @@ h2 {
     font-size: .8rem;
 }
 
-.household-detail-pagination > div {
+.household-detail-pagination>div {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -1402,9 +1402,9 @@ h2 {
 }
 
 .village-merge-configuration-form>.workspace-form-heading,
-.village-merge-configuration-form > .notice,
-.village-merge-configuration-form > .village-merge-columns,
-.village-merge-configuration-form > .pagination-actions {
+.village-merge-configuration-form>.notice,
+.village-merge-configuration-form>.village-merge-columns,
+.village-merge-configuration-form>.pagination-actions {
     grid-column: 1 / -1;
 }
 
@@ -1432,7 +1432,7 @@ h2 {
     min-width: 0;
 }
 
-.village-merge-card .merge-step > div {
+.village-merge-card .merge-step>div {
     min-width: 0;
 }
 
@@ -1560,7 +1560,7 @@ h2 {
     padding-bottom: 2px;
 }
 
-.village-merge-configuration-form > .workspace-field {
+.village-merge-configuration-form>.workspace-field {
     max-width: none;
 }
 
@@ -1763,18 +1763,18 @@ h2 {
     font-size: .86rem;
 }
 
-.village-merge-configuration-form > .pagination-actions {
+.village-merge-configuration-form>.pagination-actions {
     gap: 10px;
     margin-top: 2px;
     padding-top: 2px;
 }
 
-.village-merge-configuration-form > .village-merge-form-actions {
+.village-merge-configuration-form>.village-merge-form-actions {
     justify-content: flex-end;
     margin-top: -6px;
 }
 
-.village-merge-configuration-form > .pagination-actions button {
+.village-merge-configuration-form>.pagination-actions button {
     min-height: 42px;
     padding: 9px 16px;
     border-radius: 10px;
@@ -1816,7 +1816,7 @@ h2 {
     stroke-width: 1.8;
 }
 
-.village-merge-configuration-form > .pagination-actions {
+.village-merge-configuration-form>.pagination-actions {
     margin-top: 0;
     padding-top: 2px;
 }
@@ -2044,9 +2044,7 @@ h2 {
     gap: 10px;
 }
 
-.household-member-create-page
-    .household-member-create-column
-    > .household-member-form-section {
+.household-member-create-page .household-member-create-column>.household-member-form-section {
     grid-column: auto;
     grid-row: auto;
     align-self: start;
@@ -2365,7 +2363,7 @@ h2 {
         font-size: .75rem;
     }
 
-    .village-merge-configuration-form > .pagination-actions {
+    .village-merge-configuration-form>.pagination-actions {
         flex-wrap: wrap;
     }
 
@@ -2419,6 +2417,7 @@ h2 {
 }
 
 @media (max-width: 640px) {
+
     .workspace-modal-backdrop.household-create-page-backdrop,
     .workspace-modal-backdrop.household-member-create-page-backdrop,
     .household-create-members-page {
@@ -3052,10 +3051,7 @@ h2 {
     min-height: calc(100dvh - 82px);
 }
 
-.workspace.household-creation-active
-    > *:not(.household-create-page-backdrop):not(.household-member-editor-backdrop):not(
-        .household-create-members-page
-    ) {
+.workspace.household-creation-active>*:not(.household-create-page-backdrop):not(.household-member-editor-backdrop):not(.household-create-members-page) {
     display: none !important;
 }
 
@@ -3199,11 +3195,11 @@ h2 {
     box-shadow: 0 24px 70px rgb(15 23 42 / 28%);
 }
 
-.workspace-modal-card > .workspace-form-heading {
+.workspace-modal-card>.workspace-form-heading {
     padding: 8px 0;
 }
 
-.workspace-modal-card > .workspace-form-close {
+.workspace-modal-card>.workspace-form-close {
     position: sticky;
     z-index: 5;
     top: 0;
@@ -3464,10 +3460,7 @@ h2 {
 .household-edit-members-table th:nth-child(3),
 .household-edit-members-table td:nth-child(3) {
     position: sticky;
-    left: calc(
-        var(--member-sticky-first-width, 38px) +
-        var(--member-sticky-second-width, 105px)
-    );
+    left: calc(var(--member-sticky-first-width, 38px) + var(--member-sticky-second-width, 105px));
     z-index: 11;
     background: #fff;
     box-shadow: 2px 0 5px rgb(37 58 88 / 7%);
@@ -3863,6 +3856,7 @@ h2 {
 }
 
 @media (max-width: 1200px) {
+
     .household-configuration-form.workspace-modal-card,
     .household-create-page-form.household-configuration-form {
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3870,6 +3864,7 @@ h2 {
 }
 
 @media (max-width: 900px) {
+
     .household-configuration-form.workspace-modal-card,
     .household-create-page-form.household-configuration-form {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3972,7 +3967,7 @@ h2 {
 
 .user-location-filters {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
     min-width: 0;
     align-items: end;
@@ -4191,7 +4186,7 @@ h2 {
 }
 
 .user-management-toolbar {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
 }
 
@@ -4236,6 +4231,9 @@ h2 {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
 }
 
 .user-management-toolbar-bottom>.management-tool-button {
@@ -4511,7 +4509,7 @@ h2 {
     padding-bottom: 0;
 }
 
-.role-configuration-form > .workspace-field:not(.role-permissions-field) {
+.role-configuration-form>.workspace-field:not(.role-permissions-field) {
     align-self: start;
 }
 
@@ -4781,7 +4779,8 @@ h2 {
     padding: 0;
 }
 
-@media (max-width: 800px), (max-height: 700px) {
+@media (max-width: 800px),
+(max-height: 700px) {
     .role-configuration-form {
         overflow: auto;
     }
@@ -5171,6 +5170,8 @@ h2 {
 
     .user-management-toolbar-bottom {
         width: 100%;
+        grid-column: 1;
+        grid-row: auto;
     }
 }
 
@@ -6594,7 +6595,7 @@ button {
     flex: 1 1 0;
     box-sizing: border-box;
     margin: 0 auto;
-padding: 10px clamp(18px, 2.4vw, 34px);
+    padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 @media (min-width: 801px) {
@@ -8015,8 +8016,16 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .household-unified-filter {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(140px, 1fr)) minmax(205px, 1.1fr);
     align-items: end;
+}
+
+.household-unified-filter:has(> .village-unified-search:nth-child(3)) {
+    grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(205px, 1.1fr);
+}
+
+.household-unified-filter:has(> .village-unified-search:nth-child(4)) {
+    grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(205px, 1.1fr);
 }
 
 .household-unified-filter .village-unified-search {
@@ -8041,6 +8050,26 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     color: #34445c;
     font: inherit;
     font-size: .76rem;
+}
+
+@media (max-width: 900px) {
+    .household-unified-filter {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .household-unified-filter .village-unified-search {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 560px) {
+    .household-unified-filter {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .household-unified-filter .village-unified-search {
+        grid-column: auto;
+    }
 }
 
 .user-location-filter-row {
@@ -8258,15 +8287,13 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     }
 }
 
-.excel-import-heading,
-.excel-history-heading {
+.excel-import-heading {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.excel-import-heading h3,
-.excel-history-heading h3 {
+.excel-import-heading h3 {
     margin: 2px 0;
     font-size: 1rem;
 }
@@ -8333,6 +8360,54 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 .excel-file-error {
     display: block;
     margin-top: 8px;
+}
+
+.excel-selected-files {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.excel-selected-files li {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 8px 6px 12px;
+    border: 1px solid #dce4ef;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.excel-selected-files span {
+    min-width: 0;
+    overflow: hidden;
+    color: #304763;
+    font-size: .78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.excel-selected-files button {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #718198;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.excel-selected-files button:hover {
+    background: #fff0ef;
+    color: #b42318;
 }
 
 .excel-import-actions {
@@ -8426,47 +8501,6 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .investigation-import-dialog-history .excel-import-history {
     padding: 18px;
-}
-
-.excel-history-heading {
-    position: relative;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 0 0 12px;
-    border-bottom: 1px solid #edf1f6;
-}
-
-.excel-history-heading>div {
-    min-width: 0;
-}
-
-.excel-history-heading h3 {
-    margin-top: 5px;
-    color: #243957;
-    font-size: 1.2rem;
-    letter-spacing: -.02em;
-}
-
-.excel-history-description {
-    margin: 5px 0 0;
-    color: #7a899e;
-    font-size: .77rem;
-}
-
-.excel-history-count {
-    flex: 0 0 auto;
-    margin-left: auto;
-    padding: 8px 13px;
-    border: 1px solid #dce9fb;
-    border-radius: 12px;
-    background: #f3f7ff;
-    color: #3973c5;
-    font-size: .74rem;
-    font-weight: 700;
-}
-
-.excel-history-count strong {
-    font-size: .92rem;
 }
 
 .excel-history-empty {
@@ -8995,14 +9029,6 @@ padding: 10px clamp(18px, 2.4vw, 34px);
         justify-content: flex-end;
     }
 
-    .excel-history-heading {
-        align-items: flex-start;
-    }
-
-    .excel-history-count {
-        padding: 6px 9px;
-    }
-
     .excel-history-pagination {
         flex-wrap: wrap;
         justify-content: center;
@@ -9302,6 +9328,7 @@ th.is-required::after {
 }
 
 @media (max-width: 800px) {
+
     .app-layout,
     .app-main,
     .app-content,
@@ -9314,23 +9341,22 @@ th.is-required::after {
         min-width: 0;
     }
 
-    .app-content > *,
-    .workspace > *,
-    .dashboard-view > *,
-    .investigation-view > * {
+    .app-content>*,
+    .workspace>*,
+    .dashboard-view>*,
+    .investigation-view>* {
         max-width: 100%;
     }
 
     .section-heading,
-    .workspace > .section-heading,
+    .workspace>.section-heading,
     .workspace-title,
     .workspace-form-heading,
     .account-profile-heading,
-    .excel-history-heading,
     .investigation-import-dialog-header,
     .dashboard-section-heading,
     .merge-step,
-    .school-merge-view > .section-heading {
+    .school-merge-view>.section-heading {
         min-width: 0;
         flex-wrap: wrap;
     }
@@ -9338,7 +9364,7 @@ th.is-required::after {
     .workspace-title h2,
     .section-heading h2,
     .dashboard-section-heading h3,
-    .merge-step > div,
+    .merge-step>div,
     .school-option span {
         min-width: 0;
         overflow-wrap: anywhere;
@@ -9404,7 +9430,7 @@ th.is-required::after {
         flex-basis: 40px;
     }
 
-    .workspace-title > div {
+    .workspace-title>div {
         min-width: 0;
         flex: 1 1 180px;
     }
@@ -9424,7 +9450,7 @@ th.is-required::after {
         flex-wrap: wrap;
     }
 
-    .pagination-controls > button {
+    .pagination-controls>button {
         flex: 1 1 auto;
     }
 
@@ -9433,7 +9459,7 @@ th.is-required::after {
         padding: 14px;
     }
 
-    .school-merge-view .merge-step > div {
+    .school-merge-view .merge-step>div {
         flex: 1 1 150px;
     }
 

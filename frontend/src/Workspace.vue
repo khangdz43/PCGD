@@ -225,29 +225,31 @@ const selectedVillageMergeSources = computed(() =>
         selectedSourceCodes.value.includes(String(village.code)),
     ),
 );
-    const villageMergeSourceSearch = ref("");
-    const selectableVillageMergeSources = computed(() =>
-        rows.value.filter(
-            (village) =>
-                village.operational_status !== "merged" &&
-                String(village.code) !== String(form.value.target_code ?? ""),
+const villageMergeSourceSearch = ref("");
+const selectableVillageMergeSources = computed(() =>
+    rows.value.filter(
+        (village) =>
+            village.operational_status !== "merged" &&
+            String(village.code) !== String(form.value.target_code ?? ""),
+    ),
+);
+const filteredVillageMergeSources = computed(() => {
+    const query = villageMergeSourceSearch.value.trim().toLocaleLowerCase("vi");
+    if (!query) return selectableVillageMergeSources.value;
+
+    return selectableVillageMergeSources.value.filter((village) =>
+        [village.name, village.code].some((value) =>
+            String(value ?? "")
+                .toLocaleLowerCase("vi")
+                .includes(query),
         ),
     );
-    const filteredVillageMergeSources = computed(() => {
-        const query = villageMergeSourceSearch.value.trim().toLocaleLowerCase("vi");
-        if (!query) return selectableVillageMergeSources.value;
-
-        return selectableVillageMergeSources.value.filter((village) =>
-            [village.name, village.code].some((value) =>
-                String(value ?? "").toLocaleLowerCase("vi").includes(query),
-            ),
-        );
-    });
+});
 const selectedSourcesPaused = computed(
     () =>
         selectedVillageMergeSources.value.length > 0 &&
-        selectedVillageMergeSources.value.every(
-            (village) => Boolean(village.intake_paused_at),
+        selectedVillageMergeSources.value.every((village) =>
+            Boolean(village.intake_paused_at),
         ),
 );
 const selectedSourcesHaveActive = computed(() =>
@@ -308,16 +310,18 @@ async function loadVillageMergeOptions(): Promise<void> {
     );
 }
 
-async function changeSelectedVillageIntake(action: "pause" | "resume"): Promise<void> {
-    if (selectedSourceCodes.value.length === 0 || villageMergeBusy.value) return;
+async function changeSelectedVillageIntake(
+    action: "pause" | "resume",
+): Promise<void> {
+    if (selectedSourceCodes.value.length === 0 || villageMergeBusy.value)
+        return;
     villageMergeBusy.value = true;
     error.value = "";
     notice.value = "";
     try {
-        const response = await api.post<unknown>(
-            `/village-merges/${action}`,
-            { source_codes: selectedSourceCodes.value },
-        );
+        const response = await api.post<unknown>(`/village-merges/${action}`, {
+            source_codes: selectedSourceCodes.value,
+        });
         const result = apiData<Row>(response.data);
         deleteResult.value = {
             success: true,
@@ -347,7 +351,10 @@ function formatImportRows(value: unknown): string {
 
 function displayImportFileName(value: unknown): string {
     if (typeof value !== "string") return "Không rõ tên tệp";
-    const readableName = value.replace(/^_?\d{9,}_/, "").replace(/_/g, " ").trim();
+    const readableName = value
+        .replace(/^_?\d{9,}_/, "")
+        .replace(/_/g, " ")
+        .trim();
     return readableName || value;
 }
 
@@ -359,7 +366,10 @@ function importStatusLabel(status: unknown): string {
     return "Đang chờ";
 }
 
-const importFile = ref<File | null>(null);
+const MAX_IMPORT_FILES = 5;
+const MAX_IMPORT_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_IMPORT_BATCH_BYTES = 35 * 1024 * 1024;
+const importFiles = ref<File[]>([]);
 const importFileError = ref("");
 const importFileInput = ref<HTMLInputElement | null>(null);
 const importDropActive = ref(false);
@@ -488,13 +498,7 @@ const moduleInfo: Record<
     schools: {
         title: "Trường học",
         endpoint: "/schools",
-        columns: [
-            "name",
-            "code",
-            "province.name",
-            "commune.name",
-            "is_active",
-        ],
+        columns: ["name", "code", "province.name", "commune.name", "is_active"],
         fields: [
             "name",
             "type",
@@ -525,13 +529,7 @@ const moduleInfo: Record<
     users: {
         title: "Tài khoản",
         endpoint: "/users",
-        columns: [
-            "name",
-            "username",
-            "email",
-            "phone",
-            "role_name",
-        ],
+        columns: ["name", "username", "email", "phone", "role_name"],
         fields: [
             "name",
             "username",
@@ -593,9 +591,7 @@ const isHouseholdCreateContinuationPage = computed(
         [2, 3].includes(createHouseholdWizardStep.value),
 );
 const isHouseholdWizardMemberPage = computed(
-    () =>
-        isHouseholdCreateContinuationPage.value &&
-        memberEditorOpen.value,
+    () => isHouseholdCreateContinuationPage.value && memberEditorOpen.value,
 );
 const householdCreationPageActive = computed(
     () =>
@@ -615,8 +611,7 @@ const showUserVillageFilter = computed(
 );
 const showUserProvinceFilter = computed(
     () =>
-        currentActorScopeLevel.value === "global" &&
-        provinces.value.length > 0,
+        currentActorScopeLevel.value === "global" && provinces.value.length > 0,
 );
 const showSchoolProvinceFilter = computed(() => provinces.value.length > 1);
 const showSchoolCommuneFilter = computed(
@@ -742,10 +737,7 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
     ) {
         errors.citizen_id = "Số CCCD phải gồm đúng 12 chữ số.";
     }
-    if (
-        form.value.phone?.trim() &&
-        !/^\+?\d+$/.test(form.value.phone.trim())
-    ) {
+    if (form.value.phone?.trim() && !/^\+?\d+$/.test(form.value.phone.trim())) {
         errors.phone = "Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.";
     }
     if ([...(form.value.phone ?? "")].length > 20) {
@@ -762,8 +754,7 @@ const userFormValidationErrors = computed<Record<string, string>>(() => {
         form.value.date_of_birth &&
         form.value.date_of_birth > latestBirthDate
     ) {
-        errors.date_of_birth =
-            "Ngày sinh không được lớn hơn ngày hiện tại.";
+        errors.date_of_birth = "Ngày sinh không được lớn hơn ngày hiện tại.";
     }
 
     if (form.value.scope_level !== "global" && !form.value.province_code) {
@@ -868,27 +859,27 @@ const villageFormReady = computed(
         ),
 );
 const villageFormValidationErrors = computed<Record<string, string>>(() => {
-        if (props.moduleKey !== "villages") return {};
+    if (props.moduleKey !== "villages") return {};
 
-        const errors: Record<string, string> = {};
-        if (!String(form.value.name ?? "").trim())
-            errors.name = "Vui lòng nhập tên thôn / xóm.";
-        if (!form.value.province_code)
-            errors.province_code = "Vui lòng chọn tỉnh / thành phố.";
-        if (!form.value.commune_code)
-            errors.commune_code = "Vui lòng chọn xã / phường.";
-        if (!form.value.operational_status)
-            errors.operational_status = "Vui lòng chọn trạng thái.";
-        return errors;
+    const errors: Record<string, string> = {};
+    if (!String(form.value.name ?? "").trim())
+        errors.name = "Vui lòng nhập tên thôn / xóm.";
+    if (!form.value.province_code)
+        errors.province_code = "Vui lòng chọn tỉnh / thành phố.";
+    if (!form.value.commune_code)
+        errors.commune_code = "Vui lòng chọn xã / phường.";
+    if (!form.value.operational_status)
+        errors.operational_status = "Vui lòng chọn trạng thái.";
+    return errors;
 });
 const schoolFormReady = computed(
     () =>
         props.moduleKey !== "schools" ||
         Boolean(
             form.value.name?.trim() &&
-                form.value.type &&
-                form.value.level &&
-                form.value.is_active !== "" &&
+            form.value.type &&
+            form.value.level &&
+            form.value.is_active !== "" &&
             form.value.is_active !== null &&
             form.value.is_active !== undefined &&
             form.value.province_code &&
@@ -896,21 +887,21 @@ const schoolFormReady = computed(
         ),
 );
 const schoolFormValidationErrors = computed<Record<string, string>>(() => {
-        if (props.moduleKey !== "schools") return {};
+    if (props.moduleKey !== "schools") return {};
 
-        const errors: Record<string, string> = {};
-        if (!String(form.value.name ?? "").trim())
-            errors.name = "Vui lòng nhập tên trường.";
-        if (!form.value.type) errors.type = "Vui lòng chọn loại trường.";
-        if (!form.value.level) errors.level = "Vui lòng chọn cấp học.";
-        if (!form.value.province_code)
-            errors.province_code = "Vui lòng chọn tỉnh / thành phố.";
-        if (!form.value.commune_code)
-            errors.commune_code = "Vui lòng chọn xã / phường.";
-        if (!form.value.is_active) {
-            errors.is_active = "Vui lòng chọn trạng thái hoạt động.";
-        }
-        return errors;
+    const errors: Record<string, string> = {};
+    if (!String(form.value.name ?? "").trim())
+        errors.name = "Vui lòng nhập tên trường.";
+    if (!form.value.type) errors.type = "Vui lòng chọn loại trường.";
+    if (!form.value.level) errors.level = "Vui lòng chọn cấp học.";
+    if (!form.value.province_code)
+        errors.province_code = "Vui lòng chọn tỉnh / thành phố.";
+    if (!form.value.commune_code)
+        errors.commune_code = "Vui lòng chọn xã / phường.";
+    if (!form.value.is_active) {
+        errors.is_active = "Vui lòng chọn trạng thái hoạt động.";
+    }
+    return errors;
 });
 const roleFormValidationErrors = computed<Record<string, string>>(() => {
     if (props.moduleKey !== "roles") return {};
@@ -1032,7 +1023,10 @@ function schoolLevelSummary(row: Row): string {
     const levelIndex = generalLevels.indexOf(level);
     return levelIndex < 0
         ? level
-        : generalLevels.slice(0, levelIndex + 1).reverse().join(", ");
+        : generalLevels
+              .slice(0, levelIndex + 1)
+              .reverse()
+              .join(", ");
 }
 const scopeLabels: Record<string, string> = {
     global: "Trung ương",
@@ -1970,9 +1964,8 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
         )
             ? "pcgd-household-view-member-column-widths"
             : "pcgd-household-edit-member-column-widths";
-        const columns = table.querySelectorAll<HTMLTableColElement>(
-            "colgroup col",
-        );
+        const columns =
+            table.querySelectorAll<HTMLTableColElement>("colgroup col");
         const loadWidths = (): number[] | null => {
             try {
                 const stored = window.localStorage.getItem(preferenceKey);
@@ -1991,7 +1984,10 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
                 }
                 return widths;
             } catch (error) {
-                console.warn("Không thể đọc độ rộng cột nhân khẩu đã lưu.", error);
+                console.warn(
+                    "Không thể đọc độ rộng cột nhân khẩu đã lưu.",
+                    error,
+                );
                 return null;
             }
         };
@@ -2031,7 +2027,10 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
             const header = (event.target as HTMLElement).closest("th");
             if (!header || !table.contains(header)) return;
             const rect = header.getBoundingClientRect();
-            if (event.clientX < rect.right - 9 || event.clientX > rect.right + 1) {
+            if (
+                event.clientX < rect.right - 9 ||
+                event.clientX > rect.right + 1
+            ) {
                 return;
             }
 
@@ -2125,14 +2124,12 @@ function householdViewMemberValue(person: Row, key: string): string {
     }
     if (key === "school") {
         return displayFormValue(
-            pathValue(education, "school.name") ||
-                education.school_code,
+            pathValue(education, "school.name") || education.school_code,
         );
     }
     if (key === "graduation_level") {
         return displayFormValue(
-            educationGraduationLabel(education) ||
-                education.graduation_level,
+            educationGraduationLabel(education) || education.graduation_level,
         );
     }
     if (key === "literacy_relapse_level") {
@@ -2140,7 +2137,10 @@ function householdViewMemberValue(person: Row, key: string): string {
             ? `Mức độ ${String(education.literacy_relapse_level)}`
             : "Chưa cập nhật";
     }
-    if (key === "special_circumstance" || key === "special_circumstance_detail") {
+    if (
+        key === "special_circumstance" ||
+        key === "special_circumstance_detail"
+    ) {
         return displayFormValue(disability[key]);
     }
     if (
@@ -2858,7 +2858,9 @@ async function load(): Promise<void> {
             }
             if (props.moduleKey === "users") {
                 userFilterRoles.value = asRows(data.roles);
-                userAccountScopeLevels.value = Array.isArray(data.account_scope_levels)
+                userAccountScopeLevels.value = Array.isArray(
+                    data.account_scope_levels,
+                )
                     ? data.account_scope_levels.filter(
                           (level): level is string => typeof level === "string",
                       )
@@ -3041,7 +3043,8 @@ async function beginEdit(row?: Row): Promise<void> {
             form.value.name = String(row.name ?? "");
             form.value.type = String(row.type ?? "");
             form.value.level = String(row.level ?? "");
-            form.value.is_active = row.is_active === false || row.is_active === 0 ? "0" : "1";
+            form.value.is_active =
+                row.is_active === false || row.is_active === 0 ? "0" : "1";
             form.value.province_code = String(row.province_code ?? "");
             form.value.commune_code = String(row.commune_code ?? "");
         } else if (provinces.value.length === 1) {
@@ -3255,11 +3258,11 @@ async function openHousehold(row: Row): Promise<void> {
     householdListRow.value = row;
     householdDetailPage.value = 1;
     householdDetailLastPage.value = 1;
-    householdDetailTotal.value = Number(row.members_count ?? row.persons_count ?? 0);
+    householdDetailTotal.value = Number(
+        row.members_count ?? row.persons_count ?? 0,
+    );
     householdDetail.value = {
-        ...(householdDetail.value?.id === id
-            ? householdDetail.value
-            : row),
+        ...(householdDetail.value?.id === id ? householdDetail.value : row),
         persons: [],
     };
     try {
@@ -4480,7 +4483,9 @@ function userMatchesCurrentFilters(user: Row): boolean {
 
 function userFormState(): string {
     const values = Object.keys(form.value)
-        .filter((field) => !["password", "password_confirmation"].includes(field))
+        .filter(
+            (field) => !["password", "password_confirmation"].includes(field),
+        )
         .sort()
         .map((field) => [field, form.value[field] ?? ""]);
 
@@ -4523,10 +4528,7 @@ async function save(): Promise<void> {
     roleFormRequestError.value = "";
     managementResult.value = null;
     if (props.moduleKey === "users") {
-        if (
-            editing.value &&
-            !userFormChanged.value
-        ) {
+        if (editing.value && !userFormChanged.value) {
             return;
         }
 
@@ -4555,7 +4557,8 @@ async function save(): Promise<void> {
             return;
         }
         if (!selectedSourcesPaused.value) {
-            error.value = "Hãy tạm dừng nhận phiếu tại tất cả thôn nguồn trước khi gộp.";
+            error.value =
+                "Hãy tạm dừng nhận phiếu tại tất cả thôn nguồn trước khi gộp.";
             return;
         }
     }
@@ -4653,10 +4656,7 @@ async function save(): Promise<void> {
             props.moduleKey === "households" &&
             editing.value &&
             initialHouseholdFormState.value !== householdFormState();
-        if (
-            editing.value ||
-            isUpdatingCreatedHousehold
-        ) {
+        if (editing.value || isUpdatingCreatedHousehold) {
             const householdId = isUpdatingCreatedHousehold
                 ? createdHouseholdId.value
                 : id;
@@ -5034,7 +5034,8 @@ async function saveAccountProfile(): Promise<void> {
     if (!accountForm.value.name.trim()) {
         accountFormErrors.value.name = "Vui lòng nhập họ và tên.";
     } else if ([...accountForm.value.name].length > 255) {
-        accountFormErrors.value.name = "Họ và tên không được vượt quá 255 ký tự.";
+        accountFormErrors.value.name =
+            "Họ và tên không được vượt quá 255 ký tự.";
     }
     if (
         accountForm.value.email &&
@@ -5044,10 +5045,7 @@ async function saveAccountProfile(): Promise<void> {
     } else if ([...accountForm.value.email].length > 255) {
         accountFormErrors.value.email = "Email không được vượt quá 255 ký tự.";
     }
-    if (
-        accountForm.value.phone &&
-        !/^\+?\d+$/.test(accountForm.value.phone)
-    ) {
+    if (accountForm.value.phone && !/^\+?\d+$/.test(accountForm.value.phone)) {
         accountFormErrors.value.phone =
             "Số điện thoại chỉ được chứa chữ số hoặc dấu + ở đầu.";
     } else if ([...accountForm.value.phone].length > 20) {
@@ -5058,8 +5056,7 @@ async function saveAccountProfile(): Promise<void> {
         accountForm.value.citizen_id &&
         !/^\d{12}$/.test(accountForm.value.citizen_id)
     ) {
-        accountFormErrors.value.citizen_id =
-            "Số CCCD phải gồm đúng 12 chữ số.";
+        accountFormErrors.value.citizen_id = "Số CCCD phải gồm đúng 12 chữ số.";
     }
     if (
         accountForm.value.date_of_birth &&
@@ -5128,30 +5125,57 @@ async function changePassword(): Promise<void> {
     }
 }
 
-function setImportFile(file: File | null, input?: HTMLInputElement): void {
-    if (file && !/\.(xls|xlsx)$/i.test(file.name)) {
-        importFile.value = null;
-        importFileError.value =
-            "Chỉ chấp nhận tệp Excel định dạng .xls hoặc .xlsx.";
-        if (input) input.value = "";
-        return;
+function setImportFiles(files: File[], input?: HTMLInputElement): void {
+    importSubmitAttempted.value = false;
+    const invalidFile = files.find((file) => !/\.(xls|xlsx)$/i.test(file.name));
+    if (invalidFile) {
+        importFiles.value = [];
+        importFileError.value = `Tệp "${invalidFile.name}" không phải định dạng .xls hoặc .xlsx.`;
+    } else if (files.length > MAX_IMPORT_FILES) {
+        importFiles.value = [];
+        importFileError.value = `Mỗi lần chỉ chọn tối đa ${MAX_IMPORT_FILES} tệp.`;
+    } else {
+        const oversizedFile = files.find(
+            (file) => file.size > MAX_IMPORT_FILE_BYTES,
+        );
+        const totalSize = files.reduce((total, file) => total + file.size, 0);
+        if (oversizedFile) {
+            importFiles.value = [];
+            importFileError.value = `Tệp "${oversizedFile.name}" vượt quá 20 MB.`;
+        } else if (totalSize > MAX_IMPORT_BATCH_BYTES) {
+            importFiles.value = [];
+            importFileError.value =
+                "Tổng dung lượng các tệp không được vượt quá 35 MB.";
+        } else {
+            importFiles.value = files;
+            importFileError.value = "";
+        }
     }
-
-    importFile.value = file;
-    importFileError.value = "";
+    if (input) input.value = "";
     error.value = "";
 }
 
 function handleImportFileChange(event: Event): void {
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
-    setImportFile(input.files?.[0] ?? null, input);
+    setImportFiles(Array.from(input.files ?? []), input);
 }
 
 function handleImportDrop(event: DragEvent): void {
     importDropActive.value = false;
-    setImportFile(event.dataTransfer?.files[0] ?? null);
-    if (importFileInput.value) importFileInput.value.value = "";
+    setImportFiles(
+        Array.from(event.dataTransfer?.files ?? []),
+        importFileInput.value ?? undefined,
+    );
+}
+
+function removeImportFile(index: number): void {
+    importFiles.value = importFiles.value.filter(
+        (_, fileIndex) => fileIndex !== index,
+    );
+    importSubmitAttempted.value = false;
+    importFileError.value = "";
+    error.value = "";
 }
 
 function handleImportDragLeave(event: DragEvent): void {
@@ -5169,7 +5193,7 @@ function handleImportDragLeave(event: DragEvent): void {
 async function submitImport(): Promise<void> {
     importSubmitAttempted.value = true;
     if (
-        !importFile.value ||
+        importFiles.value.length === 0 ||
         !form.value.province_code ||
         !form.value.commune_code ||
         !form.value.village_code
@@ -5177,7 +5201,8 @@ async function submitImport(): Promise<void> {
         return;
     }
     const data = new FormData();
-    data.append("file", importFile.value);
+    const files = [...importFiles.value];
+    files.forEach((file) => data.append("files[]", file));
     data.append("school_year", currentImportSchoolYear);
     for (const key of ["province_code", "commune_code", "village_code"]) {
         const value = form.value[key];
@@ -5187,21 +5212,30 @@ async function submitImport(): Promise<void> {
     error.value = "";
     notice.value = "";
     try {
-        const fileName = importFile.value.name;
         const response = await api.post<unknown>("/household-imports", data);
-        const result = apiData<{ import_id?: unknown }>(response.data);
-        if (
-            typeof result.import_id !== "number" ||
-            !Number.isSafeInteger(result.import_id)
-        ) {
-            throw new Error("Máy chủ không trả về mã file nhập hợp lệ.");
+        const result = apiData<Record<string, unknown>>(response.data);
+        const imports = Array.isArray(result.imports)
+            ? result.imports
+            : [{ id: result.import_id, file_name: files[0]?.name }];
+        const submittedImports = imports.flatMap((item) => {
+            if (typeof item !== "object" || item === null) return [];
+            const importData = item as Record<string, unknown>;
+            return typeof importData.id === "number" &&
+                Number.isSafeInteger(importData.id) &&
+                typeof importData.file_name === "string"
+                ? [{ id: importData.id, fileName: importData.file_name }]
+                : [];
+        });
+        if (submittedImports.length !== files.length) {
+            throw new Error("Máy chủ không trả về đủ mã file nhập.");
         }
         window.dispatchEvent(
             new CustomEvent(HOUSEHOLD_IMPORT_SUBMITTED_EVENT, {
-                detail: { id: result.import_id, fileName },
+                detail: { imports: submittedImports },
             }),
         );
-        importFile.value = null;
+        importFiles.value = [];
+        importSubmitAttempted.value = false;
         await load();
     } catch (cause) {
         error.value = errorMessage(cause);
@@ -5470,13 +5504,11 @@ async function confirmAccountAction(): Promise<void> {
     if (dialog.action === "password") {
         const passwordLength = Array.from(accountPassword.value).length;
         if (passwordLength < 12 || passwordLength > 18) {
-            accountPasswordError.value =
-                "Mật khẩu phải có từ 12 đến 18 ký tự.";
+            accountPasswordError.value = "Mật khẩu phải có từ 12 đến 18 ký tự.";
             return;
         }
         if (accountPassword.value !== accountPasswordConfirmation.value) {
-            accountPasswordError.value =
-                "Mật khẩu xác nhận không khớp.";
+            accountPasswordError.value = "Mật khẩu xác nhận không khớp.";
             return;
         }
     }
@@ -5647,6 +5679,10 @@ watch(
             view !== previous
         ) {
             currentPage.value = 1;
+            if (view === "upload") {
+                importSubmitAttempted.value = false;
+                importFileError.value = "";
+            }
             void load();
         }
     },
@@ -6301,10 +6337,7 @@ onMounted(() => void load());
             {{ notice }}
         </p>
         <div
-            v-if="
-                hasConfigurationForm &&
-                !isHouseholdCreateContinuationPage
-            "
+            v-if="hasConfigurationForm && !isHouseholdCreateContinuationPage"
             :class="{
                 'workspace-modal-backdrop': isDialogForm,
                 'household-create-page-backdrop': isHouseholdCreatePage,
@@ -6342,9 +6375,7 @@ onMounted(() => void load());
                         : undefined
                 "
                 :aria-modal="
-                    isDialogForm && !isHouseholdCreatePage
-                        ? 'true'
-                        : undefined
+                    isDialogForm && !isHouseholdCreatePage ? 'true' : undefined
                 "
                 :aria-labelledby="
                     isDialogForm && !isHouseholdCreatePage
@@ -6362,7 +6393,9 @@ onMounted(() => void load());
                                 : undefined
                         "
                     >
-                        {{ `${editing ? "Cập nhật" : "Tạo mới"} ${info.title.toLocaleLowerCase("vi")}` }}
+                        {{
+                            `${editing ? "Cập nhật" : "Tạo mới"} ${info.title.toLocaleLowerCase("vi")}`
+                        }}
                     </h3>
                 </div>
                 <button
@@ -6501,9 +6534,9 @@ onMounted(() => void load());
                             <option value="1">Đang hoạt động</option>
                             <option value="0">
                                 {{
-                                    moduleKey === 'users'
-                                        ? 'Vô hiệu hóa'
-                                        : 'Ngừng hoạt động'
+                                    moduleKey === "users"
+                                        ? "Vô hiệu hóa"
+                                        : "Ngừng hoạt động"
                                 }}
                             </option>
                         </select>
@@ -6539,9 +6572,7 @@ onMounted(() => void load());
                         <select
                             v-else-if="field === 'scope_level'"
                             v-model="form[field]"
-                            :required="
-                                ['roles', 'users'].includes(moduleKey)
-                            "
+                            :required="['roles', 'users'].includes(moduleKey)"
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
@@ -6748,8 +6779,7 @@ onMounted(() => void load());
                         </select>
                         <select
                             v-else-if="
-                                moduleKey === 'merge' &&
-                                field === 'target_code'
+                                moduleKey === 'merge' && field === 'target_code'
                             "
                             v-model="form[field]"
                             required
@@ -6785,11 +6815,9 @@ onMounted(() => void load());
                                         : moduleKey === 'users' &&
                                             field === 'phone'
                                           ? 'tel'
-                                        : 'text'
+                                          : 'text'
                             "
-                            :maxlength="
-                                formFieldMaxLength(field)
-                            "
+                            :maxlength="formFieldMaxLength(field)"
                             :max="
                                 field === 'date_of_birth'
                                     ? latestBirthDate
@@ -6801,13 +6829,12 @@ onMounted(() => void load());
                                     : undefined
                             "
                             :inputmode="
-                                moduleKey === 'users' &&
-                                field === 'phone'
+                                moduleKey === 'users' && field === 'phone'
                                     ? 'tel'
                                     : moduleKey === 'users' &&
                                         field === 'citizen_id'
-                                    ? 'numeric'
-                                    : undefined
+                                      ? 'numeric'
+                                      : undefined
                             "
                             :aria-invalid="
                                 Boolean(
@@ -6823,14 +6850,14 @@ onMounted(() => void load());
                             :required="
                                 (moduleKey !== 'schools' &&
                                     ((moduleKey !== 'roles' &&
-                                    [
-                                        'name',
-                                        'username',
-                                        'role_id',
-                                        'scope_level',
-                                    ].includes(field)) ||
-                                    (moduleKey === 'roles' &&
-                                        field === 'name')) ||
+                                        [
+                                            'name',
+                                            'username',
+                                            'role_id',
+                                            'scope_level',
+                                        ].includes(field)) ||
+                                        (moduleKey === 'roles' &&
+                                            field === 'name'))) ||
                                 (moduleKey === 'households' &&
                                     [
                                         'household_code',
@@ -6842,7 +6869,7 @@ onMounted(() => void load());
                                 (moduleKey === 'merge' &&
                                     field === 'target_code') ||
                                 (moduleKey === 'users' &&
-                                    field === 'citizen_id'))
+                                    field === 'citizen_id')
                             "
                         />
                         <small
@@ -6980,10 +7007,7 @@ onMounted(() => void load());
                 >
                     Không có nhóm quyền phù hợp với cấp quản lý đã chọn.
                 </p>
-                <div
-                    v-if="moduleKey === 'merge'"
-                    class="village-merge-columns"
-                >
+                <div v-if="moduleKey === 'merge'" class="village-merge-columns">
                     <section class="merge-selection-card village-merge-card">
                         <div class="merge-step">
                             <span>01</span>
@@ -6999,9 +7023,7 @@ onMounted(() => void load());
                                 required
                                 @change="changeVillageMergeTarget"
                             >
-                                <option value="">
-                                    Chọn thôn tiếp nhận
-                                </option>
+                                <option value="">Chọn thôn tiếp nhận</option>
                                 <option
                                     v-for="village in rows.filter(
                                         isAvailableVillageMergeTarget,
@@ -7170,7 +7192,9 @@ onMounted(() => void load());
                                         type="button"
                                         :disabled="villageMergeBusy"
                                         @click="
-                                            changeSelectedVillageIntake('resume')
+                                            changeSelectedVillageIntake(
+                                                'resume',
+                                            )
                                         "
                                     >
                                         Mở lại nhận phiếu
@@ -7568,474 +7592,487 @@ onMounted(() => void load());
                                             : String(person.id)
                                     "
                                 >
-                                <tr
-                                    v-if="
-                                        Math.floor(
-                                            index / householdEditPageSize,
-                                        ) +
-                                            1 ===
-                                        householdEditPage
-                                    "
-                                >
-                                    <td>{{ index + 1 }}</td>
-                                    <td>
-                                        <input
-                                            v-model="person.last_name"
-                                            :name="`members[${index}][last_name]`"
-                                            class="household-edit-member-last-name"
-                                            :data-member-index="index"
-                                            type="text"
-                                            maxlength="50"
-                                            aria-label="Họ và tên đệm"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.first_name"
-                                            :name="`members[${index}][first_name]`"
-                                            type="text"
-                                            maxlength="100"
-                                            aria-label="Tên"
-                                        />
-                                    </td>
-                                    <td>
-                                        <select
-                                            v-model="
-                                                person.relationship_with_head
-                                            "
-                                            :name="`members[${index}][relationship_with_head]`"
-                                        >
-                                            <option value="Chủ hộ">
-                                                Chủ hộ
-                                            </option>
-                                            <option
-                                                v-for="relationship in memberRelationships"
-                                                :key="relationship"
-                                                :value="relationship"
+                                    <tr
+                                        v-if="
+                                            Math.floor(
+                                                index / householdEditPageSize,
+                                            ) +
+                                                1 ===
+                                            householdEditPage
+                                        "
+                                    >
+                                        <td>{{ index + 1 }}</td>
+                                        <td>
+                                            <input
+                                                v-model="person.last_name"
+                                                :name="`members[${index}][last_name]`"
+                                                class="household-edit-member-last-name"
+                                                :data-member-index="index"
+                                                type="text"
+                                                maxlength="50"
+                                                aria-label="Họ và tên đệm"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.first_name"
+                                                :name="`members[${index}][first_name]`"
+                                                type="text"
+                                                maxlength="100"
+                                                aria-label="Tên"
+                                            />
+                                        </td>
+                                        <td>
+                                            <select
+                                                v-model="
+                                                    person.relationship_with_head
+                                                "
+                                                :name="`members[${index}][relationship_with_head]`"
                                             >
-                                                {{ relationship }}
-                                            </option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.dob"
-                                            :name="`members[${index}][dob]`"
-                                            type="date"
-                                            aria-label="Ngày sinh"
-                                        />
-                                    </td>
-                                    <td>
-                                        <select
-                                            v-model="person.gender"
-                                            :name="`members[${index}][gender]`"
-                                        >
-                                            <option value="NAM">Nam</option>
-                                            <option value="NU">Nữ</option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <select
-                                            v-model="person.ethnicity_code"
-                                            :name="`members[${index}][ethnicity_code]`"
-                                            aria-label="Dân tộc"
-                                        >
-                                            <option value="">
-                                                Chọn dân tộc
-                                            </option>
-                                            <option
-                                                v-for="ethnicity in ethnicities"
-                                                :key="String(ethnicity.code)"
-                                                :value="String(ethnicity.code)"
+                                                <option value="Chủ hộ">
+                                                    Chủ hộ
+                                                </option>
+                                                <option
+                                                    v-for="relationship in memberRelationships"
+                                                    :key="relationship"
+                                                    :value="relationship"
+                                                >
+                                                    {{ relationship }}
+                                                </option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.dob"
+                                                :name="`members[${index}][dob]`"
+                                                type="date"
+                                                aria-label="Ngày sinh"
+                                            />
+                                        </td>
+                                        <td>
+                                            <select
+                                                v-model="person.gender"
+                                                :name="`members[${index}][gender]`"
                                             >
-                                                {{ ethnicity.name }}
-                                            </option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.religion"
-                                            maxlength="50"
-                                            aria-label="Tôn giáo"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.priority_type"
-                                            maxlength="100"
-                                            aria-label="Diện ưu tiên"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.parent_name"
-                                            maxlength="150"
-                                            aria-label="Cha/mẹ hoặc người thân"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.phone"
-                                            maxlength="20"
-                                            aria-label="Số điện thoại"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="person.note"
-                                            maxlength="2000"
-                                            aria-label="Ghi chú"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .school_year
-                                            "
-                                            maxlength="20"
-                                            aria-label="Năm học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .academic_block
-                                            "
-                                            maxlength="50"
-                                            aria-label="Khối học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .current_class
-                                            "
-                                            maxlength="50"
-                                            aria-label="Lớp đang học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .school_code
-                                            "
-                                            maxlength="50"
-                                            aria-label="Trường đang học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <select
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .graduation_level
-                                            "
-                                            aria-label="Tốt nghiệp văn hóa"
+                                                <option value="NAM">Nam</option>
+                                                <option value="NU">Nữ</option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <select
+                                                v-model="person.ethnicity_code"
+                                                :name="`members[${index}][ethnicity_code]`"
+                                                aria-label="Dân tộc"
+                                            >
+                                                <option value="">
+                                                    Chọn dân tộc
+                                                </option>
+                                                <option
+                                                    v-for="ethnicity in ethnicities"
+                                                    :key="
+                                                        String(ethnicity.code)
+                                                    "
+                                                    :value="
+                                                        String(ethnicity.code)
+                                                    "
+                                                >
+                                                    {{ ethnicity.name }}
+                                                </option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.religion"
+                                                maxlength="50"
+                                                aria-label="Tôn giáo"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.priority_type"
+                                                maxlength="100"
+                                                aria-label="Diện ưu tiên"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.parent_name"
+                                                maxlength="150"
+                                                aria-label="Cha/mẹ hoặc người thân"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.phone"
+                                                maxlength="20"
+                                                aria-label="Số điện thoại"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="person.note"
+                                                maxlength="2000"
+                                                aria-label="Ghi chú"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .school_year
+                                                "
+                                                maxlength="20"
+                                                aria-label="Năm học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .academic_block
+                                                "
+                                                maxlength="50"
+                                                aria-label="Khối học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .current_class
+                                                "
+                                                maxlength="50"
+                                                aria-label="Lớp đang học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .school_code
+                                                "
+                                                maxlength="50"
+                                                aria-label="Trường đang học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <select
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .graduation_level
+                                                "
+                                                aria-label="Tốt nghiệp văn hóa"
+                                            >
+                                                <option value="">
+                                                    Chưa chọn
+                                                </option>
+                                                <option value="MN">MN</option>
+                                                <option value="TH">TH</option>
+                                                <option value="THCS">
+                                                    THCS
+                                                </option>
+                                                <option value="THPT">
+                                                    THPT
+                                                </option>
+                                            </select>
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .is_complementary
+                                                "
+                                                type="checkbox"
+                                                aria-label="Bổ túc"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .graduation_year
+                                                "
+                                                maxlength="20"
+                                                aria-label="Năm tốt nghiệp văn hóa"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .vocational_grad_level
+                                                "
+                                                maxlength="50"
+                                                aria-label="Tốt nghiệp nghề"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .vocational_grad_year
+                                                "
+                                                maxlength="20"
+                                                aria-label="Năm tốt nghiệp nghề"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .finished_class
+                                                "
+                                                maxlength="20"
+                                                aria-label="Lớp dở dang"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .finished_year
+                                                "
+                                                maxlength="20"
+                                                aria-label="Năm dở dang"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .dropped_class
+                                                "
+                                                maxlength="20"
+                                                aria-label="Lớp bỏ học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .dropped_year
+                                                "
+                                                maxlength="20"
+                                                aria-label="Năm bỏ học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .literacy_current_class
+                                                "
+                                                maxlength="20"
+                                                aria-label="Lớp mù chữ đang học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .literacy_completed_class
+                                                "
+                                                maxlength="20"
+                                                aria-label="Lớp đã hoàn thành"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .literacy_relapse_level
+                                                "
+                                                maxlength="2"
+                                                aria-label="Mức tái mù chữ"
+                                            />
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .learning_capacity
+                                                "
+                                                maxlength="50"
+                                                aria-label="Năng lực học tập"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .mobility_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật vận động"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .hearing_speech_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật nghe nói"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .visual_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật thị giác"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .mental_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật thần kinh"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .intellectual_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật trí tuệ"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .learning_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật học tập"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .autism
+                                                "
+                                                type="checkbox"
+                                                aria-label="Tự kỷ"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .other_disability
+                                                "
+                                                type="checkbox"
+                                                aria-label="Khuyết tật khác"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .has_disability_cert
+                                                "
+                                                type="checkbox"
+                                                aria-label="Có giấy xác nhận khuyết tật"
+                                            />
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .can_study
+                                                "
+                                                type="checkbox"
+                                                aria-label="Có khả năng học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <select
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .special_circumstance
+                                                "
+                                                aria-label="Hoàn cảnh đặc biệt"
+                                            >
+                                                <option value="">Không</option>
+                                                <option value="Chuyển đến">
+                                                    Chuyển đến
+                                                </option>
+                                                <option value="Chuyển đi">
+                                                    Chuyển đi
+                                                </option>
+                                            </select>
+                                        </td>
+                                        <td>
+                                            <input
+                                                v-model="
+                                                    inlineDisability(person)
+                                                        .special_circumstance_detail
+                                                "
+                                                maxlength="2000"
+                                                aria-label="Chi tiết hoàn cảnh đặc biệt"
+                                            />
+                                        </td>
+                                        <td
+                                            class="household-inline-member-actions"
                                         >
-                                            <option value="">Chưa chọn</option>
-                                            <option value="MN">MN</option>
-                                            <option value="TH">TH</option>
-                                            <option value="THCS">THCS</option>
-                                            <option value="THPT">THPT</option>
-                                        </select>
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .is_complementary
-                                            "
-                                            type="checkbox"
-                                            aria-label="Bổ túc"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .graduation_year
-                                            "
-                                            maxlength="20"
-                                            aria-label="Năm tốt nghiệp văn hóa"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .vocational_grad_level
-                                            "
-                                            maxlength="50"
-                                            aria-label="Tốt nghiệp nghề"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .vocational_grad_year
-                                            "
-                                            maxlength="20"
-                                            aria-label="Năm tốt nghiệp nghề"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .finished_class
-                                            "
-                                            maxlength="20"
-                                            aria-label="Lớp dở dang"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .finished_year
-                                            "
-                                            maxlength="20"
-                                            aria-label="Năm dở dang"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .dropped_class
-                                            "
-                                            maxlength="20"
-                                            aria-label="Lớp bỏ học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .dropped_year
-                                            "
-                                            maxlength="20"
-                                            aria-label="Năm bỏ học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .literacy_current_class
-                                            "
-                                            maxlength="20"
-                                            aria-label="Lớp mù chữ đang học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .literacy_completed_class
-                                            "
-                                            maxlength="20"
-                                            aria-label="Lớp đã hoàn thành"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .literacy_relapse_level
-                                            "
-                                            maxlength="2"
-                                            aria-label="Mức tái mù chữ"
-                                        />
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineEducation(person)
-                                                    .learning_capacity
-                                            "
-                                            maxlength="50"
-                                            aria-label="Năng lực học tập"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .mobility_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật vận động"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .hearing_speech_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật nghe nói"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .visual_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật thị giác"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .mental_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật thần kinh"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .intellectual_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật trí tuệ"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .learning_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật học tập"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person).autism
-                                            "
-                                            type="checkbox"
-                                            aria-label="Tự kỷ"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .other_disability
-                                            "
-                                            type="checkbox"
-                                            aria-label="Khuyết tật khác"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .has_disability_cert
-                                            "
-                                            type="checkbox"
-                                            aria-label="Có giấy xác nhận khuyết tật"
-                                        />
-                                    </td>
-                                    <td class="household-inline-checkbox">
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .can_study
-                                            "
-                                            type="checkbox"
-                                            aria-label="Có khả năng học"
-                                        />
-                                    </td>
-                                    <td>
-                                        <select
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .special_circumstance
-                                            "
-                                            aria-label="Hoàn cảnh đặc biệt"
-                                        >
-                                            <option value="">Không</option>
-                                            <option value="Chuyển đến">
-                                                Chuyển đến
-                                            </option>
-                                            <option value="Chuyển đi">
-                                                Chuyển đi
-                                            </option>
-                                        </select>
-                                    </td>
-                                    <td>
-                                        <input
-                                            v-model="
-                                                inlineDisability(person)
-                                                    .special_circumstance_detail
-                                            "
-                                            maxlength="2000"
-                                            aria-label="Chi tiết hoàn cảnh đặc biệt"
-                                        />
-                                    </td>
-                                    <td class="household-inline-member-actions">
-                                        <button
-                                            v-if="
-                                                !householdDetailReadOnly &&
-                                                permissions.includes(
-                                                    'update-households',
-                                                )
-                                            "
-                                            class="household-edit-member-button"
-                                            type="button"
-                                            :disabled="
-                                                memberBusy ||
-                                                !inlineHouseholdPersonChanged(
-                                                    person,
-                                                    index,
-                                                )
-                                            "
-                                            @click="
-                                                saveInlineHouseholdMember(
-                                                    person,
-                                                    index,
-                                                )
-                                            "
-                                        >
-                                            Lưu
-                                        </button>
-                                        <button
-                                            v-if="
-                                                permissions.includes(
-                                                    'delete-households',
-                                                )
-                                            "
-                                            class="household-edit-member-button household-edit-member-delete"
-                                            type="button"
-                                            :disabled="memberBusy"
-                                            @click="
-                                                person.id === undefined
-                                                    ? householdEditPersons.splice(
-                                                          index,
-                                                          1,
-                                                      )
-                                                    : deleteMember(person)
-                                            "
-                                        >
-                                            Xóa
-                                        </button>
-                                    </td>
-                                </tr>
+                                            <button
+                                                v-if="
+                                                    !householdDetailReadOnly &&
+                                                    permissions.includes(
+                                                        'update-households',
+                                                    )
+                                                "
+                                                class="household-edit-member-button"
+                                                type="button"
+                                                :disabled="
+                                                    memberBusy ||
+                                                    !inlineHouseholdPersonChanged(
+                                                        person,
+                                                        index,
+                                                    )
+                                                "
+                                                @click="
+                                                    saveInlineHouseholdMember(
+                                                        person,
+                                                        index,
+                                                    )
+                                                "
+                                            >
+                                                Lưu
+                                            </button>
+                                            <button
+                                                v-if="
+                                                    permissions.includes(
+                                                        'delete-households',
+                                                    )
+                                                "
+                                                class="household-edit-member-button household-edit-member-delete"
+                                                type="button"
+                                                :disabled="memberBusy"
+                                                @click="
+                                                    person.id === undefined
+                                                        ? householdEditPersons.splice(
+                                                              index,
+                                                              1,
+                                                          )
+                                                        : deleteMember(person)
+                                                "
+                                            >
+                                                Xóa
+                                            </button>
+                                        </td>
+                                    </tr>
                                 </template>
                             </tbody>
                         </table>
@@ -8052,8 +8089,7 @@ onMounted(() => void load());
                                 1
                             }}–{{
                                 Math.min(
-                                    householdEditPage *
-                                        householdEditPageSize,
+                                    householdEditPage * householdEditPageSize,
                                     householdEditPersons.length,
                                 )
                             }}
@@ -8122,7 +8158,7 @@ onMounted(() => void load());
                                     ? "Lưu nhóm quyền"
                                     : moduleKey === "merge"
                                       ? "Gộp thôn"
-                                    : "Lưu"
+                                      : "Lưu"
                         }}
                     </button>
                     <button
@@ -8150,72 +8186,72 @@ onMounted(() => void load());
 
         <section
             v-if="
-            isHouseholdCreateContinuationPage &&
-            createHouseholdWizardStep === 3 &&
-            !memberEditorOpen
+                isHouseholdCreateContinuationPage &&
+                createHouseholdWizardStep === 3 &&
+                !memberEditorOpen
             "
             class="household-create-members-page household-create-members-page-backdrop"
         >
             <header class="household-create-members-heading">
-            <div>
-                <p class="workspace-eyebrow">TẠO MỚI PHIẾU ĐIỀU TRA</p>
-                <h3>Thành viên hộ gia đình</h3>
-                <p>
-                    Chủ hộ đã được lưu. Thêm các thành viên còn lại hoặc
-                    hoàn tất phiếu.
-                </p>
-            </div>
-            <div class="household-create-members-heading-actions">
-                <button
-                    class="primary-button"
-                    type="button"
-                    :disabled="memberBusy"
-                    @click="beginMember(false)"
-                >
-                    Thêm thành viên
-                </button>
-            </div>
+                <div>
+                    <p class="workspace-eyebrow">TẠO MỚI PHIẾU ĐIỀU TRA</p>
+                    <h3>Thành viên hộ gia đình</h3>
+                    <p>
+                        Chủ hộ đã được lưu. Thêm các thành viên còn lại hoặc
+                        hoàn tất phiếu.
+                    </p>
+                </div>
+                <div class="household-create-members-heading-actions">
+                    <button
+                        class="primary-button"
+                        type="button"
+                        :disabled="memberBusy"
+                        @click="beginMember(false)"
+                    >
+                        Thêm thành viên
+                    </button>
+                </div>
             </header>
             <div
-            v-if="householdEditPersons.length"
-            class="household-create-member-list"
+                v-if="householdEditPersons.length"
+                class="household-create-member-list"
             >
-            <article
-                v-for="(person, index) in householdEditPersons"
-                :key="String(person.id ?? index)"
-                class="household-create-member-card"
-            >
-                <span>{{ index + 1 }}</span>
-                <div>
-                    <strong>{{
-                        [person.last_name, person.first_name]
-                            .filter(Boolean)
-                            .join(" ") || "Chưa có họ tên"
-                    }}</strong>
-                    <small>{{
-                        displayFormValue(person.relationship_with_head)
-                    }}</small>
-                </div>
-            </article>
+                <article
+                    v-for="(person, index) in householdEditPersons"
+                    :key="String(person.id ?? index)"
+                    class="household-create-member-card"
+                >
+                    <span>{{ index + 1 }}</span>
+                    <div>
+                        <strong>{{
+                            [person.last_name, person.first_name]
+                                .filter(Boolean)
+                                .join(" ") || "Chưa có họ tên"
+                        }}</strong>
+                        <small>{{
+                            displayFormValue(person.relationship_with_head)
+                        }}</small>
+                    </div>
+                </article>
             </div>
             <p v-else class="muted">Chưa có thành viên trong phiếu.</p>
             <footer class="household-create-members-actions">
-            <button
-                class="primary-button"
-                type="button"
-                :disabled="busy || memberBusy"
-                @click="finishHouseholdCreation"
-            >
-                Hoàn tất phiếu
-            </button>
-            <button
-                class="secondary-button"
-                type="button"
-                :disabled="busy || memberBusy"
-                @click="goBackHouseholdCreation"
-            >
-                Quay lại chủ hộ
-            </button>
+                <button
+                    class="primary-button"
+                    type="button"
+                    :disabled="busy || memberBusy"
+                    @click="finishHouseholdCreation"
+                >
+                    Hoàn tất phiếu
+                </button>
+                <button
+                    class="secondary-button"
+                    type="button"
+                    :disabled="busy || memberBusy"
+                    @click="goBackHouseholdCreation"
+                >
+                    Quay lại chủ hộ
+                </button>
             </footer>
         </section>
 
@@ -8519,7 +8555,9 @@ onMounted(() => void load());
                                 </option>
                             </select>
                             <small
-                                v-if="importSubmitAttempted && !form.province_code"
+                                v-if="
+                                    importSubmitAttempted && !form.province_code
+                                "
                                 class="field-error"
                                 role="alert"
                             >
@@ -8544,7 +8582,9 @@ onMounted(() => void load());
                                 </option>
                             </select>
                             <small
-                                v-if="importSubmitAttempted && !form.commune_code"
+                                v-if="
+                                    importSubmitAttempted && !form.commune_code
+                                "
                                 class="field-error"
                                 role="alert"
                             >
@@ -8568,7 +8608,9 @@ onMounted(() => void load());
                                 </option>
                             </select>
                             <small
-                                v-if="importSubmitAttempted && !form.village_code"
+                                v-if="
+                                    importSubmitAttempted && !form.village_code
+                                "
                                 class="field-error"
                                 role="alert"
                             >
@@ -8589,6 +8631,7 @@ onMounted(() => void load());
                             ref="importFileInput"
                             type="file"
                             accept=".xls,.xlsx"
+                            multiple
                             aria-required="true"
                             @change="handleImportFileChange"
                         />
@@ -8596,18 +8639,34 @@ onMounted(() => void load());
                             >↑</span
                         >
                         <strong>{{
-                            importFile
-                                ? String(importFile.name)
-                                : "Chọn tệp Excel để tải lên"
+                            importFiles.length
+                                ? `${importFiles.length} tệp đã chọn`
+                                : "Chọn một hoặc nhiều tệp Excel"
                         }}</strong>
                         <small
-                            >Chỉ hỗ trợ định dạng Excel .xls hoặc .xlsx</small
+                            >Tối đa 5 tệp, mỗi tệp 20 MB; tổng dung lượng 35
+                            MB</small
                         >
                     </label>
+                    <ul v-if="importFiles.length" class="excel-selected-files">
+                        <li
+                            v-for="(file, index) in importFiles"
+                            :key="`${file.name}-${file.lastModified}-${index}`"
+                        >
+                            <span :title="file.name">{{ file.name }}</span>
+                            <button
+                                type="button"
+                                :aria-label="`Bỏ tệp ${file.name}`"
+                                @click="removeImportFile(index)"
+                            >
+                                ×
+                            </button>
+                        </li>
+                    </ul>
                     <small
                         v-if="
                             importFileError ||
-                            (importSubmitAttempted && !importFile)
+                            (importSubmitAttempted && importFiles.length === 0)
                         "
                         class="field-error excel-file-error"
                         role="alert"
@@ -8615,7 +8674,7 @@ onMounted(() => void load());
                     >
                         {{
                             importFileError ||
-                            "Yêu cầu chọn tệp Excel."
+                            "Yêu cầu chọn ít nhất một tệp Excel."
                         }}
                     </small>
 
@@ -8672,22 +8731,13 @@ onMounted(() => void load());
                 "
                 class="excel-import-panel excel-import-history"
             >
-                <div class="excel-history-heading">
-                    <span class="excel-history-count">
-                        <strong>{{ formatImportRows(totalRecords) }}</strong>
-                        tệp
-                    </span>
-                </div>
                 <p
                     v-if="importHistory.length === 0"
                     class="excel-history-empty"
                 >
                     Chưa có tệp nào được nhập.
                 </p>
-                <table
-                    v-if="importHistory.length"
-                    class="excel-history-table"
-                >
+                <table v-if="importHistory.length" class="excel-history-table">
                     <thead>
                         <tr>
                             <th>Tệp Excel</th>
@@ -8698,22 +8748,34 @@ onMounted(() => void load());
                         </tr>
                     </thead>
                     <tbody>
-                        <tr v-for="item in importHistory" :key="String(item.id)">
+                        <tr
+                            v-for="item in importHistory"
+                            :key="String(item.id)"
+                        >
                             <td data-label="Tệp Excel">
                                 <div class="excel-history-file-cell">
                                     <strong :title="String(item.file_name)">
-                                        {{ displayImportFileName(item.file_name) }}
+                                        {{
+                                            displayImportFileName(
+                                                item.file_name,
+                                            )
+                                        }}
                                     </strong>
                                 </div>
                             </td>
                             <td data-label="Thời gian">
                                 <div class="excel-history-meta-cell">
-                                    <strong>{{ formatImportDate(item.created_at) }}</strong>
+                                    <strong>{{
+                                        formatImportDate(item.created_at)
+                                    }}</strong>
                                 </div>
                             </td>
                             <td data-label="Người thực hiện">
                                 <div class="excel-history-meta-cell">
-                                    <strong>{{ item.uploaded_by_name ?? "Không rõ người dùng" }}</strong>
+                                    <strong>{{
+                                        item.uploaded_by_name ??
+                                        "Không rõ người dùng"
+                                    }}</strong>
                                 </div>
                             </td>
                             <td data-label="Kết quả xử lý">
@@ -8721,41 +8783,65 @@ onMounted(() => void load());
                                     <span
                                         class="excel-history-status"
                                         :class="`excel-history-status-${String(item.status).toLowerCase()}`"
-                                    >{{ importStatusLabel(item.status) }}</span>
+                                        >{{
+                                            importStatusLabel(item.status)
+                                        }}</span
+                                    >
                                     <span class="excel-history-stat-success">
-                                        {{ formatImportRows(item.success_rows) }} thành công
+                                        {{
+                                            formatImportRows(item.success_rows)
+                                        }}
+                                        thành công
                                     </span>
                                     <span
                                         v-if="Number(item.error_rows ?? 0) > 0"
                                         class="excel-history-stat-error"
                                     >
-                                        {{ formatImportRows(item.error_rows) }} lỗi
+                                        {{ formatImportRows(item.error_rows) }}
+                                        lỗi
                                     </span>
                                 </div>
                             </td>
                             <td data-label="Thao tác">
                                 <div class="excel-history-actions">
                                     <a
-                                        v-if="item.status === 'PARTIAL' || item.status === 'FAILED'"
+                                        v-if="
+                                            item.status === 'PARTIAL' ||
+                                            item.status === 'FAILED'
+                                        "
                                         class="excel-history-action excel-history-action-error"
                                         :href="`/api/v1/household-imports/${item.id}/error-file`"
                                         title="Tải tệp lỗi"
                                     >
-                                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                                            <path d="M10 2.5v9m0 0 3.5-3.5M10 11.5 6.5 8M3.5 13.5v3h13v-3" />
+                                        <svg
+                                            viewBox="0 0 20 20"
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="M10 2.5v9m0 0 3.5-3.5M10 11.5 6.5 8M3.5 13.5v3h13v-3"
+                                            />
                                         </svg>
                                         <span>Tải tệp lỗi</span>
                                     </a>
                                     <button
-                                        v-if="permissions.includes('delete-imports')"
+                                        v-if="
+                                            permissions.includes(
+                                                'delete-imports',
+                                            )
+                                        "
                                         class="excel-history-action excel-history-action-delete"
                                         type="button"
                                         :disabled="busy"
                                         title="Xóa lịch sử"
                                         @click="remove(item)"
                                     >
-                                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                                            <path d="M3.5 5.5h13M8 5.5V3.7h4v1.8m3.3 0-.8 10.8H5.5L4.7 5.5m3.1 3v5m4.4-5v5" />
+                                        <svg
+                                            viewBox="0 0 20 20"
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="M3.5 5.5h13M8 5.5V3.7h4v1.8m3.3 0-.8 10.8H5.5L4.7 5.5m3.1 3v5m4.4-5v5"
+                                            />
                                         </svg>
                                         <span>Xóa lịch sử</span>
                                     </button>
@@ -8766,9 +8852,11 @@ onMounted(() => void load());
                 </table>
                 <div class="excel-history-pagination">
                     <span class="excel-history-page-summary">
-                        {{ importHistory.length
-                            ? `${(currentPage - 1) * 4 + 1}–${Math.min(currentPage * 4, totalRecords)} / ${formatImportRows(totalRecords)} tệp`
-                            : "0 tệp" }}
+                        {{
+                            importHistory.length
+                                ? `${(currentPage - 1) * 4 + 1}–${Math.min(currentPage * 4, totalRecords)} / ${formatImportRows(totalRecords)} tệp`
+                                : "0 tệp"
+                        }}
                     </span>
                     <template v-if="lastPage > 1">
                         <button
@@ -8779,7 +8867,9 @@ onMounted(() => void load());
                         >
                             Trước
                         </button>
-                        <span class="muted">Trang {{ currentPage }} / {{ lastPage }}</span>
+                        <span class="muted"
+                            >Trang {{ currentPage }} / {{ lastPage }}</span
+                        >
                         <button
                             class="secondary-button"
                             type="button"
@@ -9057,8 +9147,9 @@ onMounted(() => void load());
                                     moduleKey === 'households' &&
                                     column === 'members_count',
                                 'village-name-cell':
-                                    ['villages', 'schools'].includes(moduleKey) &&
-                                    column === 'name',
+                                    ['villages', 'schools'].includes(
+                                        moduleKey,
+                                    ) && column === 'name',
                                 'village-code-cell':
                                     ['villages', 'schools'].includes(
                                         moduleKey,
@@ -9078,13 +9169,14 @@ onMounted(() => void load());
                                 "
                                 class="status-pill"
                                 :class="{
-                                    inactive: row.operational_status !== 'active',
+                                    inactive:
+                                        row.operational_status !== 'active',
                                 }"
                             >
                                 {{
-                                    row.operational_status === 'active'
-                                        ? 'Đang hoạt động'
-                                        : 'Đã vô hiệu hóa'
+                                    row.operational_status === "active"
+                                        ? "Đang hoạt động"
+                                        : "Đã vô hiệu hóa"
                                 }}
                             </span>
                             <span
@@ -9107,7 +9199,9 @@ onMounted(() => void load());
                                 "
                                 class="account-name-cell"
                             >
-                                <span class="account-name">{{ pathValue(row, column) }}</span>
+                                <span class="account-name">{{
+                                    pathValue(row, column)
+                                }}</span>
                                 <small v-if="row.scope_level">
                                     {{
                                         scopeLabels[String(row.scope_level)] ||
@@ -9143,7 +9237,7 @@ onMounted(() => void load());
                                     "
                                 >
                                     {{
-                                        row.scope_level === 'commune'
+                                        row.scope_level === "commune"
                                             ? row.commune_name
                                             : row.province_name
                                     }}
@@ -9160,7 +9254,10 @@ onMounted(() => void load());
                                         : undefined
                                 "
                             >
-                                {{ row.total_users_count ?? pathValue(row, column) }}
+                                {{
+                                    row.total_users_count ??
+                                    pathValue(row, column)
+                                }}
                             </span>
                             <template v-else>
                                 {{ pathValue(row, column) }}
@@ -9195,8 +9292,13 @@ onMounted(() => void load());
                                         title="Xem chi tiết"
                                         @click="openUserDetail(row)"
                                     >
-                                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                                            <path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" />
+                                        <svg
+                                            viewBox="0 0 24 24"
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"
+                                            />
                                             <circle cx="12" cy="12" r="2.7" />
                                         </svg>
                                     </button>
@@ -9208,8 +9310,13 @@ onMounted(() => void load());
                                         title="Sửa tài khoản"
                                         @click="beginEdit(row)"
                                     >
-                                        <svg viewBox="0 0 20 20" aria-hidden="true">
-                                            <path d="M13.8 3.2a2 2 0 0 1 2.8 2.8L8 14.6l-3.5.9.9-3.5 8.4-8.8Z" />
+                                        <svg
+                                            viewBox="0 0 20 20"
+                                            aria-hidden="true"
+                                        >
+                                            <path
+                                                d="M13.8 3.2a2 2 0 0 1 2.8 2.8L8 14.6l-3.5.9.9-3.5 8.4-8.8Z"
+                                            />
                                             <path d="m12.5 4.5 3 3" />
                                         </svg>
                                     </button>
@@ -9594,9 +9701,9 @@ onMounted(() => void load());
             class="village-empty-state"
         >
             {{
-                    roleFilterQuery.trim()
-                        ? "Không tìm thấy nhóm người dùng phù hợp."
-                        : "Chưa có nhóm người dùng."
+                roleFilterQuery.trim()
+                    ? "Không tìm thấy nhóm người dùng phù hợp."
+                    : "Chưa có nhóm người dùng."
             }}
         </p>
         <div v-if="moduleKey === 'users'" class="user-pagination-footer">
@@ -10134,8 +10241,8 @@ onMounted(() => void load());
                     </div>
                 </header>
 
-                        <p
-                            v-if="householdLoading || householdDetailPageLoading"
+                <p
+                    v-if="householdLoading || householdDetailPageLoading"
                     class="household-detail-loading"
                     role="status"
                 >
@@ -10160,43 +10267,91 @@ onMounted(() => void load());
                     <h4 class="household-form-section-heading">
                         Thông tin đối tượng và chủ hộ
                     </h4>
-                    <div class="household-view-field-grid household-view-household-fields">
+                    <div
+                        class="household-view-field-grid household-view-household-fields"
+                    >
                         <div class="household-view-field">
                             <span>Mã phiếu</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.household_code) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.household_code,
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Năm học</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.school_year) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.school_year,
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Họ chủ hộ</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.head_last_name) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.head_last_name,
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Tên chủ hộ</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.head_first_name) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.head_first_name,
+                                )
+                            }}</strong>
                         </div>
                     </div>
                     <h4 class="household-form-section-heading">
                         Thông tin nơi đang ở
                     </h4>
-                    <div class="household-view-field-grid household-view-location-fields">
+                    <div
+                        class="household-view-field-grid household-view-location-fields"
+                    >
                         <div class="household-view-field">
                             <span>Tỉnh / thành phố</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.province_name ?? pathValue(householdDetail, "province.name")) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.province_name ??
+                                        pathValue(
+                                            householdDetail,
+                                            "province.name",
+                                        ),
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Xã / phường</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.commune_name ?? pathValue(householdDetail, "commune.name")) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.commune_name ??
+                                        pathValue(
+                                            householdDetail,
+                                            "commune.name",
+                                        ),
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Thôn / xóm</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.village_name ?? pathValue(householdDetail, "village.name")) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.village_name ??
+                                        pathValue(
+                                            householdDetail,
+                                            "village.name",
+                                        ),
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Địa chỉ</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.address) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.address,
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Loại cư trú</span>
@@ -10205,14 +10360,19 @@ onMounted(() => void load());
                                     ? "Tạm trú"
                                     : householdDetail.residence_type === "KHAC"
                                       ? "Khác"
-                                      : householdDetail.residence_type === "THUONG_TRU"
+                                      : householdDetail.residence_type ===
+                                          "THUONG_TRU"
                                         ? "Thường trú"
                                         : "-"
                             }}</strong>
                         </div>
                         <div class="household-view-field">
                             <span>Tình trạng cư trú</span>
-                            <strong>{{ displayHouseholdViewValue(householdDetail.residence_status) }}</strong>
+                            <strong>{{
+                                displayHouseholdViewValue(
+                                    householdDetail.residence_status,
+                                )
+                            }}</strong>
                         </div>
                     </div>
                 </section>
@@ -10224,37 +10384,73 @@ onMounted(() => void load());
                     <div class="household-section-title">
                         <div>
                             <h3>Thông tin hộ gia đình</h3>
-                            <p>Thông tin chung theo biểu mẫu chỉnh sửa phiếu.</p>
+                            <p>
+                                Thông tin chung theo biểu mẫu chỉnh sửa phiếu.
+                            </p>
                         </div>
                     </div>
                     <div class="household-readonly-fields">
                         <div class="household-member-readonly-field">
                             <span>Mã phiếu</span>
-                            <strong>{{ displayFormValue(householdDetail.household_code) }}</strong>
+                            <strong>{{
+                                displayFormValue(householdDetail.household_code)
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Năm học</span>
-                            <strong>{{ displayFormValue(householdDetail.school_year) }}</strong>
+                            <strong>{{
+                                displayFormValue(householdDetail.school_year)
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Họ và tên đệm chủ hộ</span>
-                            <strong>{{ displayFormValue(householdDetail.head_last_name) }}</strong>
+                            <strong>{{
+                                displayFormValue(householdDetail.head_last_name)
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Tên chủ hộ</span>
-                            <strong>{{ displayFormValue(householdDetail.head_first_name) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    householdDetail.head_first_name,
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Tỉnh / thành phố</span>
-                            <strong>{{ displayFormValue(householdDetail.province_name ?? pathValue(householdDetail, "province.name")) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    householdDetail.province_name ??
+                                        pathValue(
+                                            householdDetail,
+                                            "province.name",
+                                        ),
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Xã / phường</span>
-                            <strong>{{ displayFormValue(householdDetail.commune_name ?? pathValue(householdDetail, "commune.name")) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    householdDetail.commune_name ??
+                                        pathValue(
+                                            householdDetail,
+                                            "commune.name",
+                                        ),
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Thôn / xóm</span>
-                            <strong>{{ displayFormValue(householdDetail.village_name ?? pathValue(householdDetail, "village.name")) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    householdDetail.village_name ??
+                                        pathValue(
+                                            householdDetail,
+                                            "village.name",
+                                        ),
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Loại cư trú</span>
@@ -10263,18 +10459,29 @@ onMounted(() => void load());
                                     ? "Tạm trú"
                                     : householdDetail.residence_type === "KHAC"
                                       ? "Khác"
-                                      : householdDetail.residence_type === "THUONG_TRU"
+                                      : householdDetail.residence_type ===
+                                          "THUONG_TRU"
                                         ? "Thường trú"
                                         : "Chưa cập nhật"
                             }}</strong>
                         </div>
-                        <div class="household-member-readonly-field household-member-wide-field">
+                        <div
+                            class="household-member-readonly-field household-member-wide-field"
+                        >
                             <span>Địa chỉ</span>
-                            <strong>{{ displayFormValue(householdDetail.address) }}</strong>
+                            <strong>{{
+                                displayFormValue(householdDetail.address)
+                            }}</strong>
                         </div>
-                        <div class="household-member-readonly-field household-member-wide-field">
+                        <div
+                            class="household-member-readonly-field household-member-wide-field"
+                        >
                             <span>Tình trạng cư trú</span>
-                            <strong>{{ displayFormValue(householdDetail.residence_status) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    householdDetail.residence_status,
+                                )
+                            }}</strong>
                         </div>
                     </div>
                 </section>
@@ -10286,7 +10493,9 @@ onMounted(() => void load());
                     <div class="household-edit-members household-view-members">
                         <div class="household-edit-members-heading">
                             <div>
-                                <h4 id="household-members-title">Danh sách nhân khẩu</h4>
+                                <h4 id="household-members-title">
+                                    Danh sách nhân khẩu
+                                </h4>
                             </div>
                             <span class="household-view-member-count">
                                 {{ householdDetailTotal }} nhân khẩu
@@ -10318,8 +10527,12 @@ onMounted(() => void load());
                                     <col
                                         v-if="
                                             !householdDetailReadOnly &&
-                                            (permissions.includes('update-households') ||
-                                                permissions.includes('delete-households'))
+                                            (permissions.includes(
+                                                'update-households',
+                                            ) ||
+                                                permissions.includes(
+                                                    'delete-households',
+                                                ))
                                         "
                                         class="member-col-actions"
                                     />
@@ -10341,15 +10554,23 @@ onMounted(() => void load());
                                         <th
                                             v-if="
                                                 !householdDetailReadOnly &&
-                                                (permissions.includes('update-households') ||
-                                                    permissions.includes('delete-households'))
+                                                (permissions.includes(
+                                                    'update-households',
+                                                ) ||
+                                                    permissions.includes(
+                                                        'delete-households',
+                                                    ))
                                             "
-                                        >Thao tác</th>
+                                        >
+                                            Thao tác
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <tr
-                                        v-for="(person, index) in householdPersons"
+                                        v-for="(
+                                            person, index
+                                        ) in householdPersons"
                                         :key="`readonly-${String(person.id ?? index)}`"
                                     >
                                         <td>
@@ -10363,7 +10584,12 @@ onMounted(() => void load());
                                         <td
                                             v-for="column in householdViewMemberColumns"
                                             :key="column.key"
-                                            :title="householdViewMemberDisplayValue(person, column.key)"
+                                            :title="
+                                                householdViewMemberDisplayValue(
+                                                    person,
+                                                    column.key,
+                                                )
+                                            "
                                             :class="{
                                                 'household-view-check-cell': [
                                                     'is_complementary',
@@ -10380,39 +10606,79 @@ onMounted(() => void load());
                                                 ].includes(column.key),
                                             }"
                                         >
-                                            {{ householdViewMemberDisplayValue(person, column.key) }}
+                                            {{
+                                                householdViewMemberDisplayValue(
+                                                    person,
+                                                    column.key,
+                                                )
+                                            }}
                                         </td>
                                         <td
                                             v-if="
                                                 !householdDetailReadOnly &&
-                                                (permissions.includes('update-households') ||
-                                                    permissions.includes('delete-households'))
+                                                (permissions.includes(
+                                                    'update-households',
+                                                ) ||
+                                                    permissions.includes(
+                                                        'delete-households',
+                                                    ))
                                             "
                                         >
-                                            <div class="household-member-actions household-view-member-actions">
+                                            <div
+                                                class="household-member-actions household-view-member-actions"
+                                            >
                                                 <button
-                                                    v-if="!householdDetailReadOnly && permissions.includes('update-households')"
+                                                    v-if="
+                                                        !householdDetailReadOnly &&
+                                                        permissions.includes(
+                                                            'update-households',
+                                                        )
+                                                    "
                                                     class="household-icon-action"
                                                     type="button"
                                                     :aria-label="`Sửa thông tin ${person.first_name ?? 'nhân khẩu'}`"
                                                     title="Sửa nhân khẩu"
-                                                    @click="beginMember(false, person)"
+                                                    @click="
+                                                        beginMember(
+                                                            false,
+                                                            person,
+                                                        )
+                                                    "
                                                 >
-                                                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                                                        <path d="M13.8 4.2a2 2 0 0 1 2.8 2.8L8 15.6l-4 1 1-4 8.8-8.4Z" />
-                                                        <path d="m12.5 5.5 3 3M13 20h8" />
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M13.8 4.2a2 2 0 0 1 2.8 2.8L8 15.6l-4 1 1-4 8.8-8.4Z"
+                                                        />
+                                                        <path
+                                                            d="m12.5 5.5 3 3M13 20h8"
+                                                        />
                                                     </svg>
                                                 </button>
                                                 <button
-                                                    v-if="!householdDetailReadOnly && permissions.includes('delete-households')"
+                                                    v-if="
+                                                        !householdDetailReadOnly &&
+                                                        permissions.includes(
+                                                            'delete-households',
+                                                        )
+                                                    "
                                                     class="household-icon-action household-icon-danger"
                                                     type="button"
                                                     :aria-label="`Xóa ${person.first_name ?? 'nhân khẩu'}`"
                                                     title="Xóa nhân khẩu"
-                                                    @click="deleteMember(person)"
+                                                    @click="
+                                                        deleteMember(person)
+                                                    "
                                                 >
-                                                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                                                        <path d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3" />
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"
+                                                        />
                                                     </svg>
                                                 </button>
                                             </div>
@@ -10423,8 +10689,12 @@ onMounted(() => void load());
                                             :colspan="
                                                 householdViewMemberColumns.length +
                                                 (householdDetailReadOnly ||
-                                                (!permissions.includes('update-households') &&
-                                                    !permissions.includes('delete-households'))
+                                                (!permissions.includes(
+                                                    'update-households',
+                                                ) &&
+                                                    !permissions.includes(
+                                                        'delete-households',
+                                                    ))
                                                     ? 1
                                                     : 2)
                                             "
@@ -10516,265 +10786,12 @@ onMounted(() => void load());
                             :key="`form-${String(person.id ?? index)}`"
                             class="household-member-readonly-card"
                         >
-                            <header class="household-member-readonly-card-header">
+                            <header
+                                class="household-member-readonly-card-header"
+                            >
                                 <div>
                                     <span>NHÂN KHẨU {{ index + 1 }}</span>
                                     <h4>
-                                        {{
-                                            [person.last_name, person.first_name]
-                                                .filter(Boolean)
-                                                .join(" ") || "Chưa có họ tên"
-                                        }}
-                                    </h4>
-                                </div>
-                                <span
-                                    v-if="person.relationship_with_head === 'Chủ hộ'"
-                                    class="household-head-badge"
-                                >Chủ hộ</span>
-                                <span v-else class="household-member-readonly-relation">
-                                    {{ displayFormValue(person.relationship_with_head) }}
-                                </span>
-                            </header>
-                            <section class="household-member-form-section">
-                                <h4>Thông tin đối tượng</h4>
-                                <div class="household-member-readonly-field">
-                                    <span>Họ và tên đệm</span>
-                                    <strong>{{ displayFormValue(person.last_name) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Tên</span>
-                                    <strong>{{ displayFormValue(person.first_name) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Ngày sinh</span>
-                                    <strong>{{ displayDate(person.dob) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Giới tính</span>
-                                    <strong>{{ personGender(person) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Dân tộc</span>
-                                    <strong>{{ personEthnicity(person) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Tôn giáo</span>
-                                    <strong>{{ displayFormValue(person.religion) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Diện ưu tiên</span>
-                                    <strong>{{ displayFormValue(person.priority_type) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Họ tên cha / mẹ</span>
-                                    <strong>{{ displayFormValue(person.parent_name) }}</strong>
-                                </div>
-                            </section>
-                            <section class="household-member-form-section">
-                                <h4>Thông tin liên lạc</h4>
-                                <div class="household-member-readonly-field">
-                                    <span>Quan hệ với chủ hộ</span>
-                                    <strong>{{ displayFormValue(person.relationship_with_head) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field">
-                                    <span>Số điện thoại</span>
-                                    <strong>{{ displayFormValue(person.phone) }}</strong>
-                                </div>
-                                <div class="household-member-readonly-field household-member-wide-field">
-                                    <span>Ghi chú</span>
-                                    <strong>{{ displayFormValue(person.note) }}</strong>
-                                </div>
-                            </section>
-                            <section class="household-member-form-section household-member-readonly-education">
-                                <h4>Thông tin học tập</h4>
-                                <article
-                                    v-for="education in personEducations(person)"
-                                    :key="String(education.id ?? education.school_year)"
-                                    class="household-member-readonly-year"
-                                >
-                                    <h5>{{ displayFormValue(education.school_year) }}</h5>
-                                    <div class="household-member-readonly-grid">
-                                        <div class="household-member-readonly-field">
-                                            <span>Trường học</span>
-                                            <strong>{{ displayFormValue(pathValue(education, "school.name")) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Khối học</span>
-                                            <strong>{{ displayFormValue(education.academic_block) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Lớp hiện tại</span>
-                                            <strong>{{ displayFormValue(education.current_class) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Trình độ phổ cập</span>
-                                            <strong>{{ displayFormValue(educationGraduationLabel(education) || education.graduation_level) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Năm tốt nghiệp</span>
-                                            <strong>{{ displayFormValue(education.graduation_year) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Học bổ túc</span>
-                                            <strong>{{ displayFormBoolean(education.is_complementary) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Trình độ tốt nghiệp nghề</span>
-                                            <strong>{{ displayFormValue(education.vocational_grad_level) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Năm tốt nghiệp nghề</span>
-                                            <strong>{{ displayFormValue(education.vocational_grad_year) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Lớp đã hoàn thành</span>
-                                            <strong>{{ displayFormValue(education.finished_class) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Năm hoàn thành lớp</span>
-                                            <strong>{{ displayFormValue(education.finished_year) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Lớp đã bỏ học</span>
-                                            <strong>{{ displayFormValue(education.dropped_class) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Năm bỏ học</span>
-                                            <strong>{{ displayFormValue(education.dropped_year) }}</strong>
-                                        </div>
-                                    </div>
-                                </article>
-                                <p v-if="!personEducations(person).length" class="household-member-readonly-empty">
-                                    Chưa cập nhật thông tin học tập.
-                                </p>
-                            </section>
-                            <section class="household-member-form-section household-member-readonly-literacy">
-                                <h4>Xóa mù chữ</h4>
-                                <article
-                                    v-for="education in personEducations(person)"
-                                    :key="`literacy-${String(education.id ?? education.school_year)}`"
-                                    class="household-member-readonly-year"
-                                >
-                                    <h5>{{ displayFormValue(education.school_year) }}</h5>
-                                    <div class="household-member-readonly-grid">
-                                        <div class="household-member-readonly-field">
-                                            <span>Đang học lớp</span>
-                                            <strong>{{ displayFormValue(education.literacy_current_class) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Lớp XMC đã hoàn thành</span>
-                                            <strong>{{ displayFormValue(education.literacy_completed_class ?? education.completed_class) }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Mức độ tái mù chữ</span>
-                                            <strong>{{ education.literacy_relapse_level ? `Mức độ ${String(education.literacy_relapse_level)}` : "Chưa cập nhật" }}</strong>
-                                        </div>
-                                        <div class="household-member-readonly-field">
-                                            <span>Khả năng học tập</span>
-                                            <strong>{{ displayFormValue(education.learning_capacity) }}</strong>
-                                        </div>
-                                    </div>
-                                </article>
-                                <p v-if="!personEducations(person).length" class="household-member-readonly-empty">
-                                    Chưa cập nhật thông tin xóa mù chữ.
-                                </p>
-                            </section>
-                            <section class="household-member-form-section household-member-readonly-disability">
-                                <h4>Khuyết tật</h4>
-                                <div class="household-member-readonly-grid">
-                                    <div
-                                        v-for="option in memberDisabilityOptions"
-                                        :key="option.key"
-                                        class="household-member-readonly-field"
-                                    >
-                                        <span>{{ option.label }}</span>
-                                        <strong>{{ displayFormBoolean(asRow(person.disability)[option.key]) }}</strong>
-                                    </div>
-                                    <div class="household-member-readonly-field">
-                                        <span>Khả năng học tập</span>
-                                        <strong>{{ displayFormBoolean(asRow(person.disability).can_study) }}</strong>
-                                    </div>
-                                </div>
-                            </section>
-                            <section class="household-member-form-section household-member-readonly-circumstance">
-                                <h4>Hoàn cảnh</h4>
-                                <div class="household-member-readonly-grid">
-                                    <div class="household-member-readonly-field">
-                                        <span>Hoàn cảnh đặc biệt</span>
-                                        <strong>{{ displayFormValue(asRow(person.disability).special_circumstance) }}</strong>
-                                    </div>
-                                    <div class="household-member-readonly-field household-member-wide-field">
-                                        <span>Chi tiết hoàn cảnh</span>
-                                        <strong>{{ displayFormValue(asRow(person.disability).special_circumstance_detail) }}</strong>
-                                    </div>
-                                </div>
-                            </section>
-                            <div class="household-member-readonly-actions">
-                                <button
-                                    v-if="!householdDetailReadOnly && permissions.includes('update-households')"
-                                    class="secondary-button"
-                                    type="button"
-                                    @click="beginMember(false, person)"
-                                >
-                                    Sửa nhân khẩu
-                                </button>
-                                <button
-                                    v-if="!householdDetailReadOnly && permissions.includes('delete-households')"
-                                    class="secondary-button household-member-readonly-delete"
-                                    type="button"
-                                    @click="deleteMember(person)"
-                                >
-                                    Xóa nhân khẩu
-                                </button>
-                            </div>
-                        </article>
-                        <p v-if="!householdPersons.length" class="household-member-readonly-empty">
-                            Chưa có nhân khẩu trong phiếu này.
-                        </p>
-                    </div>
-                    <details v-if="false" class="household-detail-table-details">
-                        <summary>Xem bảng tổng hợp và thao tác nhanh</summary>
-                        <div class="household-grid-wrap">
-                        <table class="household-grid household-detail-table">
-                            <thead>
-                                <tr>
-                                    <th>STT</th>
-                                    <th>Quan hệ với chủ hộ</th>
-                                    <th>Họ và tên</th>
-                                    <th>Ngày sinh / Giới tính</th>
-                                    <th>Học tập / Phổ cập (từng năm)</th>
-                                    <th>Trường / Lớp (từng năm)</th>
-                                    <th>Diện ưu tiên / Khuyết tật</th>
-                                    <th>Thao tác</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="(person, index) in householdPersons"
-                                    :key="String(person.id)"
-                                    :class="{
-                                        'household-head-row':
-                                            person.relationship_with_head ===
-                                            'Chủ hộ',
-                                    }"
-                                >
-                                    <td class="household-grid-index">
-                                        {{ index + 1 }}
-                                    </td>
-                                    <td>
-                                        <span
-                                            v-if="
-                                                person.relationship_with_head ===
-                                                'Chủ hộ'
-                                            "
-                                            class="household-head-badge"
-                                            >Chủ hộ</span
-                                        >
-                                        <span v-else>{{
-                                            person.relationship_with_head || "—"
-                                        }}</span>
-                                    </td>
-                                    <td class="household-grid-name">
                                         {{
                                             [
                                                 person.last_name,
@@ -10783,235 +10800,726 @@ onMounted(() => void load());
                                                 .filter(Boolean)
                                                 .join(" ") || "Chưa có họ tên"
                                         }}
-                                    </td>
-                                    <td>
-                                        <span>{{
-                                            displayDate(person.dob)
-                                        }}</span
-                                        ><small>{{
-                                            personGender(person)
-                                        }}</small>
-                                    </td>
-                                    <td>
+                                    </h4>
+                                </div>
+                                <span
+                                    v-if="
+                                        person.relationship_with_head ===
+                                        'Chủ hộ'
+                                    "
+                                    class="household-head-badge"
+                                    >Chủ hộ</span
+                                >
+                                <span
+                                    v-else
+                                    class="household-member-readonly-relation"
+                                >
+                                    {{
+                                        displayFormValue(
+                                            person.relationship_with_head,
+                                        )
+                                    }}
+                                </span>
+                            </header>
+                            <section class="household-member-form-section">
+                                <h4>Thông tin đối tượng</h4>
+                                <div class="household-member-readonly-field">
+                                    <span>Họ và tên đệm</span>
+                                    <strong>{{
+                                        displayFormValue(person.last_name)
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Tên</span>
+                                    <strong>{{
+                                        displayFormValue(person.first_name)
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Ngày sinh</span>
+                                    <strong>{{
+                                        displayDate(person.dob)
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Giới tính</span>
+                                    <strong>{{ personGender(person) }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Dân tộc</span>
+                                    <strong>{{
+                                        personEthnicity(person)
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Tôn giáo</span>
+                                    <strong>{{
+                                        displayFormValue(person.religion)
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Diện ưu tiên</span>
+                                    <strong>{{
+                                        displayFormValue(person.priority_type)
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Họ tên cha / mẹ</span>
+                                    <strong>{{
+                                        displayFormValue(person.parent_name)
+                                    }}</strong>
+                                </div>
+                            </section>
+                            <section class="household-member-form-section">
+                                <h4>Thông tin liên lạc</h4>
+                                <div class="household-member-readonly-field">
+                                    <span>Quan hệ với chủ hộ</span>
+                                    <strong>{{
+                                        displayFormValue(
+                                            person.relationship_with_head,
+                                        )
+                                    }}</strong>
+                                </div>
+                                <div class="household-member-readonly-field">
+                                    <span>Số điện thoại</span>
+                                    <strong>{{
+                                        displayFormValue(person.phone)
+                                    }}</strong>
+                                </div>
+                                <div
+                                    class="household-member-readonly-field household-member-wide-field"
+                                >
+                                    <span>Ghi chú</span>
+                                    <strong>{{
+                                        displayFormValue(person.note)
+                                    }}</strong>
+                                </div>
+                            </section>
+                            <section
+                                class="household-member-form-section household-member-readonly-education"
+                            >
+                                <h4>Thông tin học tập</h4>
+                                <article
+                                    v-for="education in personEducations(
+                                        person,
+                                    )"
+                                    :key="
+                                        String(
+                                            education.id ??
+                                                education.school_year,
+                                        )
+                                    "
+                                    class="household-member-readonly-year"
+                                >
+                                    <h5>
+                                        {{
+                                            displayFormValue(
+                                                education.school_year,
+                                            )
+                                        }}
+                                    </h5>
+                                    <div class="household-member-readonly-grid">
                                         <div
-                                            v-if="
-                                                personEducations(person).length
-                                            "
-                                            class="household-detail-record-list"
+                                            class="household-member-readonly-field"
                                         >
-                                            <article
-                                                v-for="education in personEducations(
-                                                    person,
-                                                )"
-                                                :key="
-                                                    String(
-                                                        education.id ??
-                                                            education.school_year,
-                                                    )
-                                                "
-                                                class="household-detail-record"
-                                            >
-                                                <strong>{{
-                                                    education.school_year ||
-                                                    "Chưa rõ năm học"
-                                                }}</strong>
-                                                <span
-                                                    v-if="
-                                                        educationGraduationLabel(
-                                                            education,
-                                                        )
-                                                    "
-                                                    >{{
-                                                        educationGraduationLabel(
-                                                            education,
-                                                        )
-                                                    }}</span
-                                                >
-                                                <span
-                                                    v-for="line in educationLiteracyLabels(
-                                                        education,
-                                                    )"
-                                                    :key="line"
-                                                    >{{ line }}</span
-                                                >
-                                                <span
-                                                    v-if="
-                                                        !educationGraduationLabel(
-                                                            education,
-                                                        ) &&
-                                                        !educationLiteracyLabels(
-                                                            education,
-                                                        ).length
-                                                    "
-                                                    >Chưa cập nhật kết quả học
-                                                    tập</span
-                                                >
-                                            </article>
-                                        </div>
-                                        <span v-else>Chưa cập nhật</span>
-                                    </td>
-                                    <td>
-                                        <div
-                                            v-if="
-                                                personEducations(person).length
-                                            "
-                                            class="household-detail-record-list"
-                                        >
-                                            <article
-                                                v-for="education in personEducations(
-                                                    person,
-                                                )"
-                                                :key="`school-${String(education.id ?? education.school_year)}`"
-                                                class="household-detail-record"
-                                            >
-                                                <strong>{{
-                                                    education.school_year ||
-                                                    "Chưa rõ năm học"
-                                                }}</strong>
-                                                <span>{{
+                                            <span>Trường học</span>
+                                            <strong>{{
+                                                displayFormValue(
                                                     pathValue(
                                                         education,
                                                         "school.name",
-                                                    )
-                                                }}</span>
-                                                <span
-                                                    >Lớp:
-                                                    {{
-                                                        education.current_class ||
-                                                        "—"
-                                                    }}<template
-                                                        v-if="
-                                                            education.academic_block
-                                                        "
-                                                    >
-                                                        · Khối:
-                                                        {{
-                                                            education.academic_block
-                                                        }}</template
-                                                    ></span
-                                                >
-                                            </article>
+                                                    ),
+                                                )
+                                            }}</strong>
                                         </div>
-                                        <span v-else>Chưa cập nhật</span>
-                                    </td>
-                                    <td>
                                         <div
-                                            class="household-detail-record-list"
+                                            class="household-member-readonly-field"
                                         >
-                                            <article
-                                                class="household-detail-record"
+                                            <span>Khối học</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.academic_block,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Lớp hiện tại</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.current_class,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Trình độ phổ cập</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    educationGraduationLabel(
+                                                        education,
+                                                    ) ||
+                                                        education.graduation_level,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Năm tốt nghiệp</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.graduation_year,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Học bổ túc</span>
+                                            <strong>{{
+                                                displayFormBoolean(
+                                                    education.is_complementary,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span
+                                                >Trình độ tốt nghiệp nghề</span
                                             >
-                                                <strong>Ưu tiên</strong>
-                                                <span>{{
-                                                    person.priority_type ||
-                                                    "Không ghi nhận"
-                                                }}</span>
-                                            </article>
-                                            <article
-                                                class="household-detail-record"
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.vocational_grad_level,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Năm tốt nghiệp nghề</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.vocational_grad_year,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Lớp đã hoàn thành</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.finished_class,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Năm hoàn thành lớp</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.finished_year,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Lớp đã bỏ học</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.dropped_class,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Năm bỏ học</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.dropped_year,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                    </div>
+                                </article>
+                                <p
+                                    v-if="!personEducations(person).length"
+                                    class="household-member-readonly-empty"
+                                >
+                                    Chưa cập nhật thông tin học tập.
+                                </p>
+                            </section>
+                            <section
+                                class="household-member-form-section household-member-readonly-literacy"
+                            >
+                                <h4>Xóa mù chữ</h4>
+                                <article
+                                    v-for="education in personEducations(
+                                        person,
+                                    )"
+                                    :key="`literacy-${String(education.id ?? education.school_year)}`"
+                                    class="household-member-readonly-year"
+                                >
+                                    <h5>
+                                        {{
+                                            displayFormValue(
+                                                education.school_year,
+                                            )
+                                        }}
+                                    </h5>
+                                    <div class="household-member-readonly-grid">
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Đang học lớp</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.literacy_current_class,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Lớp XMC đã hoàn thành</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.literacy_completed_class ??
+                                                        education.completed_class,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Mức độ tái mù chữ</span>
+                                            <strong>{{
+                                                education.literacy_relapse_level
+                                                    ? `Mức độ ${String(education.literacy_relapse_level)}`
+                                                    : "Chưa cập nhật"
+                                            }}</strong>
+                                        </div>
+                                        <div
+                                            class="household-member-readonly-field"
+                                        >
+                                            <span>Khả năng học tập</span>
+                                            <strong>{{
+                                                displayFormValue(
+                                                    education.learning_capacity,
+                                                )
+                                            }}</strong>
+                                        </div>
+                                    </div>
+                                </article>
+                                <p
+                                    v-if="!personEducations(person).length"
+                                    class="household-member-readonly-empty"
+                                >
+                                    Chưa cập nhật thông tin xóa mù chữ.
+                                </p>
+                            </section>
+                            <section
+                                class="household-member-form-section household-member-readonly-disability"
+                            >
+                                <h4>Khuyết tật</h4>
+                                <div class="household-member-readonly-grid">
+                                    <div
+                                        v-for="option in memberDisabilityOptions"
+                                        :key="option.key"
+                                        class="household-member-readonly-field"
+                                    >
+                                        <span>{{ option.label }}</span>
+                                        <strong>{{
+                                            displayFormBoolean(
+                                                asRow(person.disability)[
+                                                    option.key
+                                                ],
+                                            )
+                                        }}</strong>
+                                    </div>
+                                    <div
+                                        class="household-member-readonly-field"
+                                    >
+                                        <span>Khả năng học tập</span>
+                                        <strong>{{
+                                            displayFormBoolean(
+                                                asRow(person.disability)
+                                                    .can_study,
+                                            )
+                                        }}</strong>
+                                    </div>
+                                </div>
+                            </section>
+                            <section
+                                class="household-member-form-section household-member-readonly-circumstance"
+                            >
+                                <h4>Hoàn cảnh</h4>
+                                <div class="household-member-readonly-grid">
+                                    <div
+                                        class="household-member-readonly-field"
+                                    >
+                                        <span>Hoàn cảnh đặc biệt</span>
+                                        <strong>{{
+                                            displayFormValue(
+                                                asRow(person.disability)
+                                                    .special_circumstance,
+                                            )
+                                        }}</strong>
+                                    </div>
+                                    <div
+                                        class="household-member-readonly-field household-member-wide-field"
+                                    >
+                                        <span>Chi tiết hoàn cảnh</span>
+                                        <strong>{{
+                                            displayFormValue(
+                                                asRow(person.disability)
+                                                    .special_circumstance_detail,
+                                            )
+                                        }}</strong>
+                                    </div>
+                                </div>
+                            </section>
+                            <div class="household-member-readonly-actions">
+                                <button
+                                    v-if="
+                                        !householdDetailReadOnly &&
+                                        permissions.includes(
+                                            'update-households',
+                                        )
+                                    "
+                                    class="secondary-button"
+                                    type="button"
+                                    @click="beginMember(false, person)"
+                                >
+                                    Sửa nhân khẩu
+                                </button>
+                                <button
+                                    v-if="
+                                        !householdDetailReadOnly &&
+                                        permissions.includes(
+                                            'delete-households',
+                                        )
+                                    "
+                                    class="secondary-button household-member-readonly-delete"
+                                    type="button"
+                                    @click="deleteMember(person)"
+                                >
+                                    Xóa nhân khẩu
+                                </button>
+                            </div>
+                        </article>
+                        <p
+                            v-if="!householdPersons.length"
+                            class="household-member-readonly-empty"
+                        >
+                            Chưa có nhân khẩu trong phiếu này.
+                        </p>
+                    </div>
+                    <details
+                        v-if="false"
+                        class="household-detail-table-details"
+                    >
+                        <summary>Xem bảng tổng hợp và thao tác nhanh</summary>
+                        <div class="household-grid-wrap">
+                            <table
+                                class="household-grid household-detail-table"
+                            >
+                                <thead>
+                                    <tr>
+                                        <th>STT</th>
+                                        <th>Quan hệ với chủ hộ</th>
+                                        <th>Họ và tên</th>
+                                        <th>Ngày sinh / Giới tính</th>
+                                        <th>Học tập / Phổ cập (từng năm)</th>
+                                        <th>Trường / Lớp (từng năm)</th>
+                                        <th>Diện ưu tiên / Khuyết tật</th>
+                                        <th>Thao tác</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="(
+                                            person, index
+                                        ) in householdPersons"
+                                        :key="String(person.id)"
+                                        :class="{
+                                            'household-head-row':
+                                                person.relationship_with_head ===
+                                                'Chủ hộ',
+                                        }"
+                                    >
+                                        <td class="household-grid-index">
+                                            {{ index + 1 }}
+                                        </td>
+                                        <td>
+                                            <span
+                                                v-if="
+                                                    person.relationship_with_head ===
+                                                    'Chủ hộ'
+                                                "
+                                                class="household-head-badge"
+                                                >Chủ hộ</span
                                             >
-                                                <strong
-                                                    >Khuyết tật / hoàn
-                                                    cảnh</strong
-                                                >
-                                                <span
-                                                    v-for="line in personDisabilityDetails(
+                                            <span v-else>{{
+                                                person.relationship_with_head ||
+                                                "—"
+                                            }}</span>
+                                        </td>
+                                        <td class="household-grid-name">
+                                            {{
+                                                [
+                                                    person.last_name,
+                                                    person.first_name,
+                                                ]
+                                                    .filter(Boolean)
+                                                    .join(" ") ||
+                                                "Chưa có họ tên"
+                                            }}
+                                        </td>
+                                        <td>
+                                            <span>{{
+                                                displayDate(person.dob)
+                                            }}</span
+                                            ><small>{{
+                                                personGender(person)
+                                            }}</small>
+                                        </td>
+                                        <td>
+                                            <div
+                                                v-if="
+                                                    personEducations(person)
+                                                        .length
+                                                "
+                                                class="household-detail-record-list"
+                                            >
+                                                <article
+                                                    v-for="education in personEducations(
                                                         person,
                                                     )"
-                                                    :key="line"
-                                                    >{{ line }}</span
+                                                    :key="
+                                                        String(
+                                                            education.id ??
+                                                                education.school_year,
+                                                        )
+                                                    "
+                                                    class="household-detail-record"
                                                 >
-                                            </article>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div class="household-member-actions">
-                                            <button
-                                                class="household-icon-action"
-                                                type="button"
-                                                :aria-label="`Xem thông tin ${person.first_name ?? 'nhân khẩu'}`"
-                                                title="Xem chi tiết"
-                                                @click="
-                                                    selectedHouseholdPerson =
-                                                        person
-                                                "
-                                            >
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    aria-hidden="true"
-                                                >
-                                                    <path
-                                                        d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"
-                                                    />
-                                                    <circle
-                                                        cx="12"
-                                                        cy="12"
-                                                        r="2.7"
-                                                    />
-                                                </svg>
-                                            </button>
-                                            <button
+                                                    <strong>{{
+                                                        education.school_year ||
+                                                        "Chưa rõ năm học"
+                                                    }}</strong>
+                                                    <span
+                                                        v-if="
+                                                            educationGraduationLabel(
+                                                                education,
+                                                            )
+                                                        "
+                                                        >{{
+                                                            educationGraduationLabel(
+                                                                education,
+                                                            )
+                                                        }}</span
+                                                    >
+                                                    <span
+                                                        v-for="line in educationLiteracyLabels(
+                                                            education,
+                                                        )"
+                                                        :key="line"
+                                                        >{{ line }}</span
+                                                    >
+                                                    <span
+                                                        v-if="
+                                                            !educationGraduationLabel(
+                                                                education,
+                                                            ) &&
+                                                            !educationLiteracyLabels(
+                                                                education,
+                                                            ).length
+                                                        "
+                                                        >Chưa cập nhật kết quả
+                                                        học tập</span
+                                                    >
+                                                </article>
+                                            </div>
+                                            <span v-else>Chưa cập nhật</span>
+                                        </td>
+                                        <td>
+                                            <div
                                                 v-if="
-                                                    !householdDetailReadOnly &&
-                                                    permissions.includes(
-                                                        'update-households',
-                                                    )
+                                                    personEducations(person)
+                                                        .length
                                                 "
-                                                class="household-icon-action"
-                                                type="button"
-                                                :aria-label="`Sửa thông tin ${person.first_name ?? 'nhân khẩu'}`"
-                                                title="Sửa nhân khẩu"
-                                                @click="
-                                                    beginMember(false, person)
-                                                "
+                                                class="household-detail-record-list"
                                             >
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    aria-hidden="true"
+                                                <article
+                                                    v-for="education in personEducations(
+                                                        person,
+                                                    )"
+                                                    :key="`school-${String(education.id ?? education.school_year)}`"
+                                                    class="household-detail-record"
                                                 >
-                                                    <path
-                                                        d="M13.8 4.2a2 2 0 0 1 2.8 2.8L8 15.6l-4 1 1-4 8.8-8.4Z"
-                                                    />
-                                                    <path
-                                                        d="m12.5 5.5 3 3M13 20h8"
-                                                    />
-                                                </svg>
-                                            </button>
-                                            <button
-                                                v-if="
-                                                    !householdDetailReadOnly &&
-                                                    permissions.includes(
-                                                        'delete-households',
-                                                    )
-                                                "
-                                                class="household-icon-action household-icon-danger"
-                                                type="button"
-                                                :aria-label="`Xóa ${person.first_name ?? 'nhân khẩu'}`"
-                                                title="Xóa nhân khẩu"
-                                                @click="deleteMember(person)"
+                                                    <strong>{{
+                                                        education.school_year ||
+                                                        "Chưa rõ năm học"
+                                                    }}</strong>
+                                                    <span>{{
+                                                        pathValue(
+                                                            education,
+                                                            "school.name",
+                                                        )
+                                                    }}</span>
+                                                    <span
+                                                        >Lớp:
+                                                        {{
+                                                            education.current_class ||
+                                                            "—"
+                                                        }}<template
+                                                            v-if="
+                                                                education.academic_block
+                                                            "
+                                                        >
+                                                            · Khối:
+                                                            {{
+                                                                education.academic_block
+                                                            }}</template
+                                                        ></span
+                                                    >
+                                                </article>
+                                            </div>
+                                            <span v-else>Chưa cập nhật</span>
+                                        </td>
+                                        <td>
+                                            <div
+                                                class="household-detail-record-list"
                                             >
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    aria-hidden="true"
+                                                <article
+                                                    class="household-detail-record"
                                                 >
-                                                    <path
-                                                        d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"
-                                                    />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr v-if="!householdPersons.length">
-                                    <td
-                                        colspan="8"
-                                        class="household-grid-empty"
-                                    >
-                                        Chưa có nhân khẩu trong phiếu này.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+                                                    <strong>Ưu tiên</strong>
+                                                    <span>{{
+                                                        person.priority_type ||
+                                                        "Không ghi nhận"
+                                                    }}</span>
+                                                </article>
+                                                <article
+                                                    class="household-detail-record"
+                                                >
+                                                    <strong
+                                                        >Khuyết tật / hoàn
+                                                        cảnh</strong
+                                                    >
+                                                    <span
+                                                        v-for="line in personDisabilityDetails(
+                                                            person,
+                                                        )"
+                                                        :key="line"
+                                                        >{{ line }}</span
+                                                    >
+                                                </article>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div
+                                                class="household-member-actions"
+                                            >
+                                                <button
+                                                    class="household-icon-action"
+                                                    type="button"
+                                                    :aria-label="`Xem thông tin ${person.first_name ?? 'nhân khẩu'}`"
+                                                    title="Xem chi tiết"
+                                                    @click="
+                                                        selectedHouseholdPerson =
+                                                            person
+                                                    "
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"
+                                                        />
+                                                        <circle
+                                                            cx="12"
+                                                            cy="12"
+                                                            r="2.7"
+                                                        />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    v-if="
+                                                        !householdDetailReadOnly &&
+                                                        permissions.includes(
+                                                            'update-households',
+                                                        )
+                                                    "
+                                                    class="household-icon-action"
+                                                    type="button"
+                                                    :aria-label="`Sửa thông tin ${person.first_name ?? 'nhân khẩu'}`"
+                                                    title="Sửa nhân khẩu"
+                                                    @click="
+                                                        beginMember(
+                                                            false,
+                                                            person,
+                                                        )
+                                                    "
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M13.8 4.2a2 2 0 0 1 2.8 2.8L8 15.6l-4 1 1-4 8.8-8.4Z"
+                                                        />
+                                                        <path
+                                                            d="m12.5 5.5 3 3M13 20h8"
+                                                        />
+                                                    </svg>
+                                                </button>
+                                                <button
+                                                    v-if="
+                                                        !householdDetailReadOnly &&
+                                                        permissions.includes(
+                                                            'delete-households',
+                                                        )
+                                                    "
+                                                    class="household-icon-action household-icon-danger"
+                                                    type="button"
+                                                    :aria-label="`Xóa ${person.first_name ?? 'nhân khẩu'}`"
+                                                    title="Xóa nhân khẩu"
+                                                    @click="
+                                                        deleteMember(person)
+                                                    "
+                                                >
+                                                    <svg
+                                                        viewBox="0 0 24 24"
+                                                        aria-hidden="true"
+                                                    >
+                                                        <path
+                                                            d="M4 7h16M10 11v6m4-6v6M6 7l1 14h10l1-14M9 7V4h6v3"
+                                                        />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!householdPersons.length">
+                                        <td
+                                            colspan="8"
+                                            class="household-grid-empty"
+                                        >
+                                            Chưa có nhân khẩu trong phiếu này.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </details>
                 </section>
@@ -11039,13 +11547,10 @@ onMounted(() => void load());
                     'household-head-education-step':
                         !editing &&
                         (memberId === null || isHouseholdWizardMemberPage),
-                    'household-member-create-page':
-                        isHouseholdWizardMemberPage,
+                    'household-member-create-page': isHouseholdWizardMemberPage,
                 }"
                 :role="isHouseholdWizardMemberPage ? undefined : 'dialog'"
-                :aria-modal="
-                    isHouseholdWizardMemberPage ? undefined : 'true'
-                "
+                :aria-modal="isHouseholdWizardMemberPage ? undefined : 'true'"
                 aria-labelledby="household-member-form-title"
                 @submit.prevent="saveMember"
             >
@@ -11084,425 +11589,498 @@ onMounted(() => void load());
                 </header>
                 <div class="household-member-create-columns">
                     <div class="household-member-create-column">
-                <p
-                    v-if="error && false"
-                    class="notice household-member-form-error"
-                    role="alert"
-                >
-                    {{ error }}
-                </p>
-                <section
-                    v-if="
-                        (memberIsHead && !editing && memberId === null) ||
-                        !memberIsHead ||
-                        headMemberEducationStep
-                    "
-                    class="household-member-form-section household-member-person-section"
-                >
-                    <h4>Thông tin đối tượng</h4>
-                    <label class="workspace-field">
-                        <span>Họ và tên đệm</span>
-                        <input
-                            v-model.trim="memberForm.last_name"
-                            type="text"
-                            required
-                            maxlength="50"
-                        />
-                        <small
-                            v-if="memberFormErrors.last_name"
-                            class="field-error"
+                        <p
+                            v-if="error && false"
+                            class="notice household-member-form-error"
                             role="alert"
-                            >{{ memberFormErrors.last_name }}</small
                         >
-                    </label>
-                    <label class="workspace-field">
-                        <span>Tên</span>
-                        <input
-                            v-model.trim="memberForm.first_name"
-                            type="text"
-                            required
-                            maxlength="100"
-                        />
-                        <small
-                            v-if="memberFormErrors.first_name"
-                            class="field-error"
-                            role="alert"
-                            >{{ memberFormErrors.first_name }}</small
-                        >
-                    </label>
-                    <label class="workspace-field">
-                        <span>Ngày sinh</span>
-                        <input v-model="memberForm.dob" type="date" required />
-                        <small
-                            v-if="memberFormErrors.dob"
-                            class="field-error"
-                            role="alert"
-                            >{{ memberFormErrors.dob }}</small
-                        >
-                    </label>
-                    <label class="workspace-field">
-                        <span>Giới tính</span>
-                        <select v-model="memberForm.gender" required>
-                            <option value="NAM">Nam</option>
-                            <option value="NU">Nữ</option>
-                        </select>
-                        <small
-                            v-if="memberFormErrors.gender"
-                            class="field-error"
-                            role="alert"
-                            >{{ memberFormErrors.gender }}</small
-                        >
-                    </label>
-                    <label class="workspace-field">
-                        <span>Dân tộc</span>
-                        <select v-model="memberForm.ethnicity_code" required>
-                            <option value="">Chọn dân tộc</option>
-                            <option
-                                v-for="ethnicity in ethnicities"
-                                :key="String(ethnicity.code)"
-                                :value="String(ethnicity.code)"
-                            >
-                                {{ ethnicity.name }}
-                            </option>
-                        </select>
-                        <small
-                            v-if="memberFormErrors.ethnicity_code"
-                            class="field-error"
-                            role="alert"
-                            >{{ memberFormErrors.ethnicity_code }}</small
-                        >
-                    </label>
-                    <label v-if="memberIsHead" class="workspace-field">
-                        <span>Quan hệ với chủ hộ</span>
-                        <input
-                            :value="
-                                memberForm.relationship_with_head || 'Chủ hộ'
+                            {{ error }}
+                        </p>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
                             "
-                            type="text"
-                            readonly
-                        />
-                    </label>
-                    <label v-else class="workspace-field">
-                        <span>Quan hệ với chủ hộ <b>*</b></span>
-                        <select
-                            v-model="memberForm.relationship_with_head"
-                            required
+                            class="household-member-form-section household-member-person-section"
                         >
-                            <option value="">Chọn quan hệ</option>
-                            <option
-                                v-for="relationship in [
-                                    ...new Set(
-                                        [
-                                            ...memberRelationships,
-                                            memberForm.relationship_with_head,
-                                        ].filter(Boolean),
-                                    ),
-                                ]"
-                                :key="relationship"
-                                :value="relationship"
-                            >
-                                {{ relationship }}
-                            </option>
-                        </select>
-                        <small
-                            v-if="memberFormErrors.relationship_with_head"
-                            class="field-error"
-                            role="alert"
+                            <h4>Thông tin đối tượng</h4>
+                            <label class="workspace-field">
+                                <span>Họ và tên đệm</span>
+                                <input
+                                    v-model.trim="memberForm.last_name"
+                                    type="text"
+                                    required
+                                    maxlength="50"
+                                />
+                                <small
+                                    v-if="memberFormErrors.last_name"
+                                    class="field-error"
+                                    role="alert"
+                                    >{{ memberFormErrors.last_name }}</small
+                                >
+                            </label>
+                            <label class="workspace-field">
+                                <span>Tên</span>
+                                <input
+                                    v-model.trim="memberForm.first_name"
+                                    type="text"
+                                    required
+                                    maxlength="100"
+                                />
+                                <small
+                                    v-if="memberFormErrors.first_name"
+                                    class="field-error"
+                                    role="alert"
+                                    >{{ memberFormErrors.first_name }}</small
+                                >
+                            </label>
+                            <label class="workspace-field">
+                                <span>Ngày sinh</span>
+                                <input
+                                    v-model="memberForm.dob"
+                                    type="date"
+                                    required
+                                />
+                                <small
+                                    v-if="memberFormErrors.dob"
+                                    class="field-error"
+                                    role="alert"
+                                    >{{ memberFormErrors.dob }}</small
+                                >
+                            </label>
+                            <label class="workspace-field">
+                                <span>Giới tính</span>
+                                <select v-model="memberForm.gender" required>
+                                    <option value="NAM">Nam</option>
+                                    <option value="NU">Nữ</option>
+                                </select>
+                                <small
+                                    v-if="memberFormErrors.gender"
+                                    class="field-error"
+                                    role="alert"
+                                    >{{ memberFormErrors.gender }}</small
+                                >
+                            </label>
+                            <label class="workspace-field">
+                                <span>Dân tộc</span>
+                                <select
+                                    v-model="memberForm.ethnicity_code"
+                                    required
+                                >
+                                    <option value="">Chọn dân tộc</option>
+                                    <option
+                                        v-for="ethnicity in ethnicities"
+                                        :key="String(ethnicity.code)"
+                                        :value="String(ethnicity.code)"
+                                    >
+                                        {{ ethnicity.name }}
+                                    </option>
+                                </select>
+                                <small
+                                    v-if="memberFormErrors.ethnicity_code"
+                                    class="field-error"
+                                    role="alert"
+                                    >{{
+                                        memberFormErrors.ethnicity_code
+                                    }}</small
+                                >
+                            </label>
+                            <label v-if="memberIsHead" class="workspace-field">
+                                <span>Quan hệ với chủ hộ</span>
+                                <input
+                                    :value="
+                                        memberForm.relationship_with_head ||
+                                        'Chủ hộ'
+                                    "
+                                    type="text"
+                                    readonly
+                                />
+                            </label>
+                            <label v-else class="workspace-field">
+                                <span>Quan hệ với chủ hộ <b>*</b></span>
+                                <select
+                                    v-model="memberForm.relationship_with_head"
+                                    required
+                                >
+                                    <option value="">Chọn quan hệ</option>
+                                    <option
+                                        v-for="relationship in [
+                                            ...new Set(
+                                                [
+                                                    ...memberRelationships,
+                                                    memberForm.relationship_with_head,
+                                                ].filter(Boolean),
+                                            ),
+                                        ]"
+                                        :key="relationship"
+                                        :value="relationship"
+                                    >
+                                        {{ relationship }}
+                                    </option>
+                                </select>
+                                <small
+                                    v-if="
+                                        memberFormErrors.relationship_with_head
+                                    "
+                                    class="field-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberFormErrors.relationship_with_head
+                                    }}
+                                </small>
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Tôn giáo</span
+                                ><input
+                                    v-model.trim="memberForm.religion"
+                                    type="text"
+                                    maxlength="50"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Diện ưu tiên</span
+                                ><input
+                                    v-model.trim="memberForm.priority_type"
+                                    type="text"
+                                    maxlength="100"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Họ tên cha / mẹ</span
+                                ><input
+                                    v-model.trim="memberForm.parent_name"
+                                    type="text"
+                                    maxlength="150"
+                            /></label>
+                        </section>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
+                            "
+                            class="household-member-form-section household-member-contact-section"
                         >
-                            {{ memberFormErrors.relationship_with_head }}
-                        </small>
-                    </label>
-                    <label class="workspace-field"
-                        ><span>Tôn giáo</span
-                        ><input
-                            v-model.trim="memberForm.religion"
-                            type="text"
-                            maxlength="50"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Diện ưu tiên</span
-                        ><input
-                            v-model.trim="memberForm.priority_type"
-                            type="text"
-                            maxlength="100"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Họ tên cha / mẹ</span
-                        ><input
-                            v-model.trim="memberForm.parent_name"
-                            type="text"
-                            maxlength="150"
-                    /></label>
-                </section>
-                <section
-                    v-if="
-                        (memberIsHead && !editing && memberId === null) ||
-                        !memberIsHead ||
-                        headMemberEducationStep
-                    "
-                    class="household-member-form-section household-member-contact-section"
-                >
-                    <h4>Thông tin liên lạc</h4>
-                    <label class="workspace-field"
-                        ><span>Số điện thoại</span
-                        ><input
-                            v-model.trim="memberForm.phone"
-                            type="tel"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field household-member-wide-field"
-                        ><span>Ghi chú</span
-                        ><textarea
-                            v-model.trim="memberForm.note"
-                            rows="2"
-                            maxlength="2000"
-                        ></textarea>
-                    </label>
-                </section>
-                <section
-                    v-if="
-                        (memberIsHead && !editing && memberId === null) ||
-                        !memberIsHead ||
-                        headMemberEducationStep
-                    "
-                    class="household-member-form-section household-member-disability-section"
-                >
-                    <h4>Khuyết tật</h4>
-                    <div class="household-member-checkbox-grid">
-                        <label
-                            v-for="option in memberDisabilityOptions"
-                            :key="option.key"
-                            class="household-member-checkbox"
+                            <h4>Thông tin liên lạc</h4>
+                            <label class="workspace-field"
+                                ><span>Số điện thoại</span
+                                ><input
+                                    v-model.trim="memberForm.phone"
+                                    type="tel"
+                                    maxlength="20"
+                            /></label>
+                            <label
+                                class="workspace-field household-member-wide-field"
+                                ><span>Ghi chú</span
+                                ><textarea
+                                    v-model.trim="memberForm.note"
+                                    rows="2"
+                                    maxlength="2000"
+                                ></textarea>
+                            </label>
+                        </section>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
+                            "
+                            class="household-member-form-section household-member-disability-section"
                         >
-                            <input
-                                v-model="disabilityForm[option.key]"
-                                type="checkbox"
-                            />
-                            <span>{{ option.label }}</span>
-                        </label>
-                    </div>
-                    <label class="workspace-field">
-                        <span>Khả năng học tập</span>
-                        <select v-model="disabilityForm.can_study">
-                            <option value="">Chưa xác định</option>
-                            <option value="true">Có khả năng học tập</option>
-                            <option value="false">
-                                Không có khả năng học tập
-                            </option>
-                        </select>
-                    </label>
-                </section>
+                            <h4>Khuyết tật</h4>
+                            <div class="household-member-checkbox-grid">
+                                <label
+                                    v-for="option in memberDisabilityOptions"
+                                    :key="option.key"
+                                    class="household-member-checkbox"
+                                >
+                                    <input
+                                        v-model="disabilityForm[option.key]"
+                                        type="checkbox"
+                                    />
+                                    <span>{{ option.label }}</span>
+                                </label>
+                            </div>
+                            <label class="workspace-field">
+                                <span>Khả năng học tập</span>
+                                <select v-model="disabilityForm.can_study">
+                                    <option value="">Chưa xác định</option>
+                                    <option value="true">
+                                        Có khả năng học tập
+                                    </option>
+                                    <option value="false">
+                                        Không có khả năng học tập
+                                    </option>
+                                </select>
+                            </label>
+                        </section>
                     </div>
                     <div class="household-member-create-column">
-                <section
-                    v-if="
-                        (memberIsHead && !editing && memberId === null) ||
-                        !memberIsHead ||
-                        headMemberEducationStep
-                    "
-                    class="household-member-form-section household-member-education-section"
-                >
-                    <h4>Thông tin học tập</h4>
-                    <label class="workspace-field">
-                        <span>Năm học</span>
-                        <select v-model="educationForm.school_year" required>
-                            <option value="">Chọn năm học</option>
-                            <option
-                                v-for="year in [
-                                    ...new Set(
-                                        [
-                                            ...memberSchoolYearOptions,
-                                            educationForm.school_year,
-                                        ].filter(Boolean),
-                                    ),
-                                ]"
-                                :key="year"
-                                :value="year"
-                            >
-                                {{ year }}
-                            </option>
-                        </select>
-                        <small
-                            v-if="memberFormErrors['education.school_year']"
-                            class="field-error"
-                            role="alert"
-                            >{{
-                                memberFormErrors["education.school_year"]
-                            }}</small
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
+                            "
+                            class="household-member-form-section household-member-education-section"
                         >
-                    </label>
-                    <label class="workspace-field">
-                        <span>Trường học</span>
-                        <select v-model="educationForm.school_code">
-                            <option value="">Chưa chọn trường</option>
-                            <option
-                                v-for="school in personSchools"
-                                :key="String(school.code)"
-                                :value="String(school.code)"
-                            >
-                                {{ school.name }} · {{ school.code }}
-                            </option>
-                        </select>
-                        <small
-                            v-if="memberFormErrors['education.school_code']"
-                            class="field-error"
-                            role="alert"
-                            >{{
-                                memberFormErrors["education.school_code"]
-                            }}</small
+                            <h4>Thông tin học tập</h4>
+                            <label class="workspace-field">
+                                <span>Năm học</span>
+                                <select
+                                    v-model="educationForm.school_year"
+                                    required
+                                >
+                                    <option value="">Chọn năm học</option>
+                                    <option
+                                        v-for="year in [
+                                            ...new Set(
+                                                [
+                                                    ...memberSchoolYearOptions,
+                                                    educationForm.school_year,
+                                                ].filter(Boolean),
+                                            ),
+                                        ]"
+                                        :key="year"
+                                        :value="year"
+                                    >
+                                        {{ year }}
+                                    </option>
+                                </select>
+                                <small
+                                    v-if="
+                                        memberFormErrors[
+                                            'education.school_year'
+                                        ]
+                                    "
+                                    class="field-error"
+                                    role="alert"
+                                    >{{
+                                        memberFormErrors[
+                                            "education.school_year"
+                                        ]
+                                    }}</small
+                                >
+                            </label>
+                            <label class="workspace-field">
+                                <span>Trường học</span>
+                                <select v-model="educationForm.school_code">
+                                    <option value="">Chưa chọn trường</option>
+                                    <option
+                                        v-for="school in personSchools"
+                                        :key="String(school.code)"
+                                        :value="String(school.code)"
+                                    >
+                                        {{ school.name }} · {{ school.code }}
+                                    </option>
+                                </select>
+                                <small
+                                    v-if="
+                                        memberFormErrors[
+                                            'education.school_code'
+                                        ]
+                                    "
+                                    class="field-error"
+                                    role="alert"
+                                    >{{
+                                        memberFormErrors[
+                                            "education.school_code"
+                                        ]
+                                    }}</small
+                                >
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Lớp hiện tại</span
+                                ><input
+                                    v-model.trim="educationForm.current_class"
+                                    type="text"
+                                    maxlength="50"
+                            /></label>
+                            <label class="workspace-field">
+                                <span>Trình độ phổ cập</span>
+                                <select
+                                    v-model="educationForm.graduation_level"
+                                >
+                                    <option value="">Chưa xác định</option>
+                                    <option value="MN">Mầm non</option>
+                                    <option value="TH">Tiểu học</option>
+                                    <option value="THCS">
+                                        Trung học cơ sở
+                                    </option>
+                                    <option value="THPT">
+                                        Trung học phổ thông
+                                    </option>
+                                </select>
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Năm tốt nghiệp</span
+                                ><input
+                                    v-model.trim="educationForm.graduation_year"
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field">
+                                <span>Học bổ túc</span>
+                                <select
+                                    v-model="educationForm.is_complementary"
+                                >
+                                    <option value="0">Không</option>
+                                    <option value="1">Có</option>
+                                </select>
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Trình độ tốt nghiệp nghề</span
+                                ><input
+                                    v-model.trim="
+                                        educationForm.vocational_grad_level
+                                    "
+                                    type="text"
+                                    maxlength="50"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Năm tốt nghiệp nghề</span
+                                ><input
+                                    v-model.trim="
+                                        educationForm.vocational_grad_year
+                                    "
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Lớp đã hoàn thành</span
+                                ><input
+                                    v-model.trim="educationForm.finished_class"
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Năm hoàn thành lớp</span
+                                ><input
+                                    v-model.trim="educationForm.finished_year"
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Lớp đã bỏ học</span
+                                ><input
+                                    v-model.trim="educationForm.dropped_class"
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Năm bỏ học</span
+                                ><input
+                                    v-model.trim="educationForm.dropped_year"
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                        </section>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
+                            "
+                            class="household-member-form-section household-member-literacy-section"
                         >
-                    </label>
-                    <label class="workspace-field"
-                        ><span>Lớp hiện tại</span
-                        ><input
-                            v-model.trim="educationForm.current_class"
-                            type="text"
-                            maxlength="50"
-                    /></label>
-                    <label class="workspace-field">
-                        <span>Trình độ phổ cập</span>
-                        <select v-model="educationForm.graduation_level">
-                            <option value="">Chưa xác định</option>
-                            <option value="MN">Mầm non</option>
-                            <option value="TH">Tiểu học</option>
-                            <option value="THCS">Trung học cơ sở</option>
-                            <option value="THPT">Trung học phổ thông</option>
-                        </select>
-                    </label>
-                    <label class="workspace-field"
-                        ><span>Năm tốt nghiệp</span
-                        ><input
-                            v-model.trim="educationForm.graduation_year"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field">
-                        <span>Học bổ túc</span>
-                        <select v-model="educationForm.is_complementary">
-                            <option value="0">Không</option>
-                            <option value="1">Có</option>
-                        </select>
-                    </label>
-                    <label class="workspace-field"
-                        ><span>Trình độ tốt nghiệp nghề</span
-                        ><input
-                            v-model.trim="educationForm.vocational_grad_level"
-                            type="text"
-                            maxlength="50"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Năm tốt nghiệp nghề</span
-                        ><input
-                            v-model.trim="educationForm.vocational_grad_year"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Lớp đã hoàn thành</span
-                        ><input
-                            v-model.trim="educationForm.finished_class"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Năm hoàn thành lớp</span
-                        ><input
-                            v-model.trim="educationForm.finished_year"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Lớp đã bỏ học</span
-                        ><input
-                            v-model.trim="educationForm.dropped_class"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Năm bỏ học</span
-                        ><input
-                            v-model.trim="educationForm.dropped_year"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                </section>
-                <section
-                    v-if="
-                        (memberIsHead && !editing && memberId === null) ||
-                        !memberIsHead ||
-                        headMemberEducationStep
-                    "
-                    class="household-member-form-section household-member-literacy-section"
-                >
-                    <h4>Xóa mù chữ</h4>
-                    <label class="workspace-field"
-                        ><span>Đang học lớp</span
-                        ><input
-                            v-model.trim="educationForm.literacy_current_class"
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field"
-                        ><span>Lớp XMC đã hoàn thành</span
-                        ><input
-                            v-model.trim="
-                                educationForm.literacy_completed_class
+                            <h4>Xóa mù chữ</h4>
+                            <label class="workspace-field"
+                                ><span>Đang học lớp</span
+                                ><input
+                                    v-model.trim="
+                                        educationForm.literacy_current_class
+                                    "
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Lớp XMC đã hoàn thành</span
+                                ><input
+                                    v-model.trim="
+                                        educationForm.literacy_completed_class
+                                    "
+                                    type="text"
+                                    maxlength="20"
+                            /></label>
+                            <label class="workspace-field">
+                                <span>Mức độ tái mù chữ</span>
+                                <select
+                                    v-model="
+                                        educationForm.literacy_relapse_level
+                                    "
+                                >
+                                    <option value="">Không ghi nhận</option>
+                                    <option value="1">Mức độ 1</option>
+                                    <option value="2">Mức độ 2</option>
+                                </select>
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Khả năng học tập</span
+                                ><input
+                                    v-model.trim="
+                                        educationForm.learning_capacity
+                                    "
+                                    type="text"
+                                    maxlength="50"
+                            /></label>
+                        </section>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
                             "
-                            type="text"
-                            maxlength="20"
-                    /></label>
-                    <label class="workspace-field">
-                        <span>Mức độ tái mù chữ</span>
-                        <select v-model="educationForm.literacy_relapse_level">
-                            <option value="">Không ghi nhận</option>
-                            <option value="1">Mức độ 1</option>
-                            <option value="2">Mức độ 2</option>
-                        </select>
-                    </label>
-                    <label class="workspace-field"
-                        ><span>Khả năng học tập</span
-                        ><input
-                            v-model.trim="educationForm.learning_capacity"
-                            type="text"
-                            maxlength="50"
-                    /></label>
-                </section>
-                <section
-                    v-if="
-                        (memberIsHead && !editing && memberId === null) ||
-                        !memberIsHead ||
-                        headMemberEducationStep
-                    "
-                    class="household-member-form-section household-member-circumstance-section"
-                >
-                    <h4>Hoàn cảnh</h4>
-                    <label class="workspace-field">
-                        <span>Hoàn cảnh đặc biệt</span>
-                        <select v-model="disabilityForm.special_circumstance">
-                            <option value="">Không ghi nhận</option>
-                            <option value="Chuyển đến">Chuyển đến</option>
-                            <option value="Chuyển đi">Chuyển đi</option>
-                        </select>
-                    </label>
-                    <label class="workspace-field household-member-wide-field">
-                        <span>Chi tiết hoàn cảnh</span>
-                        <textarea
-                            :value="
-                                String(
-                                    disabilityForm.special_circumstance_detail ??
-                                        '',
-                                )
-                            "
-                            rows="2"
-                            maxlength="2000"
-                            @input="
-                                disabilityForm.special_circumstance_detail = (
-                                    $event.target as HTMLTextAreaElement
-                                ).value
-                            "
-                        ></textarea>
-                    </label>
-                </section>
+                            class="household-member-form-section household-member-circumstance-section"
+                        >
+                            <h4>Hoàn cảnh</h4>
+                            <label class="workspace-field">
+                                <span>Hoàn cảnh đặc biệt</span>
+                                <select
+                                    v-model="
+                                        disabilityForm.special_circumstance
+                                    "
+                                >
+                                    <option value="">Không ghi nhận</option>
+                                    <option value="Chuyển đến">
+                                        Chuyển đến
+                                    </option>
+                                    <option value="Chuyển đi">Chuyển đi</option>
+                                </select>
+                            </label>
+                            <label
+                                class="workspace-field household-member-wide-field"
+                            >
+                                <span>Chi tiết hoàn cảnh</span>
+                                <textarea
+                                    :value="
+                                        String(
+                                            disabilityForm.special_circumstance_detail ??
+                                                '',
+                                        )
+                                    "
+                                    rows="2"
+                                    maxlength="2000"
+                                    @input="
+                                        disabilityForm.special_circumstance_detail =
+                                            (
+                                                $event.target as HTMLTextAreaElement
+                                            ).value
+                                    "
+                                ></textarea>
+                            </label>
+                        </section>
                     </div>
                 </div>
                 <div class="pagination-actions household-member-form-actions">
@@ -11513,10 +12091,10 @@ onMounted(() => void load());
                     >
                         {{
                             memberBusy
-                            ? "Đang lưu…"
-                            : memberIsHead
-                              ? "Lưu thông tin chủ hộ"
-                              : "Lưu thành viên"
+                                ? "Đang lưu…"
+                                : memberIsHead
+                                  ? "Lưu thông tin chủ hộ"
+                                  : "Lưu thành viên"
                         }}
                     </button>
                     <button
@@ -11625,56 +12203,90 @@ onMounted(() => void load());
                     <h4>Thông tin đối tượng</h4>
                     <div class="household-member-readonly-field">
                         <span>Họ và tên đệm</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.last_name) }}</strong>
+                        <strong>{{
+                            displayFormValue(selectedHouseholdPerson.last_name)
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Tên</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.first_name) }}</strong>
+                        <strong>{{
+                            displayFormValue(selectedHouseholdPerson.first_name)
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Ngày sinh</span>
-                        <strong>{{ displayDate(selectedHouseholdPerson.dob) }}</strong>
+                        <strong>{{
+                            displayDate(selectedHouseholdPerson.dob)
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Giới tính</span>
-                        <strong>{{ personGender(selectedHouseholdPerson) }}</strong>
+                        <strong>{{
+                            personGender(selectedHouseholdPerson)
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Dân tộc</span>
-                        <strong>{{ personEthnicity(selectedHouseholdPerson) }}</strong>
+                        <strong>{{
+                            personEthnicity(selectedHouseholdPerson)
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Tôn giáo</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.religion) }}</strong>
+                        <strong>{{
+                            displayFormValue(selectedHouseholdPerson.religion)
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Diện ưu tiên</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.priority_type) }}</strong>
+                        <strong>{{
+                            displayFormValue(
+                                selectedHouseholdPerson.priority_type,
+                            )
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Họ tên cha / mẹ</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.parent_name) }}</strong>
+                        <strong>{{
+                            displayFormValue(
+                                selectedHouseholdPerson.parent_name,
+                            )
+                        }}</strong>
                     </div>
                 </section>
                 <section class="household-member-form-section">
                     <h4>Thông tin liên lạc</h4>
                     <div class="household-member-readonly-field">
                         <span>Quan hệ với chủ hộ</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.relationship_with_head) }}</strong>
+                        <strong>{{
+                            displayFormValue(
+                                selectedHouseholdPerson.relationship_with_head,
+                            )
+                        }}</strong>
                     </div>
                     <div class="household-member-readonly-field">
                         <span>Số điện thoại</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.phone) }}</strong>
+                        <strong>{{
+                            displayFormValue(selectedHouseholdPerson.phone)
+                        }}</strong>
                     </div>
-                    <div class="household-member-readonly-field household-member-wide-field">
+                    <div
+                        class="household-member-readonly-field household-member-wide-field"
+                    >
                         <span>Ghi chú</span>
-                        <strong>{{ displayFormValue(selectedHouseholdPerson.note) }}</strong>
+                        <strong>{{
+                            displayFormValue(selectedHouseholdPerson.note)
+                        }}</strong>
                     </div>
                 </section>
-                <section class="household-member-form-section household-member-readonly-education">
+                <section
+                    class="household-member-form-section household-member-readonly-education"
+                >
                     <h4>Thông tin học tập</h4>
                     <article
-                        v-for="education in personEducations(selectedHouseholdPerson)"
+                        v-for="education in personEducations(
+                            selectedHouseholdPerson,
+                        )"
                         :key="String(education.id ?? education.school_year)"
                         class="household-member-readonly-year"
                     >
@@ -11682,62 +12294,104 @@ onMounted(() => void load());
                         <div class="household-member-readonly-grid">
                             <div class="household-member-readonly-field">
                                 <span>Trường học</span>
-                                <strong>{{ displayFormValue(pathValue(education, "school.name")) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        pathValue(education, "school.name"),
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Khối học</span>
-                                <strong>{{ displayFormValue(education.academic_block) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.academic_block)
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Lớp hiện tại</span>
-                                <strong>{{ displayFormValue(education.current_class) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.current_class)
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Trình độ phổ cập</span>
-                                <strong>{{ displayFormValue(educationGraduationLabel(education) || education.graduation_level) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        educationGraduationLabel(education) ||
+                                            education.graduation_level,
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Học bổ túc</span>
-                                <strong>{{ displayFormBoolean(education.is_complementary) }}</strong>
+                                <strong>{{
+                                    displayFormBoolean(
+                                        education.is_complementary,
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Năm tốt nghiệp</span>
-                                <strong>{{ displayFormValue(education.graduation_year) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.graduation_year)
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Trình độ tốt nghiệp nghề</span>
-                                <strong>{{ displayFormValue(education.vocational_grad_level) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        education.vocational_grad_level,
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Năm tốt nghiệp nghề</span>
-                                <strong>{{ displayFormValue(education.vocational_grad_year) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        education.vocational_grad_year,
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Lớp đã hoàn thành</span>
-                                <strong>{{ displayFormValue(education.finished_class) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.finished_class)
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Năm hoàn thành lớp</span>
-                                <strong>{{ displayFormValue(education.finished_year) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.finished_year)
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Lớp đã bỏ học</span>
-                                <strong>{{ displayFormValue(education.dropped_class) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.dropped_class)
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Năm bỏ học</span>
-                                <strong>{{ displayFormValue(education.dropped_year) }}</strong>
+                                <strong>{{
+                                    displayFormValue(education.dropped_year)
+                                }}</strong>
                             </div>
                         </div>
                     </article>
-                    <p v-if="!personEducations(selectedHouseholdPerson).length" class="household-member-readonly-empty">
+                    <p
+                        v-if="!personEducations(selectedHouseholdPerson).length"
+                        class="household-member-readonly-empty"
+                    >
                         Chưa cập nhật thông tin học tập.
                     </p>
                 </section>
-                <section class="household-member-form-section household-member-readonly-literacy">
+                <section
+                    class="household-member-form-section household-member-readonly-literacy"
+                >
                     <h4>Xóa mù chữ</h4>
                     <article
-                        v-for="education in personEducations(selectedHouseholdPerson)"
+                        v-for="education in personEducations(
+                            selectedHouseholdPerson,
+                        )"
                         :key="`literacy-${String(education.id ?? education.school_year)}`"
                         class="household-member-readonly-year"
                     >
@@ -11745,27 +12399,49 @@ onMounted(() => void load());
                         <div class="household-member-readonly-grid">
                             <div class="household-member-readonly-field">
                                 <span>Đang học lớp</span>
-                                <strong>{{ displayFormValue(education.literacy_current_class) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        education.literacy_current_class,
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Lớp XMC đã hoàn thành</span>
-                                <strong>{{ displayFormValue(education.literacy_completed_class ?? education.completed_class) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        education.literacy_completed_class ??
+                                            education.completed_class,
+                                    )
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Mức độ tái mù chữ</span>
-                                <strong>{{ education.literacy_relapse_level ? `Mức độ ${String(education.literacy_relapse_level)}` : "Chưa cập nhật" }}</strong>
+                                <strong>{{
+                                    education.literacy_relapse_level
+                                        ? `Mức độ ${String(education.literacy_relapse_level)}`
+                                        : "Chưa cập nhật"
+                                }}</strong>
                             </div>
                             <div class="household-member-readonly-field">
                                 <span>Khả năng học tập</span>
-                                <strong>{{ displayFormValue(education.learning_capacity) }}</strong>
+                                <strong>{{
+                                    displayFormValue(
+                                        education.learning_capacity,
+                                    )
+                                }}</strong>
                             </div>
                         </div>
                     </article>
-                    <p v-if="!personEducations(selectedHouseholdPerson).length" class="household-member-readonly-empty">
+                    <p
+                        v-if="!personEducations(selectedHouseholdPerson).length"
+                        class="household-member-readonly-empty"
+                    >
                         Chưa cập nhật thông tin xóa mù chữ.
                     </p>
                 </section>
-                <section class="household-member-form-section household-member-readonly-disability">
+                <section
+                    class="household-member-form-section household-member-readonly-disability"
+                >
                     <h4>Khuyết tật</h4>
                     <div class="household-member-readonly-grid">
                         <div
@@ -11774,24 +12450,49 @@ onMounted(() => void load());
                             class="household-member-readonly-field"
                         >
                             <span>{{ option.label }}</span>
-                            <strong>{{ displayFormBoolean(asRow(selectedHouseholdPerson.disability)[option.key]) }}</strong>
+                            <strong>{{
+                                displayFormBoolean(
+                                    asRow(selectedHouseholdPerson.disability)[
+                                        option.key
+                                    ],
+                                )
+                            }}</strong>
                         </div>
                         <div class="household-member-readonly-field">
                             <span>Khả năng học tập</span>
-                            <strong>{{ displayFormBoolean(asRow(selectedHouseholdPerson.disability).can_study) }}</strong>
+                            <strong>{{
+                                displayFormBoolean(
+                                    asRow(selectedHouseholdPerson.disability)
+                                        .can_study,
+                                )
+                            }}</strong>
                         </div>
                     </div>
                 </section>
-                <section class="household-member-form-section household-member-readonly-circumstance">
+                <section
+                    class="household-member-form-section household-member-readonly-circumstance"
+                >
                     <h4>Hoàn cảnh</h4>
                     <div class="household-member-readonly-grid">
                         <div class="household-member-readonly-field">
                             <span>Hoàn cảnh đặc biệt</span>
-                            <strong>{{ displayFormValue(asRow(selectedHouseholdPerson.disability).special_circumstance) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    asRow(selectedHouseholdPerson.disability)
+                                        .special_circumstance,
+                                )
+                            }}</strong>
                         </div>
-                        <div class="household-member-readonly-field household-member-wide-field">
+                        <div
+                            class="household-member-readonly-field household-member-wide-field"
+                        >
                             <span>Chi tiết hoàn cảnh</span>
-                            <strong>{{ displayFormValue(asRow(selectedHouseholdPerson.disability).special_circumstance_detail) }}</strong>
+                            <strong>{{
+                                displayFormValue(
+                                    asRow(selectedHouseholdPerson.disability)
+                                        .special_circumstance_detail,
+                                )
+                            }}</strong>
                         </div>
                     </div>
                 </section>
@@ -11846,7 +12547,11 @@ onMounted(() => void load());
         >
             <span class="confirm-dialog-icon" aria-hidden="true">!</span>
             <h3 id="delete-confirm-title">
-                {{ moduleKey === "imports" ? "Xác nhận xóa lịch sử import" : "Xác nhận xóa" }}
+                {{
+                    moduleKey === "imports"
+                        ? "Xác nhận xóa lịch sử import"
+                        : "Xác nhận xóa"
+                }}
             </h3>
             <p id="delete-confirm-message">
                 {{
@@ -12041,7 +12746,10 @@ onMounted(() => void load());
         </section>
     </div>
     <div
-        v-if="moduleKey === 'users' && (userDetail || userDetailLoading || userDetailError)"
+        v-if="
+            moduleKey === 'users' &&
+            (userDetail || userDetailLoading || userDetailError)
+        "
         class="workspace-modal-backdrop user-detail-backdrop"
         role="presentation"
         @click.self="closeUserDetail"
@@ -12057,7 +12765,11 @@ onMounted(() => void load());
                 <div>
                     <p class="workspace-eyebrow">THÔNG TIN TÀI KHOẢN</p>
                     <h2 id="user-detail-title">
-                        {{ userDetail?.name ?? userDetailRow?.name ?? "Chi tiết tài khoản" }}
+                        {{
+                            userDetail?.name ??
+                            userDetailRow?.name ??
+                            "Chi tiết tài khoản"
+                        }}
                     </h2>
                 </div>
                 <button
@@ -12072,24 +12784,61 @@ onMounted(() => void load());
                     </svg>
                 </button>
             </header>
-            <p v-if="userDetailLoading" class="user-detail-loading" role="status">
+            <p
+                v-if="userDetailLoading"
+                class="user-detail-loading"
+                role="status"
+            >
                 Đang tải thông tin tài khoản…
             </p>
-            <p v-else-if="userDetailError" class="notice login-error" role="alert">
+            <p
+                v-else-if="userDetailError"
+                class="notice login-error"
+                role="alert"
+            >
                 {{ userDetailError }}
             </p>
             <template v-else-if="userDetail">
                 <dl class="user-detail-grid">
-                    <div><dt>Tên đăng nhập</dt><dd>{{ userDetail.username || "—" }}</dd></div>
-                    <div><dt>Số điện thoại</dt><dd>{{ userDetail.phone || "—" }}</dd></div>
-                    <div><dt>Email</dt><dd>{{ userDetail.email || "—" }}</dd></div>
-                    <div><dt>Số CCCD</dt><dd>{{ userDetail.citizen_id || "—" }}</dd></div>
-                    <div><dt>Ngày sinh</dt><dd>{{ userDetail.date_of_birth || "—" }}</dd></div>
+                    <div>
+                        <dt>Tên đăng nhập</dt>
+                        <dd>{{ userDetail.username || "—" }}</dd>
+                    </div>
+                    <div>
+                        <dt>Số điện thoại</dt>
+                        <dd>{{ userDetail.phone || "—" }}</dd>
+                    </div>
+                    <div>
+                        <dt>Email</dt>
+                        <dd>{{ userDetail.email || "—" }}</dd>
+                    </div>
+                    <div>
+                        <dt>Số CCCD</dt>
+                        <dd>{{ userDetail.citizen_id || "—" }}</dd>
+                    </div>
+                    <div>
+                        <dt>Ngày sinh</dt>
+                        <dd>{{ userDetail.date_of_birth || "—" }}</dd>
+                    </div>
                     <div>
                         <dt>Trạng thái</dt>
-                        <dd>{{ userDetail.is_active ? "Đang hoạt động" : "Đã vô hiệu hóa" }}</dd>
+                        <dd>
+                            {{
+                                userDetail.is_active
+                                    ? "Đang hoạt động"
+                                    : "Đã vô hiệu hóa"
+                            }}
+                        </dd>
                     </div>
-                    <div><dt>Cấp quản lý</dt><dd>{{ scopeLabels[String(userDetail.scope_level)] || "—" }}</dd></div>
+                    <div>
+                        <dt>Cấp quản lý</dt>
+                        <dd>
+                            {{
+                                scopeLabels[String(userDetail.scope_level)] ||
+                                "—"
+                            }}
+                        </dd>
+                    </div>
                     <div v-if="userDetail.province">
                         <dt>Tỉnh / thành phố</dt>
                         <dd>{{ asRow(userDetail.province).name }}</dd>
@@ -12100,11 +12849,27 @@ onMounted(() => void load());
                     </div>
                     <div v-if="asRows(userDetail.villages).length">
                         <dt>Thôn / xóm</dt>
-                        <dd>{{ asRows(userDetail.villages).map((village) => String(village.name ?? "")).filter(Boolean).join(", ") }}</dd>
+                        <dd>
+                            {{
+                                asRows(userDetail.villages)
+                                    .map((village) =>
+                                        String(village.name ?? ""),
+                                    )
+                                    .filter(Boolean)
+                                    .join(", ")
+                            }}
+                        </dd>
                     </div>
                     <div class="user-detail-roles">
                         <dt>Nhóm quyền</dt>
-                        <dd>{{ asRows(userDetail.roles).map((role) => String(role.name ?? "")).filter(Boolean).join(", ") || "Chưa được gán nhóm" }}</dd>
+                        <dd>
+                            {{
+                                asRows(userDetail.roles)
+                                    .map((role) => String(role.name ?? ""))
+                                    .filter(Boolean)
+                                    .join(", ") || "Chưa được gán nhóm"
+                            }}
+                        </dd>
                     </div>
                 </dl>
                 <div class="user-detail-actions">
@@ -12208,9 +12973,7 @@ onMounted(() => void load());
                         <button
                             class="password-visibility-button"
                             type="button"
-                            @click="
-                                showAccountPassword = !showAccountPassword
-                            "
+                            @click="showAccountPassword = !showAccountPassword"
                         >
                             {{ showAccountPassword ? "Ẩn" : "Hiện" }}
                         </button>
@@ -12241,9 +13004,7 @@ onMounted(() => void load());
                             "
                         >
                             {{
-                                showAccountPasswordConfirmation
-                                    ? "Ẩn"
-                                    : "Hiện"
+                                showAccountPasswordConfirmation ? "Ẩn" : "Hiện"
                             }}
                         </button>
                     </div>
@@ -12264,9 +13025,7 @@ onMounted(() => void load());
                 </p>
             </div>
             <div class="confirm-dialog-actions">
-                <template
-                    v-if="accountActionDialog.mode === 'password-form'"
-                >
+                <template v-if="accountActionDialog.mode === 'password-form'">
                     <button
                         class="secondary-button management-tool-button"
                         type="button"

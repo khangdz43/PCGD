@@ -17,22 +17,29 @@ class HouseholdImportHistoryService
 
         if ($importLog->error_file_path !== null && Storage::disk('local')->exists($importLog->error_file_path)) {
             $storedPath = $importLog->error_file_path;
+            $isXlsx = strtolower(pathinfo($storedPath, PATHINFO_EXTENSION)) === 'xlsx';
+            $context = $importLog->context ?? [];
+            if ($isXlsx && ($context['error_file_active_sheet_checked'] ?? false)) {
+                return $storedPath;
+            }
+
             $path = Storage::disk('local')->path($storedPath);
             $spreadsheet = null;
             try {
                 $spreadsheet = IOFactory::load($path);
                 $sheet = $spreadsheet->getActiveSheet();
-                $targetPath = dirname($storedPath) . '/error-' . pathinfo($importLog->file_path, PATHINFO_FILENAME) . '.xlsx';
-                $target = Storage::disk('local')->path($targetPath);
-                if (
-                    strtolower(pathinfo($storedPath, PATHINFO_EXTENSION)) !== 'xlsx'
-                    || $sheet->getSelectedCells() !== 'A1'
-                ) {
+                $targetPath = $isXlsx
+                    ? $storedPath
+                    : dirname($storedPath) . '/error-' . pathinfo($importLog->file_path, PATHINFO_FILENAME) . '.xlsx';
+                $needsRewrite = ! $isXlsx || $sheet->getSheetState() !== 'visible';
+                if ($needsRewrite) {
+                    $sheet->setSheetState('visible');
                     $sheet->setSelectedCell('A1');
                     $sheet->setTopLeftCell('A1');
-                    IOFactory::createWriter($spreadsheet, 'Xlsx')->save($target);
+                    IOFactory::createWriter($spreadsheet, 'Xlsx')
+                        ->save(Storage::disk('local')->path($targetPath));
                 }
-                $errorFilePath = $storedPath === $targetPath ? $storedPath : $targetPath;
+                $errorFilePath = $targetPath;
             } catch (Throwable $exception) {
                 Log::error('Không thể chuẩn hóa file Excel lỗi sang định dạng XLSX.', [
                     'import_log_id' => $importLog->id,
@@ -43,8 +50,14 @@ class HouseholdImportHistoryService
                 $spreadsheet?->disconnectWorksheets();
             }
 
+            $context['error_file_active_sheet_checked'] = true;
+            $updates = ['context' => $context];
             if ($errorFilePath !== $storedPath) {
-                $importLog->update(['error_file_path' => $errorFilePath]);
+                $updates['error_file_path'] = $errorFilePath;
+            }
+            $importLog->update($updates);
+
+            if ($errorFilePath !== $storedPath) {
                 if (! Storage::disk('local')->delete($storedPath)) {
                     Log::warning('Không thể xóa bản XLS cũ sau khi chuẩn hóa file lỗi.', [
                         'import_log_id' => $importLog->id,
@@ -83,9 +96,11 @@ class HouseholdImportHistoryService
             $spreadsheet->disconnectWorksheets();
         }
 
+        $context = $importLog->context ?? [];
+        $context['error_file_active_sheet_checked'] = true;
         $importLog->update(['error_file_path' => $errorFilePath]);
+        $importLog->update(['context' => $context]);
 
         return $errorFilePath;
     }
-
 }

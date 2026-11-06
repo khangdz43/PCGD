@@ -9755,7 +9755,6 @@ onMounted(() => void load());
                             <tr>
                                 <th scope="col">Nhóm quyền</th>
                                 <th scope="col">Quyền được cấp</th>
-                                <th scope="col">Trạng thái</th>
                             </tr>
                         </thead>
                         <tbody
@@ -9785,16 +9784,6 @@ onMounted(() => void load());
                                                   permissionName(permission),
                                               )
                                     }}
-                                </td>
-                                <td>
-                                    <span class="role-permission-status">
-                                        <span
-                                            class="role-permission-check"
-                                            aria-hidden="true"
-                                            >✓</span
-                                        >
-                                        Đã cấp
-                                    </span>
                                 </td>
                             </tr>
                         </tbody>

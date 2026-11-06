@@ -4818,20 +4818,6 @@ h2 {
     vertical-align: top;
 }
 
-.role-permissions-table tbody td:last-child {
-    width: 150px;
-}
-
-.role-permission-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    color: #32754a;
-    font-size: .76rem;
-    font-weight: 650;
-    white-space: nowrap;
-}
-
 .role-permission-check {
     display: inline-grid;
     width: 17px;

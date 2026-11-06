@@ -43,21 +43,11 @@
 }
 
 .investigation-import-dialog-history {
-    max-height: none;
-    gap: 0;
-    overflow: visible;
-    padding: 12px;
-}
-
-.investigation-import-history-close {
-    position: absolute;
-    z-index: 2;
-    top: 24px;
-    right: 24px;
-}
-
-.investigation-import-dialog-history .excel-import-history {
-    padding-top: 58px;
+    width: min(1080px, 100%);
+    max-height: min(92vh, 840px);
+    gap: 16px;
+    overflow: auto;
+    padding: 22px;
 }
 
 .investigation-import-dialog-header {
@@ -8430,15 +8420,19 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-import-history {
-    padding: 26px;
-    border-radius: 18px;
+    padding: 18px;
+    border-radius: 14px;
+}
+
+.investigation-import-dialog-history .excel-import-history {
+    padding: 18px;
 }
 
 .excel-history-heading {
     position: relative;
     justify-content: space-between;
     gap: 16px;
-    padding: 0 0 20px;
+    padding: 0 0 12px;
     border-bottom: 1px solid #edf1f6;
 }
 
@@ -8461,6 +8455,7 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-count {
     flex: 0 0 auto;
+    margin-left: auto;
     padding: 8px 13px;
     border: 1px solid #dce9fb;
     border-radius: 12px;
@@ -8483,14 +8478,14 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-table {
     width: 100%;
-    margin-top: 16px;
+    margin-top: 10px;
     border-collapse: separate;
     border-spacing: 0;
     table-layout: fixed;
 }
 
 .excel-history-table th {
-    padding: 11px 12px;
+    padding: 9px 10px;
     border-bottom: 1px solid #e8edf4;
     background: #f7f9fc;
     color: #718198;
@@ -8500,16 +8495,20 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-history-table th:first-child {
-    width: 36%;
+    width: 28%;
     border-radius: 9px 0 0;
 }
 
 .excel-history-table th:nth-child(2) {
-    width: 24%;
+    width: 18%;
 }
 
 .excel-history-table th:nth-child(3) {
-    width: 22%;
+    width: 15%;
+}
+
+.excel-history-table th:nth-child(4) {
+    width: 21%;
 }
 
 .excel-history-table th:last-child {
@@ -8519,7 +8518,7 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-history-table td {
-    padding: 13px 12px;
+    padding: 10px;
     border-bottom: 1px solid #edf1f6;
     color: #53647b;
     font-size: .75rem;
@@ -8556,11 +8555,15 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-history-file-cell strong {
+    display: block;
+    min-width: 0;
+    flex: 1;
     overflow: hidden;
     color: #2d4260;
     font-size: .77rem;
     line-height: 1.45;
-    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .excel-history-meta-cell,
@@ -8626,19 +8629,34 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-action {
     display: inline-flex;
-    width: 34px;
-    height: 34px;
+    min-height: 32px;
     align-items: center;
     justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
     border: 1px solid #dce5f0;
     border-radius: 9px;
     background: #fff;
     color: #425572;
-    font-size: .9rem;
-    font-weight: 800;
+    font-size: .65rem;
+    font-weight: 700;
     text-decoration: none;
     cursor: pointer;
     transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.excel-history-action svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.6;
+}
+
+.excel-history-action span {
+    white-space: nowrap;
 }
 
 .excel-history-action:hover {
@@ -8665,12 +8683,12 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-pagination {
     display: flex;
-    min-height: 62px;
+    min-height: 40px;
     align-items: center;
     justify-content: flex-end;
-    gap: 12px;
+    gap: 8px;
     margin-top: 0;
-    padding: 10px 0 0;
+    padding: 8px 0 0;
     border-top: 1px solid #edf1f6;
 }
 
@@ -8905,16 +8923,8 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 @media (max-width: 620px) {
     .investigation-import-dialog-history {
-        padding: 8px;
-    }
-
-    .investigation-import-history-close {
-        top: 16px;
-        right: 16px;
-    }
-
-    .investigation-import-dialog-history .excel-import-history {
-        padding-top: 52px;
+        gap: 12px;
+        padding: 14px;
     }
 
     .excel-location-grid {
@@ -9436,11 +9446,6 @@ th.is-required::after {
     .household-person-dialog {
         max-height: calc(100dvh - 16px);
         padding: 14px;
-    }
-
-    .investigation-import-history-close {
-        top: 12px;
-        right: 12px;
     }
 
     .app-footer {

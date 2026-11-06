@@ -167,7 +167,6 @@ onUnmounted(() => {
             v-show="importModalOpen"
             class="workspace-modal-backdrop investigation-import-backdrop"
             role="presentation"
-            @click.self="closeImportModal"
             @keydown.esc="closeImportModal"
         >
             <section
@@ -181,23 +180,25 @@ onUnmounted(() => {
                 aria-labelledby="investigation-import-title"
                 tabindex="-1"
             >
-                <header
-                    v-if="importModalView === 'upload'"
-                    class="investigation-import-dialog-header"
-                >
+                <header class="investigation-import-dialog-header">
                     <div>
-                        <p class="workspace-eyebrow">PHIẾU ĐIỀU TRA</p>
-                        <h2 id="investigation-import-title">Nhập dữ liệu Excel</h2>
+                        <p class="workspace-eyebrow">
+                            {{
+                                importModalView === 'upload'
+                                    ? 'PHIẾU ĐIỀU TRA'
+                                    : 'LỊCH SỬ NHẬP FILE'
+                            }}
+                        </p>
+                        <h2 id="investigation-import-title">
+                            {{
+                                importModalView === 'upload'
+                                    ? 'Nhập dữ liệu Excel'
+                                    : 'Các tệp đã gửi'
+                            }}
+                        </h2>
                     </div>
                     <button class="modal-icon-button" type="button" aria-label="Đóng" @click="closeImportModal">×</button>
                 </header>
-                <button
-                    v-else
-                    class="modal-icon-button investigation-import-history-close"
-                    type="button"
-                    aria-label="Đóng"
-                    @click="closeImportModal"
-                >×</button>
                 <Workspace
                     module-key="imports"
                     :permissions="permissions"

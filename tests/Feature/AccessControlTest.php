@@ -4373,7 +4373,9 @@ class AccessControlTest extends TestCase
         (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportProcessingService::class));
         $this->assertSame('FAILED', $importLog->fresh()->status);
         $this->assertNotNull($importLog->fresh()->error_file_path);
+        $this->assertSame('xlsx', strtolower(pathinfo($importLog->fresh()->error_file_path, PATHINFO_EXTENSION)));
         $annotatedWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
+        self::assertSame('A1', $annotatedWorkbook->getActiveSheet()->getSelectedCells());
         $errorMessage = $annotatedWorkbook->getSheet(1)->getCell('A5')->getValue();
         $this->assertStringContainsString('không thuộc xã được chọn', $errorMessage);
         $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $errorMessage);
@@ -4397,17 +4399,18 @@ class AccessControlTest extends TestCase
         $this->getJson(route('api.households.import-history'))
             ->assertOk()
             ->assertJsonFragment(['file_name' => 'import.xls'])
+            ->assertJsonFragment(['uploaded_by_name' => $user->name])
             ->assertJsonMissing(['file_name' => 'file-khac.xls']);
         $this->get(route('api.household-imports.file', $importLog))
             ->assertOk()
             ->assertHeader('content-disposition');
         $this->get(route('api.household-imports.error-file', $importLog))
             ->assertOk()
-            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
+            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xlsx');
         $importLog->update(['error_file_path' => null]);
         $this->get(route('api.household-imports.error-file', $importLog))
             ->assertOk()
-            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
+            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xlsx');
         $this->assertNotNull($importLog->fresh()->error_file_path);
         $this->deleteJson(route('api.household-imports.destroy', $importLog))
             ->assertOk()

@@ -345,6 +345,12 @@ function formatImportRows(value: unknown): string {
         : "0";
 }
 
+function displayImportFileName(value: unknown): string {
+    if (typeof value !== "string") return "Không rõ tên tệp";
+    const readableName = value.replace(/^_?\d{9,}_/, "").replace(/_/g, " ").trim();
+    return readableName || value;
+}
+
 function importStatusLabel(status: unknown): string {
     if (status === "SUCCESS") return "Thành công";
     if (status === "PARTIAL") return "Hoàn tất một phần";
@@ -4929,7 +4935,10 @@ async function confirmRemove(): Promise<void> {
         }
         deleteResult.value = {
             success: true,
-            message: `Đã xóa “${String(row.name ?? row.code ?? "mục đã chọn")}” thành công.`,
+            message:
+                props.moduleKey === "imports"
+                    ? `Đã xóa lịch sử tệp “${displayImportFileName(row.file_name)}” thành công.`
+                    : `Đã xóa “${String(row.name ?? row.code ?? "mục đã chọn")}” thành công.`,
         };
         if (props.moduleKey === "roles") {
             rows.value = rows.value.filter(
@@ -7463,7 +7472,6 @@ onMounted(() => void load());
                 >
                     <div class="household-edit-members-heading">
                         <div>
-                            <span>THEO MẪU EXCEL</span>
                             <h4>Danh sách nhân khẩu</h4>
                         </div>
                         <span class="household-view-member-count">
@@ -8665,15 +8673,10 @@ onMounted(() => void load());
                 class="excel-import-panel excel-import-history"
             >
                 <div class="excel-history-heading">
-                    <div>
-                        <p class="workspace-eyebrow">LỊCH SỬ</p>
-                        <h3
-                            :id="importView === 'history' ? 'investigation-import-title' : undefined"
-                        >Các tệp đã gửi</h3>
-                        <p class="excel-history-description">
-                            Tra cứu thời gian, kết quả và tải lại tệp xử lý.
-                        </p>
-                    </div>
+                    <span class="excel-history-count">
+                        <strong>{{ formatImportRows(totalRecords) }}</strong>
+                        tệp
+                    </span>
                 </div>
                 <p
                     v-if="importHistory.length === 0"
@@ -8689,6 +8692,7 @@ onMounted(() => void load());
                         <tr>
                             <th>Tệp Excel</th>
                             <th>Thời gian</th>
+                            <th>Người thực hiện</th>
                             <th>Kết quả xử lý</th>
                             <th>Thao tác</th>
                         </tr>
@@ -8697,12 +8701,19 @@ onMounted(() => void load());
                         <tr v-for="item in importHistory" :key="String(item.id)">
                             <td data-label="Tệp Excel">
                                 <div class="excel-history-file-cell">
-                                    <strong :title="String(item.file_name)">{{ item.file_name }}</strong>
+                                    <strong :title="String(item.file_name)">
+                                        {{ displayImportFileName(item.file_name) }}
+                                    </strong>
                                 </div>
                             </td>
                             <td data-label="Thời gian">
                                 <div class="excel-history-meta-cell">
                                     <strong>{{ formatImportDate(item.created_at) }}</strong>
+                                </div>
+                            </td>
+                            <td data-label="Người thực hiện">
+                                <div class="excel-history-meta-cell">
+                                    <strong>{{ item.uploaded_by_name ?? "Không rõ người dùng" }}</strong>
                                 </div>
                             </td>
                             <td data-label="Kết quả xử lý">
@@ -8729,17 +8740,25 @@ onMounted(() => void load());
                                         class="excel-history-action excel-history-action-error"
                                         :href="`/api/v1/household-imports/${item.id}/error-file`"
                                         title="Tải tệp lỗi"
-                                        aria-label="Tải tệp lỗi"
-                                    >!</a>
+                                    >
+                                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                                            <path d="M10 2.5v9m0 0 3.5-3.5M10 11.5 6.5 8M3.5 13.5v3h13v-3" />
+                                        </svg>
+                                        <span>Tải tệp lỗi</span>
+                                    </a>
                                     <button
                                         v-if="permissions.includes('delete-imports')"
                                         class="excel-history-action excel-history-action-delete"
                                         type="button"
                                         :disabled="busy"
                                         title="Xóa lịch sử"
-                                        aria-label="Xóa lịch sử"
                                         @click="remove(item)"
-                                    >×</button>
+                                    >
+                                        <svg viewBox="0 0 20 20" aria-hidden="true">
+                                            <path d="M3.5 5.5h13M8 5.5V3.7h4v1.8m3.3 0-.8 10.8H5.5L4.7 5.5m3.1 3v5m4.4-5v5" />
+                                        </svg>
+                                        <span>Xóa lịch sử</span>
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -8751,25 +8770,25 @@ onMounted(() => void load());
                             ? `${(currentPage - 1) * 4 + 1}–${Math.min(currentPage * 4, totalRecords)} / ${formatImportRows(totalRecords)} tệp`
                             : "0 tệp" }}
                     </span>
-                    <button
-                        class="secondary-button"
-                        type="button"
-                        :disabled="currentPage <= 1"
-                        @click="changePage(-1)"
-                    >
-                        Trước
-                    </button>
-                    <span class="muted"
-                        >Trang {{ currentPage }} / {{ lastPage }}</span
-                    >
-                    <button
-                        class="secondary-button"
-                        type="button"
-                        :disabled="currentPage >= lastPage"
-                        @click="changePage(1)"
-                    >
-                        Sau
-                    </button>
+                    <template v-if="lastPage > 1">
+                        <button
+                            class="secondary-button"
+                            type="button"
+                            :disabled="currentPage <= 1"
+                            @click="changePage(-1)"
+                        >
+                            Trước
+                        </button>
+                        <span class="muted">Trang {{ currentPage }} / {{ lastPage }}</span>
+                        <button
+                            class="secondary-button"
+                            type="button"
+                            :disabled="currentPage >= lastPage"
+                            @click="changePage(1)"
+                        >
+                            Sau
+                        </button>
+                    </template>
                 </div>
             </section>
             <p
@@ -10267,7 +10286,6 @@ onMounted(() => void load());
                     <div class="household-edit-members household-view-members">
                         <div class="household-edit-members-heading">
                             <div>
-                                <span>THEO MẪU EXCEL</span>
                                 <h4 id="household-members-title">Danh sách nhân khẩu</h4>
                             </div>
                             <span class="household-view-member-count">
@@ -11827,11 +11845,15 @@ onMounted(() => void load());
             tabindex="-1"
         >
             <span class="confirm-dialog-icon" aria-hidden="true">!</span>
-            <h3 id="delete-confirm-title">Xác nhận xóa</h3>
+            <h3 id="delete-confirm-title">
+                {{ moduleKey === "imports" ? "Xác nhận xóa lịch sử import" : "Xác nhận xóa" }}
+            </h3>
             <p id="delete-confirm-message">
-                Bạn có chắc chắn muốn xóa “{{
-                    pendingDelete.name ?? pendingDelete.code ?? "mục đã chọn"
-                }}”? Thao tác này không thể hoàn tác.
+                {{
+                    moduleKey === "imports"
+                        ? `Bạn có chắc chắn muốn xóa lịch sử của tệp “${displayImportFileName(pendingDelete.file_name)}”? Tệp gốc và báo cáo lỗi cũng sẽ bị xóa.`
+                        : `Bạn có chắc chắn muốn xóa “${pendingDelete.name ?? pendingDelete.code ?? "mục đã chọn"}”? Thao tác này không thể hoàn tác.`
+                }}
             </p>
             <div class="confirm-dialog-actions">
                 <button
@@ -11847,7 +11869,13 @@ onMounted(() => void load());
                     :disabled="busy"
                     @click="confirmRemove"
                 >
-                    {{ busy ? "Đang xóa…" : "Xóa dữ liệu" }}
+                    {{
+                        busy
+                            ? "Đang xóa…"
+                            : moduleKey === "imports"
+                              ? "Xóa lịch sử"
+                              : "Xóa dữ liệu"
+                    }}
                 </button>
             </div>
         </section>

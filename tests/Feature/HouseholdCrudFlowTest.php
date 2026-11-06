@@ -611,7 +611,7 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertStatus(409);
     }
 
-    public function test_missing_error_workbook_download_creates_a_quick_xls_report(): void
+    public function test_missing_error_workbook_download_creates_a_quick_xlsx_report(): void
     {
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
@@ -627,12 +627,48 @@ class HouseholdCrudFlowTest extends TestCase
             ->errorFilePath($importLog);
 
         self::assertTrue(Storage::disk('local')->exists($errorFilePath));
+        self::assertSame('xlsx', strtolower(pathinfo($errorFilePath, PATHINFO_EXTENSION)));
         self::assertSame($errorFilePath, $importLog->fresh()->error_file_path);
         $workbook = IOFactory::load(Storage::disk('local')->path($errorFilePath));
         self::assertStringContainsString(
             'Không thể tạo file lỗi',
             (string) $workbook->getActiveSheet()->getCell('A1')->getValue(),
         );
+        $workbook->disconnectWorksheets();
+    }
+
+    public function test_error_workbook_download_converts_existing_xls_files_to_xlsx(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $sourcePath = 'household-imports/failed/source.xls';
+        $errorPath = 'household-imports/failed/error-source.xls';
+        Storage::disk('local')->put($sourcePath, 'source workbook');
+        Storage::disk('local')->makeDirectory(dirname($errorPath));
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setCellValue('A1', 'Tiêu đề');
+        $spreadsheet->getActiveSheet()->setSelectedCell('AY1063');
+        IOFactory::createWriter($spreadsheet, 'Xls')
+            ->save(Storage::disk('local')->path($errorPath));
+        $spreadsheet->disconnectWorksheets();
+
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'source.xls',
+            'file_path' => $sourcePath,
+            'error_file_path' => $errorPath,
+            'status' => 'FAILED',
+        ]);
+
+        $normalizedErrorPath = app(HouseholdImportHistoryService::class)
+            ->errorFilePath($importLog);
+
+        self::assertSame('household-imports/failed/error-source.xlsx', $normalizedErrorPath);
+        self::assertSame($normalizedErrorPath, $importLog->fresh()->error_file_path);
+        Storage::disk('local')->assertMissing($errorPath);
+        $workbook = IOFactory::load(Storage::disk('local')->path($normalizedErrorPath));
+        self::assertSame('A1', $workbook->getActiveSheet()->getSelectedCells());
+        self::assertSame('Tiêu đề', $workbook->getActiveSheet()->getCell('A1')->getValue());
         $workbook->disconnectWorksheets();
     }
 

@@ -530,10 +530,14 @@ class HouseholdImportProcessingService
                     $sheet->removeRow($lastErrorRow + 1, $highestDataRow - $lastErrorRow);
                 }
                 $sheet->getColumnDimension('A')->setWidth(45);
+                $spreadsheet->setActiveSheetIndex(
+                    $spreadsheet->getIndex($sheet),
+                );
+                $sheet->setSelectedCell('A1');
+                $sheet->setTopLeftCell('A1');
 
-                $writerType = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'xls' ? 'Xls' : 'Xlsx';
-                $errorFilePath = dirname($importLog->file_path) . '/error-' . basename($importLog->file_path);
-                IOFactory::createWriter($spreadsheet, $writerType)
+                $errorFilePath = dirname($importLog->file_path) . '/error-' . pathinfo($importLog->file_path, PATHINFO_FILENAME) . '.xlsx';
+                IOFactory::createWriter($spreadsheet, 'Xlsx')
                     ->save(Storage::disk('local')->path($errorFilePath));
             } catch (Throwable $exception) {
                 $errorFilePath = null;

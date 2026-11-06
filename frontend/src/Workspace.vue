@@ -470,7 +470,13 @@ const moduleInfo: Record<
     villages: {
         title: "Danh mục Thôn / Xóm / Tổ dân phố",
         endpoint: "/villages",
-        columns: ["code", "name", "operational_status"],
+        columns: [
+            "code",
+            "name",
+            "commune.province.name",
+            "commune.name",
+            "operational_status",
+        ],
         fields: ["name", "province_code", "commune_code", "operational_status"],
     },
     roles: {
@@ -5807,9 +5813,6 @@ onMounted(() => void load());
             v-if="moduleKey === 'villages'"
             class="village-management-toolbar-bottom"
         >
-            <span class="record-count"
-                >{{ rows.length }} / {{ totalRecords }} bản ghi</span
-            >
             <button
                 v-if="canCreate"
                 class="primary-button management-tool-button"
@@ -8675,7 +8678,7 @@ onMounted(() => void load());
                         </th>
                         <th
                             v-if="
-                                ['villages', 'schools', 'households'].includes(
+                                ['schools', 'households'].includes(
                                     moduleKey,
                                 )
                             "
@@ -8765,16 +8768,6 @@ onMounted(() => void load());
                         >
                             {{
                                 (currentPage - 1) * householdPageSize +
-                                rowIndex +
-                                1
-                            }}
-                        </td>
-                        <td
-                            v-if="moduleKey === 'villages'"
-                            class="village-row-number"
-                        >
-                            {{
-                                (currentPage - 1) * villagePageSize +
                                 rowIndex +
                                 1
                             }}
@@ -9569,6 +9562,9 @@ onMounted(() => void load());
                     <option :value="50">50</option>
                 </select>
             </label>
+            <span v-if="moduleKey === 'villages'" class="record-count">
+                {{ rows.length }} / {{ totalRecords }} bản ghi
+            </span>
             <div
                 class="pagination-actions compact-pagination"
                 :aria-label="

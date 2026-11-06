@@ -8016,16 +8016,21 @@ button {
 }
 
 .household-unified-filter {
-    grid-template-columns: repeat(4, minmax(140px, 1fr)) minmax(205px, 1.1fr);
+    display: flex;
     align-items: end;
+    gap: 8px;
 }
 
-.household-unified-filter:has(> .village-unified-search:nth-child(3)) {
-    grid-template-columns: minmax(170px, 1fr) minmax(170px, 1fr) minmax(205px, 1.1fr);
+.household-unified-filter > .household-location-filter {
+    flex: 0 1 190px;
 }
 
-.household-unified-filter:has(> .village-unified-search:nth-child(4)) {
-    grid-template-columns: repeat(3, minmax(140px, 1fr)) minmax(205px, 1.1fr);
+.household-unified-filter > .household-school-year-filter {
+    flex: 0 0 145px;
+}
+
+.household-unified-filter > .village-unified-search {
+    flex: 0 1 340px;
 }
 
 .household-unified-filter .village-unified-search {
@@ -8054,21 +8059,30 @@ button {
 
 @media (max-width: 900px) {
     .household-unified-filter {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        flex-wrap: wrap;
     }
 
-    .household-unified-filter .village-unified-search {
-        grid-column: 1 / -1;
+    .household-unified-filter > .household-location-filter,
+    .household-unified-filter > .household-school-year-filter {
+        flex: 1 1 calc(50% - 8px);
+    }
+
+    .household-unified-filter > .village-unified-search {
+        flex: 1 1 100%;
     }
 }
 
 @media (max-width: 560px) {
     .household-unified-filter {
+        display: grid;
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .household-unified-filter .village-unified-search {
+    .household-unified-filter > .household-location-filter,
+    .household-unified-filter > .household-school-year-filter,
+    .household-unified-filter > .village-unified-search {
         grid-column: auto;
+        flex: initial;
     }
 }
 

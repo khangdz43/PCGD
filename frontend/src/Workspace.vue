@@ -5900,14 +5900,14 @@ onMounted(() => void load());
                 @submit.prevent="applyHouseholdFilters"
             >
                 <slot name="toolbar" />
-                <label>
+                <label class="household-school-year-filter">
                     <span>Năm học</span>
                     <select
                         v-model="householdSchoolYear"
                         aria-label="Lọc theo năm học"
                         @change="applyHouseholdFilters"
                     >
-                        <option value="">Năm học hiện tại</option>
+                        <option value="">{{ currentImportSchoolYear }}</option>
                         <option value="all">Tất cả năm học</option>
                         <option
                             v-for="schoolYear in householdSchoolYearOptions"

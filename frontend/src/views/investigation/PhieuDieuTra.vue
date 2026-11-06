@@ -139,21 +139,21 @@ onUnmounted(() => {
             @navigate="openImportModal($event === 'import-history' ? 'history' : 'upload')"
         >
             <template #toolbar>
-                <label v-if="showProvinceFilter">
+                <label v-if="showProvinceFilter" class="household-location-filter">
                     <span>Tỉnh / thành phố</span>
                     <select v-model="provinceCode" :disabled="provinceLocked || loadingLocations">
                         <option value="">Tất cả địa bàn</option>
                         <option v-for="province in provinces" :key="province.code" :value="province.code">{{ province.name }}</option>
                     </select>
                 </label>
-                <label v-if="showCommuneFilter">
+                <label v-if="showCommuneFilter" class="household-location-filter">
                     <span>Xã / phường</span>
                     <select v-model="communeCode" :disabled="communeLocked || !provinceCode || loadingLocations">
                         <option value="">Tất cả xã / phường</option>
                         <option v-for="commune in communes" :key="commune.code" :value="commune.code">{{ commune.name }}</option>
                     </select>
                 </label>
-                <label v-if="showVillageFilter">
+                <label v-if="showVillageFilter" class="household-location-filter">
                     <span>Thôn / xóm</span>
                     <select v-model="villageCode" :disabled="!communeCode || loadingLocations">
                         <option value="">Tất cả thôn / xóm</option>

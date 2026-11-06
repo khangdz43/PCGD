@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Person extends Model
@@ -34,7 +34,7 @@ class Person extends Model
 
     // mỗi khi laasys dữ liệu dob ra thì tự động được gán làm đối tượng Date nên có thể dùng được các method của nó
     protected $casts = [
-        'dob' => 'date'
+        'dob' => 'date',
     ];
 
     protected static function booted(): void
@@ -66,7 +66,7 @@ class Person extends Model
 
     public function scopeWithDetails(Builder $query): Builder
     {
-        return $query->with(['ethnicity', 'educations.school', 'educations.schoolYear', 'disability']);
+        return $query->with(['ethnicity', 'educations.school', 'educations.schoolYearRecord', 'disability']);
     }
 
     public function importLog(): BelongsTo

@@ -49,7 +49,7 @@ class HouseholdPersonService
             'ethnicity',
             'educations',
             'educations.school',
-            'educations.schoolYear',
+            'educations.schoolYearRecord',
             'disability',
         ])->findOrFail($personId);
     }
@@ -62,9 +62,9 @@ class HouseholdPersonService
     public function latestEducation(Person $person): ?PersonEducation
     {
         return $person->educations()
-            ->with('schoolYear')
+            ->with('schoolYearRecord')
             ->get()
-            ->sortByDesc(fn (PersonEducation $education): ?string => $education->schoolYear?->start_time?->toDateString())
+            ->sortByDesc(fn (PersonEducation $education): ?string => $education->schoolYearRecord?->start_time?->toDateString())
             ->first();
     }
 
@@ -74,10 +74,10 @@ class HouseholdPersonService
         User $user,
         ?string $householdSchoolYear = null
     ): array {
-        $educationQuery = $person->educations()->with(['school', 'schoolYear']);
+        $educationQuery = $person->educations()->with(['school', 'schoolYearRecord']);
         $education = $person->exists
             ? $educationQuery->get()
-                ->sortByDesc(fn (PersonEducation $item): ?string => $item->schoolYear?->start_time?->toDateString())
+                ->sortByDesc(fn (PersonEducation $item): ?string => $item->schoolYearRecord?->start_time?->toDateString())
                 ->first()
             : null;
         $education ??= new PersonEducation([

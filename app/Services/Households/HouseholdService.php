@@ -51,6 +51,7 @@ class HouseholdService
                 'persons.ethnicity',
                 'persons.educations',
                 'persons.educations.school',
+                'persons.educations.schoolYearRecord',
                 'persons.disability',
             ];
         }
@@ -133,7 +134,7 @@ class HouseholdService
                         );
                     })
                     ->with('school')
-                    ->with('schoolYear')
+                    ->with('schoolYearRecord')
                     ->orderBy('id'),
             ]);
         }

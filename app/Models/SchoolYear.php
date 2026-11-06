@@ -63,7 +63,7 @@ class SchoolYear extends Model
 
     public function label(): string
     {
-        return $this->start_time->format('Y') . '-' . $this->end_time->format('Y');
+        return $this->start_time->format('Y').'-'.$this->end_time->format('Y');
     }
 
     public function personEducations(): HasMany

@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\SchoolYear;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -27,6 +28,7 @@ class DemoSchoolMergeBaDinhSeeder extends Seeder
         }
 
         $result = DB::transaction(function (): string {
+            $schoolYearId = SchoolYear::resolveOrCreateFromLabel(self::SCHOOL_YEAR)->id;
             $existingHousehold = DB::table('households')
                 ->where('school_year', self::SCHOOL_YEAR)
                 ->where('household_code', self::HOUSEHOLD_CODE)
@@ -113,7 +115,7 @@ class DemoSchoolMergeBaDinhSeeder extends Seeder
             DB::table('person_educations')->insert([
                 [
                     'person_id' => $sourceStudentId,
-                    'school_year' => self::SCHOOL_YEAR,
+                    'school_year_id' => $schoolYearId,
                     'academic_block' => 'THCS',
                     'current_class' => '6A',
                     'school_code' => self::SOURCE_SCHOOL_CODE,
@@ -122,7 +124,7 @@ class DemoSchoolMergeBaDinhSeeder extends Seeder
                 ],
                 [
                     'person_id' => $targetStudentId,
-                    'school_year' => self::SCHOOL_YEAR,
+                    'school_year_id' => $schoolYearId,
                     'academic_block' => 'THCS',
                     'current_class' => '7A',
                     'school_code' => self::TARGET_SCHOOL_CODE,
@@ -135,6 +137,6 @@ class DemoSchoolMergeBaDinhSeeder extends Seeder
         });
 
         $this->command?->info($result);
-        $this->command?->line('Mã phiếu: ' . self::HOUSEHOLD_CODE . ' | Trường nguồn: ' . self::SOURCE_SCHOOL_CODE . ' | Trường đích: ' . self::TARGET_SCHOOL_CODE);
+        $this->command?->line('Mã phiếu: '.self::HOUSEHOLD_CODE.' | Trường nguồn: '.self::SOURCE_SCHOOL_CODE.' | Trường đích: '.self::TARGET_SCHOOL_CODE);
     }
 }

@@ -32,6 +32,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->createSchema();
         $this->seedLocations();
+        $this->seedSchoolYears();
     }
 
     public function test_commune_user_can_create_a_household_and_the_code_is_assigned_by_school_year(): void
@@ -137,25 +138,25 @@ class HouseholdCrudFlowTest extends TestCase
         DB::table('person_educations')->insert([
             [
                 'person_id' => $currentPerson->id,
-                'school_year' => '2024-2025',
+                'school_year_id' => $this->schoolYearId('2024-2025'),
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
                 'person_id' => $currentPerson->id,
-                'school_year' => '2026-2027',
+                'school_year_id' => $this->schoolYearId('2026-2027'),
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
                 'person_id' => $fallbackPerson->id,
-                'school_year' => '2023-2024',
+                'school_year_id' => $this->schoolYearId('2023-2024'),
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
             [
                 'person_id' => $fallbackPerson->id,
-                'school_year' => '2024-2025',
+                'school_year_id' => $this->schoolYearId('2024-2025'),
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -255,7 +256,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
         DB::table('person_educations')->insert([
             'person_id' => $member->id,
-            'school_year' => '2025-2026',
+            'school_year_id' => $this->schoolYearId('2025-2026'),
             'academic_block' => '12',
             'current_class' => '12A1',
             'school_code' => 'SCHOOL-TRASH',
@@ -441,7 +442,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
+            ->postJson(route('api.households.persons.store', $household).'?is_head=1', $this->personPayload(null))
             ->assertCreated();
 
         $this->assertDatabaseHas('persons', [
@@ -451,7 +452,7 @@ class HouseholdCrudFlowTest extends TestCase
             'relationship_with_head' => 'Chủ hộ',
         ]);
 
-        $this->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
+        $this->postJson(route('api.households.persons.store', $household).'?is_head=1', $this->personPayload(null))
             ->assertUnprocessable();
 
         $this->assertDatabaseCount('persons', 1);
@@ -472,6 +473,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('person_educations', [
             'current_class' => '12A1',
             'academic_block' => '12',
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
         ]);
     }
 
@@ -521,7 +523,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->getJson('/api/v1/household-imports/' . $processing->id)
+            ->getJson('/api/v1/household-imports/'.$processing->id)
             ->assertOk()
             ->assertJsonPath('data.status', 'PROCESSING')
             ->assertJsonPath('data.progress', 90)
@@ -536,7 +538,7 @@ class HouseholdCrudFlowTest extends TestCase
             'processed_rows' => 10,
             'error_file_path' => $errorFilePath,
         ]);
-        $this->getJson('/api/v1/household-imports/' . $processing->id)
+        $this->getJson('/api/v1/household-imports/'.$processing->id)
             ->assertOk()
             ->assertJsonPath('data.progress', 100)
             ->assertJsonPath('data.status', 'PARTIAL')
@@ -573,13 +575,13 @@ class HouseholdCrudFlowTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonCount(3, 'data.statuses')
-            ->assertJsonPath('data.statuses.' . $processing->id . '.status', 'PROCESSING')
-            ->assertJsonPath('data.statuses.' . $processing->id . '.progress', 90)
-            ->assertJsonPath('data.statuses.' . $completed->id . '.status', 'SUCCESS')
-            ->assertJsonPath('data.statuses.' . $completed->id . '.progress', 100)
-            ->assertJsonMissingPath('data.statuses.' . $foreign->id)
-            ->assertJsonPath('data.statuses.' . $queued->id . '.queue_position', 2)
-            ->assertJsonPath('data.statuses.' . $queued->id . '.queue_total', 3);
+            ->assertJsonPath('data.statuses.'.$processing->id.'.status', 'PROCESSING')
+            ->assertJsonPath('data.statuses.'.$processing->id.'.progress', 90)
+            ->assertJsonPath('data.statuses.'.$completed->id.'.status', 'SUCCESS')
+            ->assertJsonPath('data.statuses.'.$completed->id.'.progress', 100)
+            ->assertJsonMissingPath('data.statuses.'.$foreign->id)
+            ->assertJsonPath('data.statuses.'.$queued->id.'.queue_position', 2)
+            ->assertJsonPath('data.statuses.'.$queued->id.'.queue_total', 3);
 
         $this->getJson(route('api.households.import-history'))
             ->assertOk()
@@ -801,7 +803,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-');
-        $xlsxPath = $filePath . '.xlsx';
+        $xlsxPath = $filePath.'.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -866,7 +868,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-batch-');
-        $xlsxPath = $filePath . '.xlsx';
+        $xlsxPath = $filePath.'.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -916,18 +918,23 @@ class HouseholdCrudFlowTest extends TestCase
         }
     }
 
-    public function test_import_reports_a_clear_message_when_no_data_sheet_is_found(): void
+    public function test_import_reports_a_clear_message_for_an_excel_file_with_the_wrong_template(): void
     {
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-invalid-import-');
-        $xlsxPath = $temporaryPath . '.xlsx';
+        $xlsxPath = $temporaryPath.'.xlsx';
         rename($temporaryPath, $xlsxPath);
 
         try {
             $spreadsheet = new Spreadsheet;
-            $spreadsheet->getActiveSheet()->setTitle('Sheet1');
-            $spreadsheet->getActiveSheet()->setCellValue('A1', 'Không đúng mẫu');
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Sheet1');
+            $sheet->setCellValue('O2', 'Mã hộ');
+            $sheet->setCellValue('AY2', 'Ghi chú');
+            $sheet->setCellValue('C5', 'Nguyễn');
+            $sheet->setCellValue('D5', 'An');
+            $sheet->setCellValue('O5', 'HK-INVALID');
             IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
             $spreadsheet->disconnectWorksheets();
 
@@ -952,10 +959,18 @@ class HouseholdCrudFlowTest extends TestCase
 
             self::assertSame(422, $response->getStatusCode());
             self::assertSame('FAILED', $importLog->fresh()->status);
+            $this->assertDatabaseCount('households', 0);
             self::assertStringContainsString(
-                'Không tìm thấy trang tính dữ liệu hợp lệ',
+                'không đúng biểu mẫu phiếu điều tra',
                 $importLog->fresh()->context['processing_error'],
             );
+            $errorPath = app(HouseholdImportHistoryService::class)->errorFilePath($importLog->fresh());
+            $errorWorkbook = IOFactory::load(Storage::disk('local')->path($errorPath));
+            self::assertStringContainsString(
+                'không đúng biểu mẫu phiếu điều tra',
+                strtolower((string) $errorWorkbook->getActiveSheet()->getCell('A2')->getValue()),
+            );
+            $errorWorkbook->disconnectWorksheets();
             $this->actingAs($user)
                 ->getJson(route('api.households.import.status', $importLog))
                 ->assertOk()
@@ -975,7 +990,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-partial-import-');
-        $xlsxPath = $filePath . '.xlsx';
+        $xlsxPath = $filePath.'.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -997,6 +1012,7 @@ class HouseholdCrudFlowTest extends TestCase
                 $sheet->setCellValue("P{$row}", 'Thường trú');
                 $sheet->setCellValue("AV{$row}", 'Chủ hộ');
             }
+            $sheet->getStyle('O6')->getNumberFormat()->setFormatCode('00000');
             $hiddenSheet = $spreadsheet->createSheet(0);
             $hiddenSheet->setTitle('XXXX');
             $hiddenSheet->setSheetState('veryHidden');
@@ -1041,8 +1057,93 @@ class HouseholdCrudFlowTest extends TestCase
             self::assertSame('Danh sách phiếu điều tra', $errorSheet->getTitle());
             self::assertSame('BAD', $errorSheet->getCell('O5')->getValue());
             self::assertSame(5, $errorSheet->getHighestDataRow());
+            self::assertSame(
+                '00000',
+                $errorSheet->getStyle('O5')->getNumberFormat()->getFormatCode(),
+            );
             self::assertStringContainsString('dân tộc', strtolower((string) $errorSheet->getCell('A5')->getValue()));
             $errorWorkbook->disconnectWorksheets();
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
+    public function test_import_processes_one_thousand_valid_rows(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-large-import-');
+        $xlsxPath = $temporaryPath.'.xlsx';
+        rename($temporaryPath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Danh sách phiếu điều tra');
+            $sheet->setCellValue('O2', 'Số phiếu');
+            $sheet->setCellValue('AY2', 'Ghi chú');
+            for ($row = 5; $row < 1005; $row++) {
+                $number = $row - 4;
+                $headNumber = $number === 2 ? 1 : $number;
+                $sheet->setCellValue("C{$row}", 'Nguyễn');
+                $sheet->setCellValue("D{$row}", "Tên{$number}");
+                $sheet->setCellValue("E{$row}", 1);
+                $sheet->setCellValue("F{$row}", 1);
+                $sheet->setCellValue("G{$row}", $number === 1 ? 1980 : 2010);
+                $sheet->setCellValue("I{$row}", 'Kinh');
+                $sheet->setCellValue("L{$row}", 'Nguyễn');
+                $sheet->setCellValue("M{$row}", "Tên{$headNumber}");
+                $sheet->setCellValue("O{$row}", sprintf('HH-%05d', $headNumber));
+                $sheet->setCellValue("AV{$row}", $number === 2 ? 'Con' : 'Chủ hộ');
+                if ($number === 2) {
+                    $sheet->setCellValue("S{$row}", 'Lớp 1');
+                    $sheet->setCellValue("AJ{$row}", 'x');
+                }
+            }
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $storedPath = 'household-imports/large/source.xlsx';
+            Storage::disk('local')->put($storedPath, file_get_contents($xlsxPath));
+            $importLog = $this->createImportLog($user, [
+                'file_name' => 'source.xlsx',
+                'file_path' => $storedPath,
+                'context' => [
+                    'school_year' => $this->currentSchoolYear(),
+                    'province_code' => 'P01',
+                    'commune_code' => 'C01',
+                    'village_code' => 'V01',
+                ],
+            ]);
+
+            app(HouseholdImportProcessingService::class)->process(
+                $importLog,
+                $user,
+                new UploadedFile($xlsxPath, 'source.xlsx', null, null, true),
+            );
+
+            $this->assertDatabaseCount('households', 999);
+            $this->assertDatabaseCount('persons', 1000);
+            $personId = DB::table('persons')
+                ->where('first_name', 'Tên2')
+                ->value('id');
+            $this->assertDatabaseHas('person_educations', [
+                'person_id' => $personId,
+                'current_class' => 'Lớp 1',
+            ]);
+            $this->assertDatabaseHas('person_disabilities', [
+                'person_id' => $personId,
+                'mobility_disability' => true,
+            ]);
+            $this->assertDatabaseHas('import_logs', [
+                'id' => $importLog->id,
+                'status' => 'SUCCESS',
+                'total_rows' => 1000,
+                'success_rows' => 1000,
+                'error_rows' => 0,
+            ]);
         } finally {
             if (is_file($xlsxPath)) {
                 unlink($xlsxPath);
@@ -1707,7 +1808,7 @@ class HouseholdCrudFlowTest extends TestCase
         $person = $this->createPerson($household);
         $educationId = DB::table('person_educations')->insertGetId([
             'person_id' => $person->id,
-            'school_year' => $this->currentSchoolYear(),
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
             'school_code' => 'SCHOOL-IN-USE',
             'created_at' => now(),
             'updated_at' => now(),
@@ -1992,11 +2093,17 @@ class HouseholdCrudFlowTest extends TestCase
             $table->softDeletes();
             $table->timestamps();
         });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
         Schema::create('person_educations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
             $table->unsignedBigInteger('import_log_id')->nullable();
-            $table->string('school_year');
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('academic_block')->nullable();
             $table->string('current_class')->nullable();
             $table->string('school_code')->nullable();
@@ -2051,10 +2158,31 @@ class HouseholdCrudFlowTest extends TestCase
         DB::table('ethnicities')->insert(['code' => 'KINH', 'name' => 'Kinh', 'created_at' => now(), 'updated_at' => now()]);
     }
 
+    private function seedSchoolYears(): void
+    {
+        foreach (range(2020, 2035) as $year) {
+            DB::table('school_years')->insert([
+                'start_time' => "{$year}-08-01",
+                'end_time' => ($year + 1).'-07-31',
+                'status' => false,
+            ]);
+        }
+    }
+
+    private function schoolYearId(string $label): int
+    {
+        [$startYear, $endYear] = array_map('intval', explode('-', $label));
+
+        return (int) DB::table('school_years')
+            ->whereYear('start_time', $startYear)
+            ->whereYear('end_time', $endYear)
+            ->value('id');
+    }
+
     private function userWithPermissions(array $permissionNames, string $scopeLevel = 'commune'): User
     {
         $role = Role::create([
-            'name' => 'commune-' . uniqid(),
+            'name' => 'commune-'.uniqid(),
             'guard_name' => 'web',
             'scope_level' => $scopeLevel,
         ]);
@@ -2069,7 +2197,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $user = User::create([
             'name' => 'Người dùng thử',
-            'username' => 'test-' . uniqid(),
+            'username' => 'test-'.uniqid(),
             'password' => Hash::make('password'),
         ]);
         $user->forceFill([
@@ -2146,6 +2274,6 @@ class HouseholdCrudFlowTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-" . ($year + 1);
+        return "{$year}-".($year + 1);
     }
 }

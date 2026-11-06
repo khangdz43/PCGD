@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Household;
 use App\Models\Person;
 use App\Models\PersonEducation;
-use App\Models\SchoolYear;
 use App\Models\Role;
+use App\Models\SchoolYear;
 use App\Services\Households\HouseholdPersonService;
 use App\Support\DataAccessScope;
 use Illuminate\Http\Request;
@@ -26,7 +26,7 @@ class HouseholdPersonController extends Controller
         ]);
         $persons = $household->persons()
             ->withDetails()
-            ->orderByRaw("CASE WHEN relationship_with_head = ? THEN 0 ELSE 1 END", ['Chủ hộ'])
+            ->orderByRaw('CASE WHEN relationship_with_head = ? THEN 0 ELSE 1 END', ['Chủ hộ'])
             ->orderBy('last_name')
             ->orderBy('first_name')
             ->orderBy('id')

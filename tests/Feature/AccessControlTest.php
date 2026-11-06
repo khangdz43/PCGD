@@ -6,6 +6,7 @@ use App\Jobs\ProcessHouseholdImport;
 use App\Models\Household;
 use App\Models\ImportLog;
 use App\Models\Permission;
+use App\Models\Province;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\RoleManagementService;
@@ -128,9 +129,16 @@ class AccessControlTest extends TestCase
             $table->softDeletes();
             $table->timestamps();
         });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
         Schema::create('person_educations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('school_code')->nullable();
             $table->timestamps();
         });
@@ -618,10 +626,10 @@ class AccessControlTest extends TestCase
         $this->actingAs($user);
 
         $this->patchJson(route('api.account.password'), [
-                'current_password' => 'incorrect-password',
-                'password' => 'new-secure-pass',
-                'password_confirmation' => 'new-secure-pass',
-            ])
+            'current_password' => 'incorrect-password',
+            'password' => 'new-secure-pass',
+            'password_confirmation' => 'new-secure-pass',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'current_password');
         $this->assertTrue(Hash::check('old-secure-password', $user->fresh()->password));
@@ -1939,7 +1947,7 @@ class AccessControlTest extends TestCase
         $accounts = (new UserAccessControlService)->indexData(
             $admin,
             [],
-            \App\Models\Province::query()->get(),
+            Province::query()->get(),
             10,
             false,
         );
@@ -4310,7 +4318,7 @@ class AccessControlTest extends TestCase
 
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setCellValue('O2', 'Mã hộ');
+        $sheet->setCellValue('O2', 'Số phiếu');
         $sheet->setCellValue('AY2', 'Ghi chú');
         $sheet->setCellValue('C5', 'Nguyễn');
         $sheet->setCellValue('D5', 'An');
@@ -5195,8 +5203,8 @@ class AccessControlTest extends TestCase
         ]);
         $communeRole->permissions()->attach([
             Permission::create([
-            'name' => AccessPermission::CREATE_HOUSEHOLDS,
-            'guard_name' => 'web',
+                'name' => AccessPermission::CREATE_HOUSEHOLDS,
+                'guard_name' => 'web',
             ])->id,
             Permission::create([
                 'name' => AccessPermission::MANAGE_VILLAGES,
@@ -5876,75 +5884,75 @@ class AccessControlTest extends TestCase
     public function test_village_management_permission_grants_all_commune_villages_without_selection(): void
     {
         DB::table('provinces')->insert([
-        'code' => 'P1',
-        'name' => 'Tỉnh một',
-        'created_at' => now(),
-        'updated_at' => now(),
+            'code' => 'P1',
+            'name' => 'Tỉnh một',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         DB::table('communes')->insert([
-        'code' => 'C1',
-        'name' => 'Xã một',
-        'province_code' => 'P1',
-        'created_at' => now(),
-        'updated_at' => now(),
+            'code' => 'C1',
+            'name' => 'Xã một',
+            'province_code' => 'P1',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         DB::table('villages')->insert([
-        ['code' => 'V1', 'name' => 'Thôn một', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
-        ['code' => 'V2', 'name' => 'Thôn hai', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'V1', 'name' => 'Thôn một', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'V2', 'name' => 'Thôn hai', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         $permissions = collect([
-        AccessPermission::MANAGE_USER_ACCOUNTS,
-        AccessPermission::MANAGE_VILLAGES,
+            AccessPermission::MANAGE_USER_ACCOUNTS,
+            AccessPermission::MANAGE_VILLAGES,
         ])->mapWithKeys(fn (string $name): array => [
-        $name => Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']),
+            $name => Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']),
         ]);
         $managerRole = Role::create([
-        'name' => 'Quản trị thôn kiểm thử',
-        'scope_level' => 'commune',
-        'guard_name' => 'web',
+            'name' => 'Quản trị thôn kiểm thử',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
         ]);
         $managerRole->permissions()->sync($permissions->pluck('id')->all());
         $manager = User::factory()->create([
-        'scope_level' => 'commune',
-        'province_code' => 'P1',
-        'commune_code' => 'C1',
-        'is_active' => true,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
         ]);
         $manager->roles()->attach($managerRole);
         $manager->villages()->sync(['V1']);
 
         $staffRole = Role::create([
-        'name' => 'Nhóm quản lý toàn bộ thôn xã',
-        'scope_level' => 'commune',
-        'guard_name' => 'web',
-        'created_by' => $manager->id,
-        'province_code' => 'P1',
-        'commune_code' => 'C1',
+            'name' => 'Nhóm quản lý toàn bộ thôn xã',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+            'created_by' => $manager->id,
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
         ]);
         $staffRole->permissions()->attach($permissions[AccessPermission::MANAGE_VILLAGES]);
 
         $this->actingAs($manager, 'web')
-        ->getJson('/api/v1/users/create')
-        ->assertOk()
-        ->assertJsonFragment([
-            'id' => $staffRole->id,
-            'manages_all_villages' => true,
-            'uses_village_scope' => false,
-        ]);
+            ->getJson('/api/v1/users/create')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $staffRole->id,
+                'manages_all_villages' => true,
+                'uses_village_scope' => false,
+            ]);
         self::assertSame([], $manager->managedVillageCodes());
 
         $this->postJson('/api/v1/users', [
-        'name' => 'Cán bộ quản lý toàn bộ thôn',
-        'username' => 'villageman1',
-        'citizen_id' => '123456789012',
-        'password' => 'StrongPass123!',
-        'password_confirmation' => 'StrongPass123!',
-        'role_id' => $staffRole->id,
-        'scope_level' => 'commune',
-        'province_code' => 'P1',
-        'commune_code' => 'C1',
-        'village_codes' => ['V1'],
+            'name' => 'Cán bộ quản lý toàn bộ thôn',
+            'username' => 'villageman1',
+            'citizen_id' => '123456789012',
+            'password' => 'StrongPass123!',
+            'password_confirmation' => 'StrongPass123!',
+            'role_id' => $staffRole->id,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'village_codes' => ['V1'],
         ])->assertCreated()
             ->assertJsonPath('data.user.username', 'villageman1')
             ->assertJsonPath('data.user.role_name', 'Nhóm quản lý toàn bộ thôn xã')
@@ -5960,8 +5968,8 @@ class AccessControlTest extends TestCase
         self::assertTrue(DataAccessScope::canAccessHousehold($staff, $householdInAnotherVillage));
 
         $this->actingAs($staff, 'web')
-        ->getJson('/api/v1/villages/form')
-        ->assertOk();
+            ->getJson('/api/v1/villages/form')
+            ->assertOk();
 
         $accountViewerRole = Role::create([
             'name' => 'Nhóm chỉ xem tài khoản',
@@ -5977,12 +5985,12 @@ class AccessControlTest extends TestCase
         ]));
 
         $this->actingAs($manager, 'web')
-        ->getJson('/api/v1/users/create')
-        ->assertOk()
-        ->assertJsonFragment([
-            'id' => $accountViewerRole->id,
-            'uses_village_scope' => false,
-        ]);
+            ->getJson('/api/v1/users/create')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $accountViewerRole->id,
+                'uses_village_scope' => false,
+            ]);
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản toàn xã',

@@ -2667,6 +2667,92 @@ class AccessControlTest extends TestCase
 
     }
 
+    public function test_role_deletion_requires_no_members_including_inactive_members(): void
+    {
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->roles()->attach($adminRole);
+
+        $singleMemberRole = Role::create([
+            'name' => 'Nhóm một tài khoản đã khóa',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+            'created_by' => $admin->id,
+        ]);
+        $singleInactiveMember = User::factory()->create([
+            'created_by' => $admin->id,
+            'is_active' => false,
+        ]);
+        $singleMemberRole->users()->attach($singleInactiveMember);
+
+        $multipleMembersRole = Role::create([
+            'name' => 'Nhóm nhiều tài khoản đã khóa',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+            'created_by' => $admin->id,
+        ]);
+        $multipleInactiveMembers = User::factory()->count(2)->create([
+            'created_by' => $admin->id,
+            'is_active' => false,
+        ]);
+        $multipleMembersRole->users()->attach($multipleInactiveMembers);
+
+        $emptyRole = Role::create([
+            'name' => 'Nhóm chưa có thành viên',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+            'created_by' => $admin->id,
+        ]);
+
+        $this->authenticateApiUser($admin);
+
+        $this->getJson('/api/v1/roles')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $singleMemberRole->id,
+                'users_count' => 1,
+                'total_users_count' => 1,
+                'has_members' => true,
+                'has_multiple_members' => false,
+            ])
+            ->assertJsonFragment([
+                'id' => $multipleMembersRole->id,
+                'users_count' => 2,
+                'total_users_count' => 2,
+                'has_members' => true,
+                'has_multiple_members' => true,
+            ])
+            ->assertJsonFragment([
+                'id' => $emptyRole->id,
+                'total_users_count' => 0,
+                'has_members' => false,
+                'has_multiple_members' => false,
+            ]);
+
+        $this->deleteJson("/api/v1/roles/{$singleMemberRole->id}")
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Không thể xóa nhóm vẫn còn thành viên. Hãy gỡ toàn bộ thành viên trước khi xóa.'
+            );
+        $this->assertDatabaseHas('roles', ['id' => $singleMemberRole->id]);
+
+        $this->deleteJson("/api/v1/roles/{$multipleMembersRole->id}")
+            ->assertUnprocessable()
+            ->assertJsonPath(
+                'message',
+                'Không thể xóa nhóm vẫn còn thành viên. Hãy gỡ toàn bộ thành viên trước khi xóa.'
+            );
+        $this->assertDatabaseHas('roles', ['id' => $multipleMembersRole->id]);
+
+        $this->deleteJson("/api/v1/roles/{$emptyRole->id}")->assertOk();
+        $this->assertDatabaseMissing('roles', ['id' => $emptyRole->id]);
+    }
+
     public function test_migration_marks_only_default_territorial_admin_roles_as_system_managed(): void
     {
         Schema::table('roles', function (Blueprint $table): void {

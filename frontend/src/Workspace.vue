@@ -95,6 +95,7 @@ const notice = ref("");
 const configurationFormOpen = ref(false);
 const formErrors = ref<Record<string, string>>({});
 const userFormSubmitted = ref(false);
+const roleFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
@@ -358,6 +359,8 @@ const currentPage = ref(1);
 const lastPage = ref(1);
 const totalRecords = ref(0);
 const userPageSize = ref(10);
+const rolePageSize = ref(10);
+const roleFilterQuery = ref("");
 const villagePageSize = ref(10);
 const schoolPageSize = ref(10);
 const householdPageSize = ref(10);
@@ -838,7 +841,7 @@ const roleFormValidationErrors = computed<Record<string, string>>(() => {
     }
     if (!form.value.scope_level)
         errors.scope_level = "Vui lòng chọn cấp quản lý.";
-    if (!editing.value && permissionIds.value.length === 0) {
+    if (permissionIds.value.length === 0) {
         errors.permissions = "Chọn ít nhất một quyền cho nhóm người dùng.";
     }
     return errors;
@@ -2417,6 +2420,11 @@ async function searchUsers(): Promise<void> {
     await load();
 }
 
+async function searchRoles(): Promise<void> {
+    currentPage.value = 1;
+    await load();
+}
+
 watch(
     () => form.value.scope_level,
     async (level) => {
@@ -2564,12 +2572,10 @@ async function load(): Promise<void> {
         } else if (props.moduleKey === "merge") {
             await loadVillageMergeOptions();
         } else {
-            let completeRoleRows: Row[] | null = null;
             const response = (
                 await api.get<unknown>(info.value.endpoint, {
                     params: {
-                        page:
-                            props.moduleKey === "roles" ? 1 : currentPage.value,
+                        page: currentPage.value,
                         ...(props.moduleKey === "households"
                             ? {
                                   ...(householdQuery.value.trim()
@@ -2631,13 +2637,16 @@ async function load(): Promise<void> {
                                   q: userFilterQuery.value.trim() || undefined,
                               }
                             : {}),
+                        ...(props.moduleKey === "roles"
+                            ? { q: roleFilterQuery.value.trim() || undefined }
+                            : {}),
                         ...(isCompactManagement.value
                             ? {
                                   per_page:
                                       props.moduleKey === "users"
                                           ? userPageSize.value
                                           : props.moduleKey === "roles"
-                                            ? 100
+                                            ? rolePageSize.value
                                             : 10,
                               }
                             : {}),
@@ -2653,24 +2662,6 @@ async function load(): Promise<void> {
                     },
                 })
             ).data;
-            if (props.moduleKey === "roles") {
-                const firstPage = apiPage<Row>(response);
-                const remainingPages = await Promise.all(
-                    Array.from(
-                        { length: Math.max(0, firstPage.last_page - 1) },
-                        (_, index) =>
-                            api.get<unknown>(info.value.endpoint, {
-                                params: { page: index + 2, per_page: 100 },
-                            }),
-                    ),
-                );
-                completeRoleRows = [
-                    ...apiRows<Row>(apiData<unknown>(response)),
-                    ...remainingPages.flatMap((page) =>
-                        apiRows<Row>(apiData<unknown>(page.data)),
-                    ),
-                ];
-            }
             const result = apiData<Row | unknown[]>(response);
             const data =
                 typeof result === "object" &&
@@ -2685,7 +2676,7 @@ async function load(): Promise<void> {
             else if (props.moduleKey === "villages")
                 rows.value = asRows(data.villages);
             else if (props.moduleKey === "roles")
-                rows.value = completeRoleRows ?? apiRows<Row>(result);
+                rows.value = apiPage<Row>(response, result).data;
             else if (props.moduleKey === "users")
                 rows.value = asRows(data.allUsers);
             else rows.value = asRows(data.items);
@@ -2704,8 +2695,7 @@ async function load(): Promise<void> {
                             : data.items;
             const page = apiPage<Row>(response, collection);
             lastPage.value = page.last_page;
-            currentPage.value =
-                props.moduleKey === "roles" ? 1 : page.current_page;
+            currentPage.value = page.current_page;
             totalRecords.value = page.total;
             if (Array.isArray(data.provinces))
                 provinces.value = asRows(data.provinces);
@@ -2897,6 +2887,7 @@ async function beginEdit(row?: Row): Promise<void> {
     initialUserFormState.value = null;
     formErrors.value = {};
     userFormSubmitted.value = false;
+    roleFormSubmitted.value = false;
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
@@ -4411,7 +4402,10 @@ async function save(): Promise<void> {
             return;
         }
     }
-    if (props.moduleKey === "roles" && !roleFormReady.value) return;
+    if (props.moduleKey === "roles") {
+        roleFormSubmitted.value = true;
+        if (!roleFormReady.value) return;
+    }
     if (props.moduleKey === "villages" && !villageFormReady.value) return;
     if (props.moduleKey === "schools" && !schoolFormReady.value) return;
     if (props.moduleKey === "merge") {
@@ -5400,6 +5394,12 @@ async function changeUserPageSize(): Promise<void> {
     await load();
 }
 
+async function changeRolePageSize(): Promise<void> {
+    if (busy.value) return;
+    currentPage.value = 1;
+    await load();
+}
+
 async function changeVillagePageSize(): Promise<void> {
     if (busy.value) return;
     currentPage.value = 1;
@@ -5958,10 +5958,31 @@ onMounted(() => void load());
                 </button>
             </div>
             <template v-else-if="moduleKey === 'roles'">
-                <div class="role-management-toolbar-bottom">
-                    <span class="record-count"
-                        >{{ totalRecords }} nhóm quyền</span
+                <form
+                    class="user-search-control role-search-control"
+                    role="search"
+                    @submit.prevent="searchRoles"
+                >
+                    <input
+                        v-model.trim="roleFilterQuery"
+                        type="search"
+                        aria-label="Tìm theo tên nhóm người dùng"
+                        placeholder="Tìm theo tên nhóm…"
+                    />
+                    <button
+                        class="secondary-button management-tool-button user-search-button"
+                        type="submit"
+                        :disabled="busy"
+                        aria-label="Tìm nhóm người dùng"
+                        title="Tìm nhóm người dùng"
                     >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="10.8" cy="10.8" r="6.8" />
+                            <path d="m16 16 4.5 4.5" />
+                        </svg>
+                    </button>
+                </form>
+                <div class="role-management-toolbar-bottom">
                     <button
                         v-if="canCreate"
                         class="primary-button management-tool-button"
@@ -6353,13 +6374,15 @@ onMounted(() => void load());
                             v-else-if="field === 'scope_level'"
                             v-model="form[field]"
                             :required="
-                                moduleKey === 'users' || moduleKey === 'roles'
+                                moduleKey === 'users'
                             "
                             :aria-invalid="
                                 Boolean(
                                     formErrors[field] ||
                                     (userFormSubmitted &&
-                                        userFormValidationErrors[field]),
+                                        userFormValidationErrors[field]) ||
+                                    (roleFormSubmitted &&
+                                        roleFormValidationErrors[field]),
                                 )
                             "
                         >
@@ -6383,7 +6406,9 @@ onMounted(() => void load());
                                 Boolean(
                                     formErrors[field] ||
                                     (userFormSubmitted &&
-                                        userFormValidationErrors[field]),
+                                        userFormValidationErrors[field]) ||
+                                    (roleFormSubmitted &&
+                                        roleFormValidationErrors[field]),
                                 )
                             "
                             @change="
@@ -6623,11 +6648,20 @@ onMounted(() => void load());
                                     formErrors[field] ||
                                     (userFormSubmitted &&
                                         userFormValidationErrors[field]) ||
+                                    (roleFormSubmitted &&
+                                        roleFormValidationErrors[field]) ||
                                     (field === 'username' &&
                                         userFormRequestError),
                                 )
                             "
                             :required="
+                                (moduleKey !== 'roles' &&
+                                    [
+                                        'name',
+                                        'username',
+                                        'role_id',
+                                        'scope_level',
+                                    ].includes(field)) ||
                                 (moduleKey === 'households' &&
                                     [
                                         'household_code',
@@ -6638,12 +6672,6 @@ onMounted(() => void load());
                                     field === 'name') ||
                                 (moduleKey === 'merge' &&
                                     field === 'target_code') ||
-                                [
-                                    'name',
-                                    'username',
-                                    'role_id',
-                                    'scope_level',
-                                ].includes(field) ||
                                 (moduleKey === 'users' &&
                                     field === 'citizen_id')
                             "
@@ -6664,6 +6692,17 @@ onMounted(() => void load());
                             role="alert"
                             >{{ formErrors[field] }}</small
                         >
+                        <small
+                            v-else-if="
+                                moduleKey === 'roles' &&
+                                roleFormSubmitted &&
+                                roleFormValidationErrors[field]
+                            "
+                            class="field-error"
+                            role="alert"
+                        >
+                            {{ roleFormValidationErrors[field] }}
+                        </small>
                         <small
                             v-else-if="
                                 userFormSubmitted &&
@@ -7090,27 +7129,30 @@ onMounted(() => void load());
                         Ma trận phân quyền · {{ permissionIds.length }} quyền đã
                         chọn
                     </span>
-                    <small
-                        v-if="
-                            rolePermissionError ||
-                            roleFormValidationErrors.permissions
-                        "
-                        class="field-error"
-                        role="alert"
-                    >
-                        {{
-                            rolePermissionError ||
-                            roleFormValidationErrors.permissions
-                        }}
-                    </small>
-                    <p
-                        v-if="!roleFormReady"
-                        class="muted form-validation-hint role-validation-hint"
-                        role="status"
-                    >
-                        Hoàn tất thông tin nhóm và chọn ít nhất một quyền để bật
-                        nút lưu.
-                    </p>
+                    <div class="role-validation-message-slot">
+                        <small
+                            v-if="
+                                rolePermissionError ||
+                                (roleFormSubmitted &&
+                                    roleFormValidationErrors.permissions)
+                            "
+                            class="field-error"
+                            role="alert"
+                        >
+                            {{
+                                rolePermissionError ||
+                                roleFormValidationErrors.permissions
+                            }}
+                        </small>
+                        <p
+                            v-else-if="!roleFormReady"
+                            class="muted form-validation-hint role-validation-hint"
+                            role="status"
+                        >
+                            Hoàn tất thông tin nhóm và chọn ít nhất một quyền
+                            trước khi lưu.
+                        </p>
+                    </div>
                     <div
                         v-if="permissionMatrixRows.length"
                         class="permission-matrix-wrap"
@@ -7817,7 +7859,6 @@ onMounted(() => void load());
                             (moduleKey === 'users' &&
                                 editing &&
                                 !userFormChanged) ||
-                            !roleFormReady ||
                             !villageFormReady ||
                             (moduleKey === 'merge' &&
                                 (!form.target_code ||
@@ -8676,7 +8717,6 @@ onMounted(() => void load());
                                     : fieldLabel(column)
                             }}
                         </th>
-                        <th v-if="moduleKey === 'roles'">Quyền hạn</th>
                         <th
                             v-if="moduleKey === 'users'"
                             class="table-status-heading"
@@ -8755,6 +8795,9 @@ onMounted(() => void load());
                             :class="{
                                 'account-numeric-cell':
                                     moduleKey === 'users' && column === 'phone',
+                                'role-members-cell':
+                                    moduleKey === 'roles' &&
+                                    column === 'users_count',
                                 'village-code-cell':
                                     ['villages', 'schools'].includes(
                                         moduleKey,
@@ -8868,19 +8911,22 @@ onMounted(() => void load());
                                     }}
                                 </small>
                             </div>
+                            <span
+                                v-else-if="
+                                    moduleKey === 'roles' &&
+                                    column === 'users_count'
+                                "
+                                :title="
+                                    row.has_multiple_members
+                                        ? 'Có thêm thành viên ngoài phạm vi đang hiển thị.'
+                                        : undefined
+                                "
+                            >
+                                {{ row.total_users_count ?? pathValue(row, column) }}
+                            </span>
                             <template v-else>
                                 {{ pathValue(row, column) }}
                             </template>
-                        </td>
-                        <td v-if="moduleKey === 'roles'">
-                            <span class="role-permission-count">
-                                {{
-                                    Array.isArray(row.permissions)
-                                        ? row.permissions.length
-                                        : 0
-                                }}
-                                quyền
-                            </span>
                         </td>
                         <td
                             v-if="moduleKey === 'users'"
@@ -9163,25 +9209,6 @@ onMounted(() => void load());
                                         <circle cx="12" cy="12" r="2.7" />
                                     </svg>
                                 </button>
-                                <span
-                                    v-if="
-                                        moduleKey === 'roles' && row.is_system
-                                    "
-                                    class="role-system-lock"
-                                    title="Nhóm hệ thống: không thể sửa hoặc xóa"
-                                >
-                                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                                        <rect
-                                            x="4"
-                                            y="10"
-                                            width="16"
-                                            height="11"
-                                            rx="2"
-                                        />
-                                        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-                                    </svg>
-                                    Nhóm hệ thống
-                                </span>
                                 <div
                                     v-if="
                                         moduleKey === 'roles' && row.can_manage
@@ -9206,23 +9233,54 @@ onMounted(() => void load());
                                             <path d="m12.5 4.5 3 3" />
                                         </svg>
                                     </button>
-                                    <button
+                                    <span
                                         v-if="canDelete"
-                                        class="role-icon-button role-delete-button"
-                                        type="button"
-                                        :aria-label="`Xóa nhóm ${row.name}`"
-                                        title="Xóa nhóm"
-                                        @click="remove(row)"
+                                        class="role-delete-control"
+                                        :data-tooltip="
+                                            row.has_members
+                                                ? 'Không thể xóa vì nhóm vẫn còn thành viên.'
+                                                : undefined
+                                        "
+                                        :title="
+                                            row.has_members
+                                                ? 'Không thể xóa vì nhóm vẫn còn thành viên.'
+                                                : undefined
+                                        "
+                                        :aria-label="
+                                            row.has_members
+                                                ? 'Không thể xóa vì nhóm vẫn còn thành viên.'
+                                                : undefined
+                                        "
+                                        :tabindex="
+                                            row.has_members ? 0 : undefined
+                                        "
                                     >
-                                        <svg
-                                            viewBox="0 0 20 20"
-                                            aria-hidden="true"
+                                        <button
+                                            class="role-icon-button role-delete-button"
+                                            type="button"
+                                            :disabled="Boolean(row.has_members)"
+                                            :aria-label="
+                                                row.has_members
+                                                    ? `Không thể xóa nhóm ${row.name} vì còn thành viên`
+                                                    : `Xóa nhóm ${row.name}`
+                                            "
+                                            :title="
+                                                row.has_members
+                                                    ? undefined
+                                                    : 'Xóa nhóm'
+                                            "
+                                            @click="remove(row)"
                                         >
-                                            <path
-                                                d="M4 6h12M8 6V4h4v2m3 0-.7 10H5.7L5 6m3 3v4m4-4v4"
-                                            />
-                                        </svg>
-                                    </button>
+                                            <svg
+                                                viewBox="0 0 20 20"
+                                                aria-hidden="true"
+                                            >
+                                                <path
+                                                    d="M4 6h12M8 6V4h4v2m3 0-.7 10H5.7L5 6m3 3v4m4-4v4"
+                                                />
+                                            </svg>
+                                        </button>
+                                    </span>
                                 </div>
                                 <button
                                     v-if="
@@ -9293,6 +9351,16 @@ onMounted(() => void load());
                     : "Chưa có phiếu điều tra tại địa bàn này."
             }}
         </p>
+        <p
+            v-if="moduleKey === 'roles' && !busy && rows.length === 0"
+            class="village-empty-state"
+        >
+            {{
+                    roleFilterQuery.trim()
+                        ? "Không tìm thấy nhóm người dùng phù hợp."
+                        : "Chưa có nhóm người dùng."
+            }}
+        </p>
         <div v-if="moduleKey === 'users'" class="user-pagination-footer">
             <div class="user-pagination-footer-info">
                 <label class="page-size-control">
@@ -9329,6 +9397,68 @@ onMounted(() => void load());
                     <select
                         v-model.number="currentPage"
                         aria-label="Chọn trang tài khoản"
+                        :disabled="busy || lastPage <= 1"
+                        @change="load"
+                    >
+                        <option
+                            v-for="pageNumber in lastPage"
+                            :key="pageNumber"
+                            :value="pageNumber"
+                        >
+                            {{ pageNumber }}
+                        </option>
+                    </select>
+                    <span>/ {{ lastPage }}</span>
+                </label>
+                <button
+                    class="secondary-button management-tool-button"
+                    type="button"
+                    :disabled="currentPage >= lastPage || busy"
+                    @click="changePage(1)"
+                >
+                    Sau
+                </button>
+            </div>
+        </div>
+        <div
+            v-if="moduleKey === 'roles'"
+            class="user-pagination-footer role-pagination-footer"
+        >
+            <div class="user-pagination-footer-info">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-model.number="rolePageSize"
+                        :disabled="busy"
+                        @change="changeRolePageSize"
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                        <option :value="100">100</option>
+                    </select>
+                </label>
+                <span class="record-count"
+                    >{{ rows.length }} / {{ totalRecords }} bản ghi</span
+                >
+            </div>
+            <div
+                class="pagination-actions compact-pagination"
+                aria-label="Phân trang danh sách nhóm người dùng"
+            >
+                <button
+                    class="secondary-button management-tool-button"
+                    type="button"
+                    :disabled="currentPage <= 1 || busy"
+                    @click="changePage(-1)"
+                >
+                    Trước
+                </button>
+                <label class="page-number-control">
+                    <span>Trang</span>
+                    <select
+                        v-model.number="currentPage"
+                        aria-label="Chọn trang nhóm người dùng"
                         :disabled="busy || lastPage <= 1"
                         @change="load"
                     >
@@ -9613,39 +9743,51 @@ onMounted(() => void load());
                     </button>
                 </header>
                 <div class="role-permissions-dialog-content">
-                    <section
-                        v-for="group in permissionGroupsForDisplay(
-                            selectedRolePermissions.permissions,
-                        )"
-                        :key="group.key"
-                        class="role-permissions-category"
+                    <table
+                        v-if="
+                            permissionGroupsForDisplay(
+                                selectedRolePermissions.permissions,
+                            ).length > 0
+                        "
+                        class="role-permissions-table"
                     >
-                        <div class="role-permissions-category-heading">
-                            <h4>{{ group.label }}</h4>
-                            <span>{{ group.options.length }}</span>
-                        </div>
-                        <ul>
-                            <li
-                                v-for="permission in group.options"
-                                :key="permissionName(permission)"
+                        <thead>
+                            <tr>
+                                <th scope="col">Nhóm quyền</th>
+                                <th scope="col">Quyền được cấp</th>
+                            </tr>
+                        </thead>
+                        <tbody
+                            v-for="group in permissionGroupsForDisplay(
+                                selectedRolePermissions.permissions,
+                            )"
+                            :key="group.key"
+                        >
+                            <tr
+                                v-for="(permission, index) in group.options"
+                                :key="`${group.key}-${permissionName(permission)}`"
                             >
-                                <span
-                                    class="role-permission-check"
-                                    aria-hidden="true"
-                                    >✓</span
+                                <th
+                                    v-if="index === 0"
+                                    scope="rowgroup"
+                                    :rowspan="group.options.length"
                                 >
-                                {{
-                                    typeof permission === "object" &&
-                                    permission !== null &&
-                                    "label" in permission
-                                        ? String(permission.label)
-                                        : permissionLabel(
-                                              permissionName(permission),
-                                          )
-                                }}
-                            </li>
-                        </ul>
-                    </section>
+                                    {{ group.label }}
+                                </th>
+                                <td>
+                                    {{
+                                        typeof permission === "object" &&
+                                        permission !== null &&
+                                        "label" in permission
+                                            ? String(permission.label)
+                                            : permissionLabel(
+                                                  permissionName(permission),
+                                              )
+                                    }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                     <p
                         v-if="
                             permissionGroupsForDisplay(

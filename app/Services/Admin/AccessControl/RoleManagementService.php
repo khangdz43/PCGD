@@ -20,6 +20,7 @@ class RoleManagementService
     {
         $manageableLevels = DelegatedAccess::manageableRoleLevels($actor);
         $query = Role::withCount([
+            'users as total_members_count',
             'users as users_count' => function ($users) use ($actor): void {
                 $users->where('users.created_by', $actor->id);
                 if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
@@ -276,8 +277,8 @@ class RoleManagementService
             return 'Không thể xóa nhóm người dùng quản trị hệ thống.';
         }
 
-        if ($role->users()->where('users.is_active', true)->exists()) {
-            return 'Không thể xóa nhóm khi nhóm này còn tài khoản đang hoạt động. Hãy thu hồi các tài khoản trước.';
+        if ($role->users()->exists()) {
+            return 'Không thể xóa nhóm vẫn còn thành viên. Hãy gỡ toàn bộ thành viên trước khi xóa.';
         }
 
         DB::transaction(function () use ($role): void {

@@ -230,9 +230,7 @@ class RoleController extends Controller
             'scope_level' => $role?->name === Role::SYSTEM_ADMIN
                 ? ['prohibited']
                 : ['required', Rule::in($manageableLevels)],
-            'permissions' => $role === null
-                ? ['required', 'array', 'min:1']
-                : ['sometimes', 'array'],
+            'permissions' => ['required', 'array', 'min:1'],
             'permissions.*' => [
                 'integer',
                 'distinct',

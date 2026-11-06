@@ -841,7 +841,7 @@ const roleFormValidationErrors = computed<Record<string, string>>(() => {
     }
     if (!form.value.scope_level)
         errors.scope_level = "Vui lòng chọn cấp quản lý.";
-    if (!editing.value && permissionIds.value.length === 0) {
+    if (permissionIds.value.length === 0) {
         errors.permissions = "Chọn ít nhất một quyền cho nhóm người dùng.";
     }
     return errors;

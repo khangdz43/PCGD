@@ -4196,9 +4196,12 @@ h2 {
     display: flex;
     width: 100%;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
     margin: 0 0 12px;
+}
+
+.village-management-toolbar-bottom>.management-tool-button {
+    margin-left: auto;
 }
 
 .village-management-toolbar-bottom .record-count {

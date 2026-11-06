@@ -1281,6 +1281,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'name' => 'Trường Một',
                 'type' => 'single_level',
                 'level' => 'TH',
+                'is_active' => true,
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
@@ -1295,6 +1296,7 @@ class HouseholdCrudFlowTest extends TestCase
             'name' => 'Trường Một đã sửa',
             'type' => 'single_level',
             'level' => 'THCS',
+            'is_active' => true,
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
@@ -1311,6 +1313,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'name' => 'Trường Một đã sửa',
                 'type' => 'single_level',
                 'level' => 'THCS',
+                'is_active' => true,
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
@@ -1322,6 +1325,7 @@ class HouseholdCrudFlowTest extends TestCase
             'name' => 'Trường Một đã sửa',
             'type' => 'single_level',
             'level' => 'TH',
+            'is_active' => true,
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
@@ -1337,6 +1341,7 @@ class HouseholdCrudFlowTest extends TestCase
             'name' => 'Trường Tự Động',
             'type' => 'single_level',
             'level' => 'TH',
+            'is_active' => true,
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])
@@ -1353,6 +1358,7 @@ class HouseholdCrudFlowTest extends TestCase
             'name' => 'Trường ngoài tỉnh',
             'type' => 'single_level',
             'level' => 'TH',
+            'is_active' => true,
             'province_code' => 'P02',
             'commune_code' => 'C02',
         ])->assertForbidden();
@@ -1369,6 +1375,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'name' => 'Trường liên cấp tiểu học',
                 'type' => 'multi_level',
                 'level' => 'TH',
+                'is_active' => true,
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ]);
@@ -1382,6 +1389,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'name' => 'Trường liên cấp THCS',
                 'type' => 'multi_level',
                 'level' => 'THCS',
+                'is_active' => true,
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])
@@ -1394,6 +1402,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'name' => 'Trường liên cấp THCS',
                 'type' => 'multi_level',
                 'level' => 'TH',
+                'is_active' => true,
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
             ])

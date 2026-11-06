@@ -4232,6 +4232,10 @@ h2 {
     background: transparent;
 }
 
+.village-toolbar-row>.school-unified-filter {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .village-management-toolbar-bottom {
     display: flex;
     flex: 0 0 auto;
@@ -5666,6 +5670,29 @@ h2 {
     font-weight: 700;
 }
 
+.workspace-table.school-management-table .village-name-cell {
+    color: #263b59;
+    font-weight: 700;
+}
+
+.workspace-table.school-management-table .school-name-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.workspace-table.school-management-table .school-name-cell small {
+    color: #64748b;
+    font-size: .75rem;
+    font-weight: 400;
+}
+
+.workspace-table.school-management-table .village-code-cell {
+    width: 190px;
+    color: #334155;
+    font-weight: 400;
+}
+
 .workspace-table.village-management-table .table-actions {
     min-width: 105px;
     text-align: center;
@@ -5697,7 +5724,7 @@ h2 {
 .workspace-table.school-management-table .village-code-cell {
     width: 190px;
     color: #334155;
-    font-weight: 700;
+    font-weight: 400;
 }
 
 .workspace-table.school-management-table .table-actions {

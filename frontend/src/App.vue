@@ -441,7 +441,7 @@ function updateCurrentUserName(profile: { name: string }): void {
             <div
                 class="app-content"
                 :class="{
-                    'app-content-wide': ['users', 'roles', 'villages'].includes(activeModule),
+                    'app-content-wide': ['users', 'roles', 'villages', 'schools'].includes(activeModule),
                 }"
             >
                 <p v-if="error" class="notice app-global-notice" role="alert">

@@ -97,6 +97,8 @@ const configurationFormOpen = ref(false);
 const formErrors = ref<Record<string, string>>({});
 const userFormSubmitted = ref(false);
 const roleFormSubmitted = ref(false);
+const schoolFormSubmitted = ref(false);
+const villageFormSubmitted = ref(false);
 const initialVillageFormState = ref<string | null>(null);
 const initialSchoolFormState = ref<string | null>(null);
 const initialHouseholdFormState = ref<string | null>(null);
@@ -458,15 +460,20 @@ const moduleInfo: Record<
         title: "Trường học",
         endpoint: "/schools",
         columns: [
+            "name",
             "code",
+            "province.name",
+            "commune.name",
+            "is_active",
+        ],
+        fields: [
             "name",
             "type",
             "level",
+            "province_code",
+            "commune_code",
             "is_active",
-            "province.name",
-            "commune.name",
         ],
-        fields: ["name", "type", "level", "is_active", "province_code", "commune_code"],
     },
     villages: {
         title: "Danh mục Thôn / Xóm / Tổ dân phố",
@@ -827,14 +834,55 @@ const villageFormReady = computed(
         Boolean(
             form.value.name?.trim() &&
             form.value.province_code &&
-            form.value.commune_code,
+            form.value.commune_code &&
+            form.value.operational_status,
         ),
 );
+const villageFormValidationErrors = computed<Record<string, string>>(() => {
+        if (props.moduleKey !== "villages") return {};
+
+        const errors: Record<string, string> = {};
+        if (!String(form.value.name ?? "").trim())
+            errors.name = "Vui lòng nhập tên thôn / xóm.";
+        if (!form.value.province_code)
+            errors.province_code = "Vui lòng chọn tỉnh / thành phố.";
+        if (!form.value.commune_code)
+            errors.commune_code = "Vui lòng chọn xã / phường.";
+        if (!form.value.operational_status)
+            errors.operational_status = "Vui lòng chọn trạng thái.";
+        return errors;
+});
 const schoolFormReady = computed(
     () =>
         props.moduleKey !== "schools" ||
-        Boolean(form.value.name?.trim() && form.value.type),
+        Boolean(
+            form.value.name?.trim() &&
+                form.value.type &&
+                form.value.level &&
+                form.value.is_active !== "" &&
+            form.value.is_active !== null &&
+            form.value.is_active !== undefined &&
+            form.value.province_code &&
+            form.value.commune_code,
+        ),
 );
+const schoolFormValidationErrors = computed<Record<string, string>>(() => {
+        if (props.moduleKey !== "schools") return {};
+
+        const errors: Record<string, string> = {};
+        if (!String(form.value.name ?? "").trim())
+            errors.name = "Vui lòng nhập tên trường.";
+        if (!form.value.type) errors.type = "Vui lòng chọn loại trường.";
+        if (!form.value.level) errors.level = "Vui lòng chọn cấp học.";
+        if (!form.value.province_code)
+            errors.province_code = "Vui lòng chọn tỉnh / thành phố.";
+        if (!form.value.commune_code)
+            errors.commune_code = "Vui lòng chọn xã / phường.";
+        if (!form.value.is_active) {
+            errors.is_active = "Vui lòng chọn trạng thái hoạt động.";
+        }
+        return errors;
+});
 const roleFormValidationErrors = computed<Record<string, string>>(() => {
     if (props.moduleKey !== "roles") return {};
 
@@ -946,6 +994,17 @@ const schoolLevelLabels: Record<string, string> = {
     THCS: "Trung học cơ sở",
     THPT: "Trung học phổ thông",
 };
+function schoolLevelSummary(row: Row): string {
+    const level = String(row.level ?? "");
+    if (row.type !== "multi_level") return level;
+    if (level === "MN") return level;
+
+    const generalLevels = ["TH", "THCS", "THPT"];
+    const levelIndex = generalLevels.indexOf(level);
+    return levelIndex < 0
+        ? level
+        : generalLevels.slice(0, levelIndex + 1).reverse().join(", ");
+}
 const scopeLabels: Record<string, string> = {
     global: "Trung ương",
     province: "Cấp tỉnh",
@@ -2895,6 +2954,8 @@ async function beginEdit(row?: Row): Promise<void> {
     formErrors.value = {};
     userFormSubmitted.value = false;
     roleFormSubmitted.value = false;
+    schoolFormSubmitted.value = false;
+    villageFormSubmitted.value = false;
     userFormRequestError.value = "";
     roleFormRequestError.value = "";
     managementResult.value = null;
@@ -3349,6 +3410,9 @@ function closeConfigurationForm(): void {
     error.value = "";
     formErrors.value = {};
     userFormSubmitted.value = false;
+    schoolFormSubmitted.value = false;
+    roleFormSubmitted.value = false;
+    villageFormSubmitted.value = false;
 }
 
 async function beginMember(isHead: boolean, person?: Row): Promise<void> {
@@ -4413,8 +4477,14 @@ async function save(): Promise<void> {
         roleFormSubmitted.value = true;
         if (!roleFormReady.value) return;
     }
-    if (props.moduleKey === "villages" && !villageFormReady.value) return;
-    if (props.moduleKey === "schools" && !schoolFormReady.value) return;
+    if (props.moduleKey === "villages") {
+        villageFormSubmitted.value = true;
+        if (!villageFormReady.value) return;
+    }
+    if (props.moduleKey === "schools") {
+        schoolFormSubmitted.value = true;
+        if (!schoolFormReady.value) return;
+    }
     if (props.moduleKey === "merge") {
         if (selectedSourceCodes.value.length === 0) {
             error.value = "Chọn ít nhất một thôn nguồn cần gộp.";
@@ -5600,100 +5670,94 @@ onMounted(() => void load());
             </div>
         </header>
 
-        <form
-            v-if="moduleKey === 'schools'"
-            class="village-unified-filter school-unified-filter"
-            role="search"
-            @submit.prevent="applySchoolFilters"
-        >
-            <label v-if="showSchoolProvinceFilter">
-                <span>Tỉnh / thành phố</span>
-                <select
-                    v-model="schoolFilterProvince"
-                    @change="changeSchoolFilterProvince"
-                >
-                    <option value="">Tất cả địa bàn</option>
-                    <option
-                        v-for="province in provinces"
-                        :key="String(province.code)"
-                        :value="String(province.code)"
-                    >
-                        {{ province.name }}
-                    </option>
-                </select>
-            </label>
-            <label v-if="showSchoolCommuneFilter">
-                <span>Xã / phường</span>
-                <select
-                    v-model="schoolFilterCommune"
-                    :disabled="!schoolFilterProvince"
-                    @change="applySchoolFilters"
-                >
-                    <option value="">Tất cả xã / phường</option>
-                    <option
-                        v-for="commune in schoolFilterCommunes"
-                        :key="String(commune.code)"
-                        :value="String(commune.code)"
-                    >
-                        {{ commune.name }}
-                    </option>
-                </select>
-            </label>
-            <label>
-                <span>Cấp học</span>
-                <select
-                    v-model="schoolFilterLevel"
-                    @change="applySchoolFilters"
-                >
-                    <option value="">Tất cả cấp học</option>
-                    <option
-                        v-for="level in schoolLevelOptions"
-                        :key="level"
-                        :value="level"
-                    >
-                        {{ schoolLevelLabels[level] }}
-                    </option>
-                </select>
-            </label>
-            <label class="village-unified-search">
-                <span>Tìm theo mã hoặc tên</span>
-                <span class="village-search-control">
-                    <input
-                        v-model="schoolFilterQuery"
-                        type="search"
-                        placeholder="Nhập mã hoặc tên trường"
-                    />
-                    <button
-                        class="secondary-button management-tool-button user-search-button"
-                        type="submit"
-                        :disabled="busy"
-                        aria-label="Tìm trường học"
-                        title="Tìm trường học"
-                    >
-                        <svg viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="10.8" cy="10.8" r="6.8" />
-                            <path d="m16 16 4.5 4.5" />
-                        </svg>
-                    </button>
-                </span>
-            </label>
-        </form>
-        <div
-            v-if="moduleKey === 'schools'"
-            class="village-management-toolbar-bottom"
-        >
-            <span class="record-count"
-                >{{ rows.length }} / {{ totalRecords }} bản ghi</span
+        <div v-if="moduleKey === 'schools'" class="village-toolbar-row">
+            <form
+                class="village-unified-filter school-unified-filter"
+                role="search"
+                @submit.prevent="applySchoolFilters"
             >
-            <button
-                v-if="canCreate"
-                class="primary-button management-tool-button"
-                type="button"
-                :disabled="busy"
-                @click="beginEdit()"
-            >
-                Thêm mới
-            </button>
+                <label v-if="showSchoolProvinceFilter">
+                    <span>Tỉnh / thành phố</span>
+                    <select
+                        v-model="schoolFilterProvince"
+                        @change="changeSchoolFilterProvince"
+                    >
+                        <option value="">Tất cả địa bàn</option>
+                        <option
+                            v-for="province in provinces"
+                            :key="String(province.code)"
+                            :value="String(province.code)"
+                        >
+                            {{ province.name }}
+                        </option>
+                    </select>
+                </label>
+                <label v-if="showSchoolCommuneFilter">
+                    <span>Xã / phường</span>
+                    <select
+                        v-model="schoolFilterCommune"
+                        :disabled="!schoolFilterProvince"
+                        @change="applySchoolFilters"
+                    >
+                        <option value="">Tất cả xã / phường</option>
+                        <option
+                            v-for="commune in schoolFilterCommunes"
+                            :key="String(commune.code)"
+                            :value="String(commune.code)"
+                        >
+                            {{ commune.name }}
+                        </option>
+                    </select>
+                </label>
+                <label>
+                    <span>Cấp học</span>
+                    <select
+                        v-model="schoolFilterLevel"
+                        @change="applySchoolFilters"
+                    >
+                        <option value="">Tất cả cấp học</option>
+                        <option
+                            v-for="level in schoolLevelOptions"
+                            :key="level"
+                            :value="level"
+                        >
+                            {{ schoolLevelLabels[level] }}
+                        </option>
+                    </select>
+                </label>
+                <label class="village-unified-search">
+                    <span class="village-search-control">
+                        <input
+                            v-model="schoolFilterQuery"
+                            type="search"
+                            placeholder="Nhập mã hoặc tên trường"
+                        />
+                        <button
+                            class="secondary-button management-tool-button user-search-button"
+                            type="submit"
+                            :disabled="busy"
+                            aria-label="Tìm trường học"
+                            title="Tìm trường học"
+                        >
+                            <svg viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="10.8" cy="10.8" r="6.8" />
+                                <path d="m16 16 4.5 4.5" />
+                            </svg>
+                        </button>
+                    </span>
+                </label>
+            </form>
+            <div class="village-management-toolbar-bottom">
+                <button
+                    v-if="canCreate"
+                    class="primary-button management-tool-button"
+                    type="button"
+                    :disabled="busy"
+                    @click="beginEdit()"
+                >
+                    Thêm mới
+                </button>
+            </div>
         </div>
 
         <form
@@ -6188,7 +6252,11 @@ onMounted(() => void load());
                     ].includes(moduleKey),
                     'household-configuration-form': moduleKey === 'households',
                 }"
-                :novalidate="moduleKey === 'users'"
+                :novalidate="
+                    ['users', 'schools', 'villages', 'roles'].includes(
+                        moduleKey,
+                    )
+                "
                 :role="
                     isDialogForm && !isHouseholdCreatePage
                         ? 'dialog'
@@ -6311,7 +6379,20 @@ onMounted(() => void load());
                                 ['address', 'residence_status'].includes(field),
                         }"
                     >
-                        <span>
+                        <span
+                            :class="{
+                                'required-field-label':
+                                    moduleKey === 'schools' &&
+                                    [
+                                        'name',
+                                        'type',
+                                        'level',
+                                        'province_code',
+                                        'commune_code',
+                                        'is_active',
+                                    ].includes(field),
+                            }"
+                        >
                             {{
                                 moduleKey === "users" && field === "username"
                                     ? "Tên đăng nhập (7–12 ký tự)"
@@ -6321,7 +6402,7 @@ onMounted(() => void load());
                         <select
                             v-if="field === 'type'"
                             v-model="form[field]"
-                            required
+                            :required="moduleKey !== 'schools'"
                             @change="
                                 moduleKey === 'schools' && changeSchoolType()
                             "
@@ -6336,7 +6417,7 @@ onMounted(() => void load());
                                 field === 'is_active'
                             "
                             v-model="form[field]"
-                            required
+                            :required="moduleKey === 'users'"
                         >
                             <option value="1">Đang hoạt động</option>
                             <option value="0">
@@ -6661,7 +6742,8 @@ onMounted(() => void load());
                                 )
                             "
                             :required="
-                                ((moduleKey !== 'roles' &&
+                                (moduleKey !== 'schools' &&
+                                    ((moduleKey !== 'roles' &&
                                     [
                                         'name',
                                         'username',
@@ -6681,7 +6763,7 @@ onMounted(() => void load());
                                 (moduleKey === 'merge' &&
                                     field === 'target_code') ||
                                 (moduleKey === 'users' &&
-                                    field === 'citizen_id')
+                                    field === 'citizen_id'))
                             "
                         />
                         <small
@@ -6700,6 +6782,26 @@ onMounted(() => void load());
                             role="alert"
                             >{{ formErrors[field] }}</small
                         >
+                        <small
+                            v-else-if="
+                                villageFormSubmitted &&
+                                villageFormValidationErrors[field]
+                            "
+                            class="field-error"
+                            role="alert"
+                        >
+                            {{ villageFormValidationErrors[field] }}
+                        </small>
+                        <small
+                            v-else-if="
+                                schoolFormSubmitted &&
+                                schoolFormValidationErrors[field]
+                            "
+                            class="field-error"
+                            role="alert"
+                        >
+                            {{ schoolFormValidationErrors[field] }}
+                        </small>
                         <small
                             v-else-if="
                                 moduleKey === 'roles' &&
@@ -8682,11 +8784,7 @@ onMounted(() => void load());
                             />
                         </th>
                         <th
-                            v-if="
-                                ['schools', 'households'].includes(
-                                    moduleKey,
-                                )
-                            "
+                            v-if="moduleKey === 'households'"
                             class="village-row-number"
                         >
                             STT
@@ -8778,16 +8876,6 @@ onMounted(() => void load());
                             }}
                         </td>
                         <td
-                            v-if="moduleKey === 'schools'"
-                            class="village-row-number"
-                        >
-                            {{
-                                (currentPage - 1) * schoolPageSize +
-                                rowIndex +
-                                1
-                            }}
-                        </td>
-                        <td
                             v-for="column in info.columns"
                             :key="column"
                             :class="{
@@ -8797,7 +8885,7 @@ onMounted(() => void load());
                                     moduleKey === 'roles' &&
                                     column === 'users_count',
                                 'village-name-cell':
-                                    moduleKey === 'villages' &&
+                                    ['villages', 'schools'].includes(moduleKey) &&
                                     column === 'name',
                                 'village-code-cell':
                                     ['villages', 'schools'].includes(
@@ -8832,36 +8920,14 @@ onMounted(() => void load());
                                     moduleKey === 'schools' &&
                                     column === 'is_active'
                                 "
-                                class="record-status-icon"
+                                class="status-pill"
                                 :class="{ inactive: !row.is_active }"
-                                role="img"
-                                :aria-label="
-                                    row.is_active
-                                        ? 'Đang hoạt động'
-                                        : 'Không hoạt động'
-                                "
-                                :title="
-                                    row.is_active
-                                        ? 'Đang hoạt động'
-                                        : 'Không hoạt động'
-                                "
                             >
-                                <svg
-                                    v-if="row.is_active"
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
-                                >
-                                    <circle cx="10" cy="10" r="8" />
-                                    <path d="m6.5 10 2.2 2.2 4.8-4.8" />
-                                </svg>
-                                <svg
-                                    v-else
-                                    viewBox="0 0 20 20"
-                                    aria-hidden="true"
-                                >
-                                    <circle cx="10" cy="10" r="8" />
-                                    <path d="m7 7 6 6m0-6-6 6" />
-                                </svg>
+                                {{
+                                    row.is_active
+                                        ? "Đang hoạt động"
+                                        : "Đã vô hiệu hóa"
+                                }}
                             </span>
                             <div
                                 v-else-if="
@@ -8875,6 +8941,17 @@ onMounted(() => void load());
                                         scopeLabels[String(row.scope_level)] ||
                                         row.scope_level
                                     }}
+                                </small>
+                            </div>
+                            <div
+                                v-else-if="
+                                    moduleKey === 'schools' && column === 'name'
+                                "
+                                class="school-name-cell"
+                            >
+                                <span>{{ pathValue(row, column) }}</span>
+                                <small>
+                                    {{ schoolLevelSummary(row) }}
                                 </small>
                             </div>
                             <div
@@ -9559,7 +9636,7 @@ onMounted(() => void load());
                         <option :value="50">50</option>
                     </select>
                 </label>
-                <span v-if="moduleKey === 'villages'" class="record-count">
+                <span class="record-count">
                     {{ rows.length }} / {{ totalRecords }} bản ghi
                 </span>
             </div>

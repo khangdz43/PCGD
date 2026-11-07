@@ -344,6 +344,18 @@ class HouseholdPersonController extends Controller
                 }
             }
         };
+        $notFutureGraduationYear = function ($attribute, $value, $fail) use ($notFutureYear) {
+            $currentYear = now()->year;
+            if (
+                preg_match('/^(\d{4})-(\d{4})$/', (string) $value, $matches) === 1
+                && (int) $matches[1] === $currentYear
+                && (int) $matches[2] === $currentYear + 1
+            ) {
+                return;
+            }
+
+            $notFutureYear($attribute, $value, $fail);
+        };
 
         $schoolProvinceRules = ['nullable', 'exists:provinces,code'];
         $schoolCommuneRules = ['nullable', Rule::exists('communes', 'code')
@@ -392,7 +404,7 @@ class HouseholdPersonController extends Controller
             ],
             'education.graduation_level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
             'education.is_complementary' => 'nullable|boolean',
-            'education.graduation_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
+            'education.graduation_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureGraduationYear],
             'education.vocational_grad_level' => 'nullable|string|max:50',
             'education.vocational_grad_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
             'education.finished_class' => 'nullable|string|max:20',

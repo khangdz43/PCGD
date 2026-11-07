@@ -526,6 +526,24 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonPath('error.details.0.field', 'education.graduation_year');
     }
 
+    public function test_graduation_year_accepts_the_current_year_range_with_next_year(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $currentYear = now()->year;
+        $payload = $this->personPayload('Con');
+        $payload['education']['graduation_year'] = "{$currentYear}-" . ($currentYear + 1);
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertCreated();
+
+        $this->assertDatabaseHas('person_educations', [
+            'graduation_year' => "{$currentYear}-" . ($currentYear + 1),
+        ]);
+    }
+
     public function test_explicit_academic_block_is_preserved_when_saving_a_person(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);

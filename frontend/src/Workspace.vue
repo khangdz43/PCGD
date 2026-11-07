@@ -490,7 +490,11 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
             errors[`education.${field}`] =
                 `${label} phải có dạng YYYY hoặc YYYY-YYYY.`;
         } else if (
-            value.split("-").some((year) => Number(year) > today.getFullYear())
+            value.split("-").some((year) => Number(year) > today.getFullYear()) &&
+            !(
+                field === "graduation_year" &&
+                value === `${today.getFullYear()}-${today.getFullYear() + 1}`
+            )
         ) {
             errors[`education.${field}`] =
                 `${label} không được lớn hơn năm hiện tại.`;
@@ -565,6 +569,25 @@ const headMemberEducationStep = ref(false);
 const memberForm = ref<Record<string, string>>({});
 const ethnicities = ref<Row[]>([]);
 const educationForm = ref<Record<string, string>>({});
+const graduationYearStart = computed({
+    get(): string {
+        const value = String(educationForm.value.graduation_year ?? "");
+        return value.match(/^(\d{4})(?:-\d{4})?$/)?.[1] ?? value;
+    },
+    set(value: string): void {
+        const year = value.trim();
+        educationForm.value.graduation_year = /^\d{4}$/.test(year)
+            ? `${year}-${Number(year) + 1}`
+            : year;
+    },
+});
+const graduationYearEnd = computed(() => {
+    const value = String(educationForm.value.graduation_year ?? "");
+    const range = value.match(/^\d{4}-(\d{4})$/);
+    if (range) return range[1];
+
+    return /^\d{4}$/.test(value) ? String(Number(value) + 1) : "";
+});
 
 const moduleInfo: Record<
     ModuleKey,
@@ -12694,21 +12717,27 @@ onMounted(async () => {
                             <label
                                 class="workspace-field household-member-compact-field"
                                 ><span>Năm tốt nghiệp</span
-                                ><input
-                                    v-model.trim="educationForm.graduation_year"
-                                    type="text"
-                                    maxlength="20"
-                                    :aria-invalid="
-                                        Boolean(
-                                            memberClientValidationErrors[
-                                                'education.graduation_year'
-                                            ] ||
-                                            memberFormErrors[
-                                                'education.graduation_year'
-                                            ],
-                                        )
-                                    "
-                                />
+                                ><div class="graduation-year-control">
+                                    <input
+                                        v-model.trim="graduationYearStart"
+                                        type="text"
+                                        maxlength="4"
+                                        placeholder="YYYY"
+                                        :aria-invalid="
+                                            Boolean(
+                                                memberClientValidationErrors[
+                                                    'education.graduation_year'
+                                                ] ||
+                                                memberFormErrors[
+                                                    'education.graduation_year'
+                                                ],
+                                            )
+                                        "
+                                    />
+                                    <span v-if="graduationYearEnd"
+                                        >-{{ graduationYearEnd }}</span
+                                    >
+                                </div>
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"

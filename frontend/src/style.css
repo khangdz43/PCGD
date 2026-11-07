@@ -5683,6 +5683,18 @@ h2 {
     font-weight: 400;
 }
 
+.graduation-year-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.workspace-field .graduation-year-control input {
+    flex: 0 1 110px;
+    width: 110px;
+    min-width: 0;
+}
+
 .password-input-control {
     display: flex;
     align-items: stretch;

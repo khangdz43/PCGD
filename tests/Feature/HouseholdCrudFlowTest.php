@@ -53,7 +53,8 @@ class HouseholdCrudFlowTest extends TestCase
                 'address' => 'Số 1',
             ])
             ->assertCreated()
-            ->assertJsonPath('data.id', Household::query()->value('id'));
+            ->assertJsonPath('data.id', Household::query()->value('id'))
+            ->assertJsonPath('data.household_code', '01');
 
         $this->assertDatabaseHas('households', [
             'household_code' => '01',
@@ -104,7 +105,6 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->actingAs($user)
             ->putJson(route('api.households.update', $household), [
-                'household_code' => $household->household_code,
                 'school_year' => $household->school_year,
                 'head_first_name' => 'Bình',
                 'head_last_name' => 'Trần',
@@ -119,6 +119,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertDatabaseHas('households', [
             'id' => $household->id,
+            'household_code' => $household->household_code,
             'school_year' => '2025-2026',
             'head_first_name' => 'Bình',
             'head_last_name' => 'Trần',

@@ -69,7 +69,10 @@ class HouseholdController extends Controller
 
         return response()->json([
             'message' => 'Đã lưu thông tin hộ. Tiếp theo, nhập thông tin chủ hộ vào danh sách nhân khẩu.',
-            'data' => ['id' => $household->id],
+            'data' => [
+                'id' => $household->id,
+                'household_code' => $household->household_code,
+            ],
         ], 201);
     }
 
@@ -177,7 +180,7 @@ class HouseholdController extends Controller
         }
 
         return [
-            'household_code' => ['required', 'string', 'max:50', $householdCodeRule],
+            'household_code' => ['sometimes', 'required', 'string', 'max:50', $householdCodeRule],
             'school_year' => ['required', Rule::in($this->households->schoolYears())],
             'head_first_name' => 'required|string|max:100',
             'head_last_name' => 'required|string|max:50',

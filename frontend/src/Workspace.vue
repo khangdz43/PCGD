@@ -479,6 +479,13 @@ const householdSchoolYearOptions = Array.from({ length: 11 }, (_, index) => {
     const year = 2020 + index;
     return `${year}-${year + 1}`;
 });
+function currentSchoolYearValue(): string {
+    const now = new Date();
+    const year = now.getFullYear();
+    const firstYear = now.getMonth() + 1 >= 8 ? year : year - 1;
+    return `${firstYear}-${firstYear + 1}`;
+}
+
 const memberSchoolYearOptions = Array.from(
     { length: Math.max(1, new Date().getFullYear() - 2019) },
     (_, index) => {
@@ -924,7 +931,6 @@ const householdFormValidationErrors = computed<Record<string, string>>(() => {
     const errors: Record<string, string> = {};
     const requiredFields: Record<string, string> = {
         school_year: "Vui lòng chọn năm học.",
-        household_code: "Vui lòng nhập mã phiếu.",
         head_last_name: "Vui lòng nhập họ chủ hộ.",
         head_first_name: "Vui lòng nhập tên chủ hộ.",
         province_code: "Vui lòng chọn tỉnh / thành phố.",
@@ -932,6 +938,9 @@ const householdFormValidationErrors = computed<Record<string, string>>(() => {
         village_code: "Vui lòng chọn thôn / xóm.",
         residence_type: "Vui lòng chọn loại cư trú.",
     };
+    if (editing.value) {
+        requiredFields.household_code = "Vui lòng nhập mã phiếu.";
+    }
 
     for (const [field, message] of Object.entries(requiredFields)) {
         if (!String(form.value[field] ?? "").trim()) {
@@ -2498,6 +2507,16 @@ async function changeFormProvince(): Promise<void> {
             } else {
                 await loadFormCommunes(form.value.province_code);
             }
+            if (
+                props.moduleKey === "households" &&
+                !form.value.commune_code &&
+                formCommunes.value.length === 1
+            ) {
+                form.value.commune_code = String(
+                    formCommunes.value[0].code ?? "",
+                );
+                await changeHouseholdFormCommune();
+            }
         } else {
             formCommunes.value = [];
         }
@@ -2534,8 +2553,32 @@ async function changeHouseholdFormCommune(): Promise<void> {
     if (!form.value.commune_code) return;
     try {
         await loadFormVillages(form.value.commune_code);
+        if (
+            !form.value.village_code &&
+            formVillages.value.length === 1
+        ) {
+            form.value.village_code = String(formVillages.value[0].code ?? "");
+        }
     } catch (cause) {
         error.value = errorMessage(cause);
+    }
+}
+
+async function applyHouseholdLocationDefaults(): Promise<void> {
+    if (!form.value.province_code && provinces.value.length === 1) {
+        form.value.province_code = String(provinces.value[0].code ?? "");
+    }
+
+    if (!form.value.province_code) return;
+    await loadFormCommunes(form.value.province_code);
+    if (!form.value.commune_code && formCommunes.value.length === 1) {
+        form.value.commune_code = String(formCommunes.value[0].code ?? "");
+    }
+
+    if (!form.value.commune_code) return;
+    await loadFormVillages(form.value.commune_code);
+    if (!form.value.village_code && formVillages.value.length === 1) {
+        form.value.village_code = String(formVillages.value[0].code ?? "");
     }
 }
 
@@ -2662,6 +2705,17 @@ watch(
         formErrors.value = {};
         userFormRequestError.value = "";
         roleFormRequestError.value = "";
+        if (
+            props.moduleKey === "households" &&
+            !editing.value &&
+            configurationFormOpen.value &&
+            !busy.value
+        ) {
+            saveHouseholdCreationDraft(
+                createdHouseholdId.value ?? "new",
+                form.value,
+            );
+        }
     },
     { deep: true },
 );
@@ -3312,15 +3366,27 @@ async function beginEdit(row?: Row): Promise<void> {
             if (data.commune_code !== undefined)
                 form.value.commune_code = String(data.commune_code);
             if (
-                ["villages", "households"].includes(props.moduleKey) &&
+                props.moduleKey === "households" &&
+                !row
+            ) {
+                restoreHouseholdCreationDraft("new");
+            }
+            if (props.moduleKey === "households") {
+                if (!row || !form.value.school_year) {
+                    form.value.school_year = currentSchoolYearValue();
+                }
+                householdFormSchoolYears.value = [
+                    ...new Set([
+                        ...householdFormSchoolYears.value,
+                        form.value.school_year,
+                    ].filter(Boolean)),
+                ].sort();
+                await applyHouseholdLocationDefaults();
+            } else if (
+                props.moduleKey === "villages" &&
                 form.value.province_code
             ) {
-                await Promise.all([
-                    loadFormCommunes(form.value.province_code),
-                    props.moduleKey === "households" && form.value.commune_code
-                        ? loadFormVillages(form.value.commune_code)
-                        : Promise.resolve(),
-                ]);
+                await loadFormCommunes(form.value.province_code);
             }
             if (props.moduleKey === "households" && row) {
                 initialHouseholdFormState.value = householdFormState();
@@ -3594,6 +3660,59 @@ function householdMemberDraftKey(
     return `${householdMemberDraftPrefix}:${householdId}:${personId ?? "new"}`;
 }
 
+function householdCreationDraftKey(householdId: number | string): string {
+    return `pcgd:household-creation-draft:${householdId}`;
+}
+
+function saveHouseholdCreationDraft(
+    householdId: number | string,
+    values: Record<string, string>,
+): void {
+    try {
+        sessionStorage.setItem(
+            householdCreationDraftKey(householdId),
+            JSON.stringify(values),
+        );
+    } catch (cause) {
+        console.error("Không thể lưu bản nháp thông tin hộ trong phiên.", cause);
+        error.value = "Không thể lưu bản nháp thông tin hộ trên trình duyệt.";
+    }
+}
+
+function restoreHouseholdCreationDraft(
+    householdId: number | string,
+): void {
+    let raw: string | null;
+    try {
+        raw = sessionStorage.getItem(householdCreationDraftKey(householdId));
+    } catch (cause) {
+        console.error("Không thể đọc bản nháp thông tin hộ trong phiên.", cause);
+        error.value = "Không thể khôi phục bản nháp thông tin hộ trên trình duyệt.";
+        return;
+    }
+    if (raw === null) return;
+
+    try {
+        const draft = asRow(JSON.parse(raw));
+        for (const key of Object.keys(form.value)) {
+            const value = draft[key];
+            if (typeof value === "string") form.value[key] = value;
+        }
+    } catch (cause) {
+        console.error("Bản nháp thông tin hộ trong phiên không hợp lệ.", cause);
+        error.value = "Không thể khôi phục bản nháp thông tin hộ đã lưu.";
+    }
+}
+
+function clearHouseholdCreationDraft(householdId: number | string): void {
+    try {
+        sessionStorage.removeItem(householdCreationDraftKey(householdId));
+    } catch (cause) {
+        console.error("Không thể xóa bản nháp thông tin hộ trong phiên.", cause);
+        error.value = "Không thể xóa bản nháp thông tin hộ trên trình duyệt.";
+    }
+}
+
 function setHouseholdUrl(path: string, replace = false): void {
     const url = new URL(path, window.location.origin);
     if (
@@ -3787,18 +3906,41 @@ async function restoreHouseholdRoute(): Promise<void> {
         : false;
     householdRouteRestoreActive.value = true;
     try {
-        const response = await api.get<unknown>(`/households/${householdId}`);
+        const [response, formResponse] = await Promise.all([
+            api.get<unknown>(`/households/${householdId}`),
+            api.get<unknown>("/households/form"),
+        ]);
         const responseData = apiData<Row>(response.data);
         householdDetail.value = asRow(responseData.household ?? responseData);
+        const formData = apiData<Row>(formResponse.data);
+        provinces.value = asRows(formData.provinces);
+        householdFormSchoolYears.value = Array.isArray(formData.school_years)
+            ? formData.school_years.map(String)
+            : householdSchoolYearOptions;
+        form.value = newFormValues();
+        for (const key of Object.keys(form.value)) {
+            const value = householdDetail.value[key];
+            if (value !== null && value !== undefined) {
+                form.value[key] = String(value);
+            }
+        }
+        restoreHouseholdCreationDraft(householdId);
+        if (!form.value.school_year) {
+            form.value.school_year = currentSchoolYearValue();
+        }
+        householdFormSchoolYears.value = [
+            ...new Set([
+                ...householdFormSchoolYears.value,
+                form.value.school_year,
+            ].filter(Boolean)),
+        ].sort();
         householdDetailReadOnly.value = false;
         householdListRow.value = householdDetail.value;
         createdHouseholdId.value = householdId;
         createHouseholdWizardStep.value = isCreateRoute && isHead ? 2 : 3;
         configurationFormOpen.value = true;
         selected.value = null;
-        form.value.school_year = String(
-            householdDetail.value.school_year ?? "",
-        );
+        await applyHouseholdLocationDefaults();
         if (!isCreateRoute || personId !== null) {
             await refreshHouseholdEditPersons(householdId);
         }
@@ -4139,6 +4281,7 @@ function scrollToFirstMemberError(): void {
 async function finishHouseholdCreation(): Promise<void> {
     const householdId = createdHouseholdId.value;
     if (householdId === null) return;
+    clearHouseholdCreationDraft(householdId);
     configurationFormOpen.value = false;
     memberEditorOpen.value = false;
     await openHousehold({ id: householdId });
@@ -5046,6 +5189,12 @@ async function save(): Promise<void> {
         const id = selected.value?.id ?? selected.value?.code;
         const endpoint = info.value.endpoint;
         const body = payload();
+        if (
+            isUpdatingCreatedHousehold &&
+            !String(form.value.household_code ?? "").trim()
+        ) {
+            delete body.household_code;
+        }
         let createdHouseholdIdValue: unknown;
         let createdRole: Row | null = null;
         let createdUser: Row | null = null;
@@ -5110,6 +5259,12 @@ async function save(): Promise<void> {
             const created = apiData<Row>(response.data);
             responseMessage = String(created.message ?? "");
             createdHouseholdIdValue = created.id;
+            if (
+                props.moduleKey === "households" &&
+                created.household_code !== undefined
+            ) {
+                form.value.household_code = String(created.household_code);
+            }
             if (props.moduleKey === "users") {
                 createdUser =
                     typeof created.user === "object" && created.user !== null
@@ -5144,6 +5299,11 @@ async function save(): Promise<void> {
             typeof createdHouseholdIdValue === "number"
         ) {
             if (!editing.value) {
+                saveHouseholdCreationDraft(
+                    createdHouseholdIdValue,
+                    form.value,
+                );
+                clearHouseholdCreationDraft("new");
                 createdHouseholdId.value = createdHouseholdIdValue;
                 createHouseholdWizardStep.value = 2;
                 void beginMember(true);
@@ -7223,6 +7383,7 @@ onMounted(async () => {
                             "
                             v-model="form[field]"
                             required
+                            disabled
                         >
                             <option value="">Chọn năm học</option>
                             <option

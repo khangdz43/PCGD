@@ -2028,6 +2028,15 @@ h2 {
     font-size: 12px;
 }
 
+.household-member-dialog .household-member-disability-section .household-member-checkbox,
+.household-member-dialog .household-member-disability-section .workspace-field>span {
+    font-size: 14px;
+}
+
+.household-member-dialog .household-member-disability-section .workspace-field select {
+    font-size: 14px;
+}
+
 .household-head-education-step .household-member-form-section {
     gap: 4px 8px;
     padding: 7px 9px;

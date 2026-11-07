@@ -436,7 +436,7 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
         dob: "Vui lòng nhập ngày sinh.",
         gender: "Vui lòng chọn giới tính.",
         ethnicity_code: "Vui lòng chọn dân tộc.",
-        "education.school_year": "Vui lòng chọn năm học.",
+        "education.school_year": "Không xác định được năm học hiện hành.",
     };
     if (!memberIsHead.value) {
         requiredFields.relationship_with_head =
@@ -451,6 +451,25 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
         if (!String(value ?? "").trim()) errors[field] = message;
     }
 
+    const personNamePattern = /^[\p{L}\p{M}]+(?:[ '-][\p{L}\p{M}]+)*$/u;
+    for (const [field, label] of [
+        ["last_name", "Họ và tên đệm"],
+        ["first_name", "Tên"],
+        ["parent_name", "Họ tên cha hoặc mẹ"],
+    ]) {
+        const value = String(memberForm.value[field] ?? "").trim();
+        if (value && !personNamePattern.test(value)) {
+            errors[field] =
+                `${label} chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.`;
+        }
+    }
+
+    const phone = String(memberForm.value.phone ?? "").trim();
+    if (phone && !/^\+?[0-9]+$/.test(phone)) {
+        errors.phone =
+            "Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +, ví dụ +84912345678.";
+    }
+
     const today = new Date();
     const todayString = `${today.getFullYear()}-${String(
         today.getMonth() + 1,
@@ -458,6 +477,26 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
     if (memberForm.value.dob && memberForm.value.dob > todayString) {
         errors.dob = "Ngày sinh không được lớn hơn ngày hiện tại.";
     }
+
+    for (const [field, label] of [
+        ["graduation_year", "Năm tốt nghiệp"],
+        ["vocational_grad_year", "Năm tốt nghiệp nghề"],
+        ["finished_year", "Năm hoàn thành lớp"],
+        ["dropped_year", "Năm bỏ học"],
+    ]) {
+        const value = String(educationForm.value[field] ?? "").trim();
+        if (!value) continue;
+        if (!/^\d{4}(?:-\d{4})?$/.test(value)) {
+            errors[`education.${field}`] =
+                `${label} phải có dạng YYYY hoặc YYYY-YYYY.`;
+        } else if (
+            value.split("-").some((year) => Number(year) > today.getFullYear())
+        ) {
+            errors[`education.${field}`] =
+                `${label} không được lớn hơn năm hiện tại.`;
+        }
+    }
+
     return errors;
 });
 watch(householdEditPageCount, (lastPage) => {
@@ -654,9 +693,7 @@ const isHouseholdWizardMemberPage = computed(
     () => isHouseholdCreateContinuationPage.value && memberEditorOpen.value,
 );
 const isNewHouseholdHead = computed(
-    () =>
-        isHouseholdWizardMemberPage.value &&
-        memberIsHead.value,
+    () => isHouseholdWizardMemberPage.value && memberIsHead.value,
 );
 const householdCreationPageActive = computed(
     () =>
@@ -2551,10 +2588,7 @@ async function changeHouseholdFormCommune(): Promise<void> {
     if (!form.value.commune_code) return;
     try {
         await loadFormVillages(form.value.commune_code);
-        if (
-            !form.value.village_code &&
-            formVillages.value.length === 1
-        ) {
+        if (!form.value.village_code && formVillages.value.length === 1) {
             form.value.village_code = String(formVillages.value[0].code ?? "");
         }
     } catch (cause) {
@@ -3363,10 +3397,7 @@ async function beginEdit(row?: Row): Promise<void> {
                 form.value.province_code = String(data.province_code);
             if (data.commune_code !== undefined)
                 form.value.commune_code = String(data.commune_code);
-            if (
-                props.moduleKey === "households" &&
-                !row
-            ) {
+            if (props.moduleKey === "households" && !row) {
                 restoreHouseholdCreationDraft("new");
             }
             if (props.moduleKey === "households") {
@@ -3374,10 +3405,12 @@ async function beginEdit(row?: Row): Promise<void> {
                     form.value.school_year = currentSchoolYearValue();
                 }
                 householdFormSchoolYears.value = [
-                    ...new Set([
-                        ...householdFormSchoolYears.value,
-                        form.value.school_year,
-                    ].filter(Boolean)),
+                    ...new Set(
+                        [
+                            ...householdFormSchoolYears.value,
+                            form.value.school_year,
+                        ].filter(Boolean),
+                    ),
                 ].sort();
                 await applyHouseholdLocationDefaults();
             } else if (
@@ -3673,20 +3706,25 @@ function saveHouseholdCreationDraft(
             JSON.stringify(values),
         );
     } catch (cause) {
-        console.error("Không thể lưu bản nháp thông tin hộ trong phiên.", cause);
+        console.error(
+            "Không thể lưu bản nháp thông tin hộ trong phiên.",
+            cause,
+        );
         error.value = "Không thể lưu bản nháp thông tin hộ trên trình duyệt.";
     }
 }
 
-function restoreHouseholdCreationDraft(
-    householdId: number | string,
-): void {
+function restoreHouseholdCreationDraft(householdId: number | string): void {
     let raw: string | null;
     try {
         raw = sessionStorage.getItem(householdCreationDraftKey(householdId));
     } catch (cause) {
-        console.error("Không thể đọc bản nháp thông tin hộ trong phiên.", cause);
-        error.value = "Không thể khôi phục bản nháp thông tin hộ trên trình duyệt.";
+        console.error(
+            "Không thể đọc bản nháp thông tin hộ trong phiên.",
+            cause,
+        );
+        error.value =
+            "Không thể khôi phục bản nháp thông tin hộ trên trình duyệt.";
         return;
     }
     if (raw === null) return;
@@ -3708,7 +3746,10 @@ function clearHouseholdCreationDraft(householdId: number | string): void {
     try {
         sessionStorage.removeItem(householdCreationDraftKey(householdId));
     } catch (cause) {
-        console.error("Không thể xóa bản nháp thông tin hộ trong phiên.", cause);
+        console.error(
+            "Không thể xóa bản nháp thông tin hộ trong phiên.",
+            cause,
+        );
         error.value = "Không thể xóa bản nháp thông tin hộ trên trình duyệt.";
     }
 }
@@ -3891,8 +3932,7 @@ watch(
                     selectedSchool &&
                     !schools.some(
                         (school) =>
-                            String(school.code) ===
-                            String(selectedSchool.code),
+                            String(school.code) === String(selectedSchool.code),
                     )
                         ? [selectedSchool, ...schools]
                         : schools;
@@ -3962,10 +4002,12 @@ async function restoreHouseholdRoute(): Promise<void> {
             form.value.school_year = currentSchoolYearValue();
         }
         householdFormSchoolYears.value = [
-            ...new Set([
-                ...householdFormSchoolYears.value,
-                form.value.school_year,
-            ].filter(Boolean)),
+            ...new Set(
+                [
+                    ...householdFormSchoolYears.value,
+                    form.value.school_year,
+                ].filter(Boolean),
+            ),
         ].sort();
         householdDetailReadOnly.value = false;
         householdListRow.value = householdDetail.value;
@@ -3982,9 +4024,9 @@ async function restoreHouseholdRoute(): Promise<void> {
             const person =
                 personId === null
                     ? undefined
-                    : householdEditPersons.value.find(
+                    : (householdEditPersons.value.find(
                           (row) => Number(row.id) === personId,
-                      ) ?? { id: personId };
+                      ) ?? { id: personId });
             await beginMember(isHead, person, false);
             restoreHouseholdMemberDraft(householdId, personId);
             memberEditorOpen.value = true;
@@ -4194,6 +4236,18 @@ async function beginMember(
     }
 }
 
+function sanitizeMemberPhone(event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    const phone = input.value.replace(/[^\d+]/g, "");
+    const sanitizedPhone = phone.startsWith("+")
+        ? `+${phone.slice(1).replace(/\+/g, "")}`
+        : phone.replace(/\+/g, "");
+    input.value = sanitizedPhone;
+    memberForm.value.phone = sanitizedPhone;
+}
+
 async function saveMember(): Promise<void> {
     const householdIdValue =
         householdDetail.value?.id ??
@@ -4259,10 +4313,7 @@ async function saveMember(): Promise<void> {
         }
         await refreshHouseholdEditPersons(householdId);
         if (householdWizardMember && createdHouseholdId.value !== null) {
-            clearHouseholdMemberDraft(
-                createdHouseholdId.value,
-                savedMemberId,
-            );
+            clearHouseholdMemberDraft(createdHouseholdId.value, savedMemberId);
             setHouseholdUrl(
                 `/households/${createdHouseholdId.value}/persons`,
                 true,
@@ -4301,8 +4352,7 @@ function scrollToFirstMemberError(): void {
         formElement.querySelectorAll<HTMLElement>(".field-error"),
     ).find(
         (element) =>
-            element.textContent?.trim() &&
-            element.getClientRects().length > 0,
+            element.textContent?.trim() && element.getClientRects().length > 0,
     );
     const field = errorElement?.closest<HTMLElement>(".workspace-field");
     if (!field) return;
@@ -5308,10 +5358,7 @@ async function save(): Promise<void> {
             typeof createdHouseholdIdValue === "number"
         ) {
             if (!editing.value) {
-                saveHouseholdCreationDraft(
-                    createdHouseholdIdValue,
-                    form.value,
-                );
+                saveHouseholdCreationDraft(createdHouseholdIdValue, form.value);
                 clearHouseholdCreationDraft("new");
                 createdHouseholdId.value = createdHouseholdIdValue;
                 createHouseholdWizardStep.value = 2;
@@ -6229,8 +6276,7 @@ watch(
         form.value = {};
         notice.value = "";
         pendingDelete.value = null;
-        if (moduleKey === "users")
-            canEditAccountConfigurations.value = false;
+        if (moduleKey === "users") canEditAccountConfigurations.value = false;
         if (moduleKey !== "users") {
             userFiltersInitialized.value = false;
             userFilterProvince.value = "";
@@ -6303,7 +6349,10 @@ async function refreshImportHistory(): Promise<void> {
         lastPage.value = page.last_page;
         totalRecords.value = page.total;
     } catch (cause) {
-        console.error("Không thể cập nhật trạng thái lịch sử nhập file.", cause);
+        console.error(
+            "Không thể cập nhật trạng thái lịch sử nhập file.",
+            cause,
+        );
     } finally {
         importHistoryRefreshActive = false;
         if (importHistoryRefreshPending && !busy.value) {
@@ -8885,11 +8934,7 @@ onMounted(async () => {
                                 : closeConfigurationForm()
                         "
                     >
-                        {{
-                            moduleKey === "merge"
-                                  ? "Xóa lựa chọn"
-                                  : "Hủy"
-                        }}
+                        {{ moduleKey === "merge" ? "Xóa lựa chọn" : "Hủy" }}
                     </button>
                 </div>
             </form>
@@ -12361,7 +12406,7 @@ onMounted(async () => {
                                         )
                                     "
                                 />
-                                
+
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"
@@ -12392,7 +12437,7 @@ onMounted(async () => {
                                         )
                                     "
                                 />
-                     
+
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"
@@ -12528,8 +12573,11 @@ onMounted(async () => {
                             </h5>
                             <label class="workspace-field">
                                 <span>Năm học</span>
-                                <select
+                                <input
                                     v-model="educationForm.school_year"
+                                    type="text"
+                                    readonly
+                                    aria-readonly="true"
                                     required
                                     :aria-invalid="
                                         Boolean(
@@ -12541,23 +12589,7 @@ onMounted(async () => {
                                             ],
                                         )
                                     "
-                                >
-                                    <option value="">Chọn năm học</option>
-                                    <option
-                                        v-for="year in [
-                                            ...new Set(
-                                                [
-                                                    ...memberSchoolYearOptions,
-                                                    educationForm.school_year,
-                                                ].filter(Boolean),
-                                            ),
-                                        ]"
-                                        :key="year"
-                                        :value="year"
-                                    >
-                                        {{ year }}
-                                    </option>
-                                </select>
+                                />
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"
@@ -12631,7 +12663,7 @@ onMounted(async () => {
                                     role="alert"
                                     >{{
                                         memberFormErrors[
-                                            'education.school_code'
+                                            "education.school_code"
                                         ]
                                     }}</small
                                 >
@@ -12661,7 +12693,32 @@ onMounted(async () => {
                                     v-model.trim="educationForm.graduation_year"
                                     type="text"
                                     maxlength="20"
-                            /></label>
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors[
+                                                'education.graduation_year'
+                                            ] ||
+                                            memberFormErrors[
+                                                'education.graduation_year'
+                                            ],
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors[
+                                            "education.graduation_year"
+                                        ] ||
+                                        memberFormErrors[
+                                            "education.graduation_year"
+                                        ] ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                             <label class="workspace-field">
                                 <span>Học bổ túc</span>
                                 <select
@@ -12688,7 +12745,32 @@ onMounted(async () => {
                                     "
                                     type="text"
                                     maxlength="20"
-                            /></label>
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors[
+                                                'education.vocational_grad_year'
+                                            ] ||
+                                            memberFormErrors[
+                                                'education.vocational_grad_year'
+                                            ],
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors[
+                                            "education.vocational_grad_year"
+                                        ] ||
+                                        memberFormErrors[
+                                            "education.vocational_grad_year"
+                                        ] ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                             <label class="workspace-field"
                                 ><span>Lớp đã hoàn thành</span
                                 ><input
@@ -12702,7 +12784,32 @@ onMounted(async () => {
                                     v-model.trim="educationForm.finished_year"
                                     type="text"
                                     maxlength="20"
-                            /></label>
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors[
+                                                'education.finished_year'
+                                            ] ||
+                                            memberFormErrors[
+                                                'education.finished_year'
+                                            ],
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors[
+                                            "education.finished_year"
+                                        ] ||
+                                        memberFormErrors[
+                                            "education.finished_year"
+                                        ] ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                             <label class="workspace-field"
                                 ><span>Lớp đã bỏ học</span
                                 ><input
@@ -12716,7 +12823,32 @@ onMounted(async () => {
                                     v-model.trim="educationForm.dropped_year"
                                     type="text"
                                     maxlength="20"
-                            /></label>
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors[
+                                                'education.dropped_year'
+                                            ] ||
+                                            memberFormErrors[
+                                                'education.dropped_year'
+                                            ],
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors[
+                                            "education.dropped_year"
+                                        ] ||
+                                        memberFormErrors[
+                                            "education.dropped_year"
+                                        ] ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                         </section>
                         <h4
                             class="household-member-group-title household-member-literacy-title"
@@ -12724,8 +12856,8 @@ onMounted(async () => {
                         >
                             <span>Xóa mù chữ</span>
                             <small>
-                                Thông tin học tập và hoàn thành chương trình
-                                xóa mù chữ
+                                Thông tin học tập và hoàn thành chương trình xóa
+                                mù chữ
                             </small>
                         </h4>
                         <section
@@ -12897,10 +13029,7 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-contact-section"
                         >
-                            <label
-                                v-if="memberIsHead"
-                                class="workspace-field"
-                            >
+                            <label v-if="memberIsHead" class="workspace-field">
                                 <span>Quan hệ với chủ hộ</span>
                                 <input
                                     :value="
@@ -12956,14 +13085,50 @@ onMounted(async () => {
                                     v-model.trim="memberForm.parent_name"
                                     type="text"
                                     maxlength="150"
-                            /></label>
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.parent_name ||
+                                            memberFormErrors.parent_name,
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors.parent_name ||
+                                        memberFormErrors.parent_name ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                             <label class="workspace-field"
                                 ><span>Điện thoại</span
                                 ><input
                                     v-model.trim="memberForm.phone"
                                     type="tel"
                                     maxlength="20"
-                            /></label>
+                                    pattern="\+?[0-9]+"
+                                    @input="sanitizeMemberPhone"
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.phone ||
+                                            memberFormErrors.phone,
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors.phone ||
+                                        memberFormErrors.phone ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                             <label
                                 class="workspace-field household-member-wide-field"
                                 ><span>Ghi chú</span

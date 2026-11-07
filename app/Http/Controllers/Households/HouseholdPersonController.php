@@ -149,7 +149,10 @@ class HouseholdPersonController extends Controller
             return response()->json(['message' => 'Hộ này đã có hồ sơ chủ hộ.'], 422);
         }
 
-        $data = $request->validate($this->rules($request, $isHouseholdHead, household: $household));
+        $data = $request->validate(
+            $this->rules($request, $isHouseholdHead, household: $household),
+            $this->validationMessages(),
+        );
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return response()->json([
@@ -200,7 +203,10 @@ class HouseholdPersonController extends Controller
         // tìm năm học mới nhất vì trong bảng education sẽ có nhiều năm (varchar )
         $education = $this->people->latestEducation($person);
         // validate
-        $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education, $household));
+        $data = $request->validate(
+            $this->rules($request, $isHouseholdHead, $person, $education, $household),
+            $this->validationMessages(),
+        );
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return response()->json([
@@ -289,19 +295,19 @@ class HouseholdPersonController extends Controller
         ?Person $person = null,
         ?PersonEducation $education = null,
         ?Household $household = null,
-    ): array
-    {
+    ): array {
         $user = $request->user();
+        $personNameRule = "regex:/^[\\p{L}\\p{M}]+(?:[ '-][\\p{L}\\p{M}]+)*$/u";
         $rules = [
-            'first_name' => 'required|string|max:100',
-            'last_name' => 'required|string|max:50',
-            'dob' => 'required|date|before_or_equal:today',
+            'first_name' => ['required', 'string', 'max:100', $personNameRule],
+            'last_name' => ['required', 'string', 'max:50', $personNameRule],
+            'dob' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'gender' => 'required|in:NAM,NU',
             'ethnicity_code' => 'required|exists:ethnicities,code',
             'religion' => 'nullable|string|max:50',
             'priority_type' => 'nullable|string|max:100',
-            'parent_name' => 'nullable|string|max:150',
-            'phone' => 'nullable|string|max:20',
+            'parent_name' => ['nullable', 'string', 'max:150', $personNameRule],
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^\\+?[0-9]+$/'],
             'note' => 'nullable|string|max:2000',
         ];
 
@@ -332,7 +338,7 @@ class HouseholdPersonController extends Controller
             preg_match_all('/(?<!\d)\d{4}(?!\d)/', (string) $value, $matches);
             foreach ($matches[0] as $year) {
                 if ((int) $year > now()->year) {
-                    $fail('Năm không được lớn hơn '.now()->year.'.');
+                    $fail('Năm không được lớn hơn ' . now()->year . '.');
 
                     return;
                 }
@@ -386,13 +392,13 @@ class HouseholdPersonController extends Controller
             ],
             'education.graduation_level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
             'education.is_complementary' => 'nullable|boolean',
-            'education.graduation_year' => ['nullable', 'string', 'max:20', $notFutureYear],
+            'education.graduation_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
             'education.vocational_grad_level' => 'nullable|string|max:50',
-            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', $notFutureYear],
+            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
             'education.finished_class' => 'nullable|string|max:20',
-            'education.finished_year' => ['nullable', 'string', 'max:20', $notFutureYear],
+            'education.finished_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
             'education.dropped_class' => 'nullable|string|max:20',
-            'education.dropped_year' => ['nullable', 'string', 'max:20', $notFutureYear],
+            'education.dropped_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
             'education.literacy_current_class' => 'nullable|string|max:20',
             'education.literacy_completed_class' => 'nullable|string|max:20',
             'education.literacy_relapse_level' => 'nullable|integer|between:1,2',
@@ -410,6 +416,21 @@ class HouseholdPersonController extends Controller
         ];
 
         return $rules;
+    }
+
+    private function validationMessages(): array
+    {
+        return [
+            'first_name.regex' => 'Tên chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.',
+            'last_name.regex' => 'Họ và tên đệm chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.',
+            'parent_name.regex' => 'Họ tên cha hoặc mẹ chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.',
+            'dob.date_format' => 'Ngày sinh không đúng định dạng.',
+            'phone.regex' => 'Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +, ví dụ +84912345678.',
+            'education.graduation_year.regex' => 'Năm tốt nghiệp phải có dạng YYYY hoặc YYYY-YYYY.',
+            'education.vocational_grad_year.regex' => 'Năm tốt nghiệp nghề phải có dạng YYYY hoặc YYYY-YYYY.',
+            'education.finished_year.regex' => 'Năm hoàn thành lớp phải có dạng YYYY hoặc YYYY-YYYY.',
+            'education.dropped_year.regex' => 'Năm bỏ học phải có dạng YYYY hoặc YYYY-YYYY.',
+        ];
     }
 
     private function gradeFromClassName(mixed $className): ?int

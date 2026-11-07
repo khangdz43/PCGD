@@ -451,7 +451,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->postJson(route('api.households.persons.store', $household).'?is_head=1', $this->personPayload(null))
+            ->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertCreated();
 
         $this->assertDatabaseHas('persons', [
@@ -466,7 +466,7 @@ class HouseholdCrudFlowTest extends TestCase
             'head_last_name' => 'Trần',
         ]);
 
-        $this->postJson(route('api.households.persons.store', $household).'?is_head=1', $this->personPayload(null))
+        $this->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertUnprocessable();
 
         $this->assertDatabaseCount('persons', 1);
@@ -490,6 +490,40 @@ class HouseholdCrudFlowTest extends TestCase
             'academic_block' => '12',
             'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
         ]);
+    }
+
+    public function test_member_phone_accepts_plus_84_but_rejects_text(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con');
+        $payload['phone'] = '09012abc';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'phone');
+
+        $payload['phone'] = '+84912345678';
+        $this->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertCreated();
+
+        $this->assertDatabaseHas('persons', ['phone' => '+84912345678']);
+    }
+
+    public function test_education_year_fields_reject_non_year_text(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con');
+        $payload['education']['graduation_year'] = 'năm vừa rồi';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.graduation_year');
     }
 
     public function test_explicit_academic_block_is_preserved_when_saving_a_person(): void
@@ -558,7 +592,7 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->getJson('/api/v1/household-imports/'.$processing->id)
+            ->getJson('/api/v1/household-imports/' . $processing->id)
             ->assertOk()
             ->assertJsonPath('data.status', 'PROCESSING')
             ->assertJsonPath('data.progress', 90)
@@ -573,7 +607,7 @@ class HouseholdCrudFlowTest extends TestCase
             'processed_rows' => 10,
             'error_file_path' => $errorFilePath,
         ]);
-        $this->getJson('/api/v1/household-imports/'.$processing->id)
+        $this->getJson('/api/v1/household-imports/' . $processing->id)
             ->assertOk()
             ->assertJsonPath('data.progress', 100)
             ->assertJsonPath('data.status', 'PARTIAL')
@@ -610,13 +644,13 @@ class HouseholdCrudFlowTest extends TestCase
             ]))
             ->assertOk()
             ->assertJsonCount(3, 'data.statuses')
-            ->assertJsonPath('data.statuses.'.$processing->id.'.status', 'PROCESSING')
-            ->assertJsonPath('data.statuses.'.$processing->id.'.progress', 90)
-            ->assertJsonPath('data.statuses.'.$completed->id.'.status', 'SUCCESS')
-            ->assertJsonPath('data.statuses.'.$completed->id.'.progress', 100)
-            ->assertJsonMissingPath('data.statuses.'.$foreign->id)
-            ->assertJsonPath('data.statuses.'.$queued->id.'.queue_position', 2)
-            ->assertJsonPath('data.statuses.'.$queued->id.'.queue_total', 3);
+            ->assertJsonPath('data.statuses.' . $processing->id . '.status', 'PROCESSING')
+            ->assertJsonPath('data.statuses.' . $processing->id . '.progress', 90)
+            ->assertJsonPath('data.statuses.' . $completed->id . '.status', 'SUCCESS')
+            ->assertJsonPath('data.statuses.' . $completed->id . '.progress', 100)
+            ->assertJsonMissingPath('data.statuses.' . $foreign->id)
+            ->assertJsonPath('data.statuses.' . $queued->id . '.queue_position', 2)
+            ->assertJsonPath('data.statuses.' . $queued->id . '.queue_total', 3);
 
         $this->getJson(route('api.households.import-history'))
             ->assertOk()
@@ -838,7 +872,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-');
-        $xlsxPath = $filePath.'.xlsx';
+        $xlsxPath = $filePath . '.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -903,7 +937,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-batch-');
-        $xlsxPath = $filePath.'.xlsx';
+        $xlsxPath = $filePath . '.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -958,7 +992,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-invalid-import-');
-        $xlsxPath = $temporaryPath.'.xlsx';
+        $xlsxPath = $temporaryPath . '.xlsx';
         rename($temporaryPath, $xlsxPath);
 
         try {
@@ -1025,7 +1059,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $filePath = tempnam(sys_get_temp_dir(), 'pcgd-partial-import-');
-        $xlsxPath = $filePath.'.xlsx';
+        $xlsxPath = $filePath . '.xlsx';
         rename($filePath, $xlsxPath);
 
         try {
@@ -1110,7 +1144,7 @@ class HouseholdCrudFlowTest extends TestCase
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
         $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-large-import-');
-        $xlsxPath = $temporaryPath.'.xlsx';
+        $xlsxPath = $temporaryPath . '.xlsx';
         rename($temporaryPath, $xlsxPath);
 
         try {
@@ -2321,7 +2355,7 @@ class HouseholdCrudFlowTest extends TestCase
         foreach (range(2020, 2035) as $year) {
             DB::table('school_years')->insert([
                 'start_time' => "{$year}-08-01",
-                'end_time' => ($year + 1).'-07-31',
+                'end_time' => ($year + 1) . '-07-31',
                 'status' => false,
             ]);
         }
@@ -2340,7 +2374,7 @@ class HouseholdCrudFlowTest extends TestCase
     private function userWithPermissions(array $permissionNames, string $scopeLevel = 'commune'): User
     {
         $role = Role::create([
-            'name' => 'commune-'.uniqid(),
+            'name' => 'commune-' . uniqid(),
             'guard_name' => 'web',
             'scope_level' => $scopeLevel,
         ]);
@@ -2355,7 +2389,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $user = User::create([
             'name' => 'Người dùng thử',
-            'username' => 'test-'.uniqid(),
+            'username' => 'test-' . uniqid(),
             'password' => Hash::make('password'),
         ]);
         $user->forceFill([
@@ -2432,6 +2466,6 @@ class HouseholdCrudFlowTest extends TestCase
     {
         $year = now()->month >= 8 ? now()->year : now()->year - 1;
 
-        return "{$year}-".($year + 1);
+        return "{$year}-" . ($year + 1);
     }
 }

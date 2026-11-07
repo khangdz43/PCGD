@@ -1190,17 +1190,18 @@ h2 {
 
 .workspace.household-route-initializing {
     min-height: calc(100dvh - 106px);
+    margin-top: 0;
 }
 
 .household-route-loading {
     position: absolute;
     z-index: 20;
-    inset: 0;
+    inset: -56px 0 0;
     display: flex;
     align-items: flex-start;
     justify-content: center;
     gap: 10px;
-    padding: 16px;
+    padding: 0 16px;
     background: #fff;
     color: #526178;
     font-size: .88rem;

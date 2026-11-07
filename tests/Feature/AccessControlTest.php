@@ -4096,7 +4096,7 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('data.commune_code', 'C1');
     }
 
-    public function test_commune_user_sees_only_assigned_commune_schools_and_cannot_submit_another_commune(): void
+    public function test_commune_user_can_select_schools_in_the_household_province(): void
     {
         Schema::create('ethnicities', function (Blueprint $table): void {
             $table->string('code')->primary();
@@ -4104,14 +4104,17 @@ class AccessControlTest extends TestCase
             $table->timestamps();
         });
         DB::table('provinces')->insert(['code' => 'P1', 'name' => 'Tỉnh một', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('provinces')->insert(['code' => 'P2', 'name' => 'Tỉnh hai', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('communes')->insert([
             ['code' => 'C1', 'name' => 'Xã được giao', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'C2', 'name' => 'Xã khác', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'C3', 'name' => 'Xã tỉnh khác', 'province_code' => 'P2', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('schools')->insert([
             ['code' => 'S1', 'name' => 'Trường được giao', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'S2', 'name' => 'Trường ngoài phạm vi', 'province_code' => 'P1', 'commune_code' => 'C2', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'S3', 'name' => null, 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'S4', 'name' => 'Trường tỉnh khác', 'province_code' => 'P2', 'commune_code' => 'C3', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('ethnicities')->insert(['code' => 'KINH', 'name' => 'Kinh', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('households')->insert([
@@ -4150,8 +4153,11 @@ class AccessControlTest extends TestCase
 
         $this->getJson('/api/v1/households/1/persons/schools?q=S1')
             ->assertOk()
-            ->assertJsonPath('data.schools.0.code', 'S1')
-            ->assertJsonMissing(['code' => 'S2']);
+            ->assertJsonPath('data.schools.0.code', 'S1');
+        $this->getJson('/api/v1/households/1/persons/schools?q=Trường')
+            ->assertOk()
+            ->assertJsonFragment(['code' => 'S1'])
+            ->assertJsonFragment(['code' => 'S2']);
         $this->getJson('/api/v1/households/1/persons/schools?q=S3')
             ->assertOk()
             ->assertJsonPath('data.schools.0.code', 'S3')
@@ -4168,15 +4174,15 @@ class AccessControlTest extends TestCase
             'dob' => '2010-01-01',
             'gender' => 'NAM',
             'ethnicity_code' => 'KINH',
-            'school_province_code' => 'P1',
-            'school_commune_code' => 'C2',
+            'school_province_code' => 'P2',
+            'school_commune_code' => 'C3',
             'education' => [
                 'school_year' => '2025-2026',
-                'school_code' => 'S2',
+                'school_code' => 'S4',
             ],
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('error.details.0.field', 'school_commune_code');
+            ->assertJsonPath('error.details.0.field', 'school_province_code');
 
         $this->assertSame(0, DB::table('persons')->count());
     }

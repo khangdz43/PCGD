@@ -478,6 +478,7 @@ class HouseholdCrudFlowTest extends TestCase
         $household = $this->createHousehold();
         $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
         $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['education']['academic_block'] = '2';
         $payload['education']['current_class'] = '12A1';
 
         $this->actingAs($user)
@@ -1871,6 +1872,7 @@ class HouseholdCrudFlowTest extends TestCase
             [
                 'code' => 'S01',
                 'name' => 'Trường trong xã',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
@@ -1880,6 +1882,7 @@ class HouseholdCrudFlowTest extends TestCase
             [
                 'code' => 'S02',
                 'name' => 'Trường ngoài địa bàn',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P02',
                 'commune_code' => 'C02',
@@ -1915,6 +1918,7 @@ class HouseholdCrudFlowTest extends TestCase
             [
                 'code' => 'S01',
                 'name' => 'Trường trong xã',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
@@ -1924,9 +1928,40 @@ class HouseholdCrudFlowTest extends TestCase
             [
                 'code' => 'S02',
                 'name' => 'Trường ngoài địa bàn',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P02',
                 'commune_code' => 'C02',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S03',
+                'name' => 'Trường THCS cùng tỉnh',
+                'type' => 'single_level',
+                'level' => 'THCS',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S04',
+                'name' => 'Trường THPT liên cấp cùng tỉnh',
+                'type' => 'multi_level',
+                'level' => 'THPT',
+                'province_code' => 'P01',
+                'commune_code' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S05',
+                'name' => 'Trường THPT đơn cấp cùng tỉnh',
+                'type' => 'single_level',
+                'level' => 'THPT',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
@@ -1937,12 +1972,37 @@ class HouseholdCrudFlowTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/v1/households/{$household->id}/persons/schools?q=Trường")
             ->assertOk()
-            ->assertJsonCount(1, 'data.schools')
-            ->assertJsonPath('data.schools.0.code', 'S01');
+            ->assertJsonCount(4, 'data.schools')
+            ->assertJsonFragment(['code' => 'S01']);
 
         $this->getJson("/api/v1/households/{$household->id}/persons/form?is_head=1")
             ->assertOk()
             ->assertJsonCount(0, 'data.schools');
+
+        $this->getJson("/api/v1/households/{$household->id}/persons/schools?academic_block=8")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.schools')
+            ->assertJsonFragment(['code' => 'S03'])
+            ->assertJsonFragment(['code' => 'S04'])
+            ->assertJsonMissing(['code' => 'S01'])
+            ->assertJsonMissing(['code' => 'S05'])
+            ->assertJsonMissing(['code' => 'S02']);
+
+        $this->createPerson($household, [
+            'dob' => '1980-01-01',
+            'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['school_province_code'] = 'P01';
+        $payload['school_commune_code'] = 'C01';
+        $payload['education']['current_class'] = '8A1';
+        $payload['education']['academic_block'] = '8';
+        $payload['education']['school_code'] = 'S01';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.school_code');
     }
 
     public function test_import_completion_notifications_are_persistent_and_scoped_to_the_owner(): void

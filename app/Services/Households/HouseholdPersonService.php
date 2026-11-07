@@ -277,7 +277,15 @@ class HouseholdPersonService
         $educationData['school_year_id'] = $schoolYear->id;
         unset($educationData['school_year']);
         $educationData['is_complementary'] = (bool) ($educationData['is_complementary'] ?? false);
-        if (blank($educationData['academic_block'] ?? null)) {
+        preg_match(
+            '/^\s*(?:lớp\s*)?(\d{1,2})(?=\D|$)/iu',
+            (string) ($educationData['current_class'] ?? ''),
+            $classNumber,
+        );
+        $classGrade = isset($classNumber[1]) ? (int) $classNumber[1] : null;
+        if ($classGrade !== null && $classGrade >= 1 && $classGrade <= 12) {
+            $educationData['academic_block'] = (string) $classGrade;
+        } elseif (blank($educationData['academic_block'] ?? null)) {
             preg_match('/\d+/u', (string) ($educationData['current_class'] ?? ''), $classNumber);
             $educationData['academic_block'] = $classNumber[0] ?? null;
         }

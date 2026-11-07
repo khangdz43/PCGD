@@ -469,11 +469,10 @@ const householdQuery = ref("");
 const householdSchoolYear = ref("");
 const householdFormSchoolYears = ref<string[]>([]);
 const personSchools = ref<Row[]>([]);
-const personSchoolSearch = ref("");
-const personSchoolSearchError = ref("");
-const personSchoolSearchLoading = ref(false);
-let personSchoolSearchTimer: number | undefined;
-let personSchoolSearchSequence = 0;
+const personSchoolOptionsError = ref("");
+const personSchoolOptionsLoading = ref(false);
+let personSchoolOptionsTimer: number | undefined;
+let personSchoolOptionsSequence = 0;
 const disabilityForm = ref<Record<string, string | boolean>>({});
 const householdSchoolYearOptions = Array.from({ length: 11 }, (_, index) => {
     const year = 2020 + index;
@@ -3813,69 +3812,102 @@ function clearHouseholdMemberDraft(
     }
 }
 
-watch(personSchoolSearch, (value) => {
-    if (personSchoolSearchTimer !== undefined) {
-        window.clearTimeout(personSchoolSearchTimer);
-    }
-    const requestSequence = ++personSchoolSearchSequence;
-    const query = value.trim();
-    personSchoolSearchError.value = "";
+function gradeFromClassName(className: unknown): string {
+    const match = String(className ?? "")
+        .trim()
+        .match(/^(?:lớp\s*)?(\d{1,2})(?=\D|$)/iu);
+    if (!match) return "";
 
-    if (query.length < 2) {
-        const selectedSchool = personSchools.value.find(
-            (school) =>
-                String(school.code) === educationForm.value.school_code,
-        );
-        personSchools.value = selectedSchool ? [selectedSchool] : [];
-        personSchoolSearchLoading.value = false;
-        return;
-    }
+    const grade = Number(match[1]);
+    return grade >= 1 && grade <= 12 ? String(grade) : "";
+}
 
-    const selectedSchool = personSchools.value.find(
-        (school) => String(school.code) === educationForm.value.school_code,
-    );
-    personSchools.value = selectedSchool ? [selectedSchool] : [];
-    personSchoolSearchTimer = window.setTimeout(async () => {
-        const householdId =
-            householdDetail.value?.id ?? createdHouseholdId.value;
-        if (householdId === null || householdId === undefined) {
-            personSchoolSearchLoading.value = false;
-            return;
+watch(
+    () => educationForm.value.current_class,
+    (className, previousClassName) => {
+        const grade = gradeFromClassName(className);
+        const previousGrade = gradeFromClassName(previousClassName);
+        if (
+            previousClassName !== undefined &&
+            grade !== previousGrade &&
+            educationForm.value.school_code
+        ) {
+            educationForm.value.school_code = "";
         }
+        if (educationForm.value.academic_block !== grade) {
+            educationForm.value.academic_block = grade;
+        }
+    },
+);
 
-        personSchoolSearchLoading.value = true;
-        try {
-            const response = await api.get<unknown>(
-                `/households/${householdId}/persons/schools`,
-                { params: { q: query } },
-            );
-            if (requestSequence !== personSchoolSearchSequence) return;
+watch(
+    () => educationForm.value.academic_block,
+    (academicBlock) => {
+        if (personSchoolOptionsTimer !== undefined) {
+            window.clearTimeout(personSchoolOptionsTimer);
+        }
+        const requestSequence = ++personSchoolOptionsSequence;
+        const grade = gradeFromClassName(academicBlock);
+        personSchoolOptionsError.value = "";
 
-            const schools = asRows(apiData<Row>(response.data).schools);
+        if (!grade) {
             const selectedSchool = personSchools.value.find(
                 (school) =>
                     String(school.code) === educationForm.value.school_code,
             );
-            personSchools.value =
-                selectedSchool &&
-                !schools.some(
-                    (school) =>
-                        String(school.code) ===
-                        String(selectedSchool.code),
-                )
-                    ? [selectedSchool, ...schools]
-                    : schools;
-        } catch (cause) {
-            if (requestSequence === personSchoolSearchSequence) {
-                personSchoolSearchError.value = errorMessage(cause);
-            }
-        } finally {
-            if (requestSequence === personSchoolSearchSequence) {
-                personSchoolSearchLoading.value = false;
-            }
+            personSchools.value = selectedSchool
+                ? [selectedSchool]
+                : personSchools.value;
+            personSchoolOptionsLoading.value = false;
+            return;
         }
-    }, 250);
-});
+
+        const selectedSchool = personSchools.value.find(
+            (school) => String(school.code) === educationForm.value.school_code,
+        );
+        personSchools.value = selectedSchool ? [selectedSchool] : [];
+        personSchoolOptionsTimer = window.setTimeout(async () => {
+            const householdId =
+                householdDetail.value?.id ?? createdHouseholdId.value;
+            if (householdId === null || householdId === undefined) {
+                personSchoolOptionsLoading.value = false;
+                return;
+            }
+
+            personSchoolOptionsLoading.value = true;
+            try {
+                const response = await api.get<unknown>(
+                    `/households/${householdId}/persons/schools`,
+                    { params: { academic_block: grade } },
+                );
+                if (requestSequence !== personSchoolOptionsSequence) return;
+
+                const schools = asRows(apiData<Row>(response.data).schools);
+                const selectedSchool = personSchools.value.find(
+                    (school) =>
+                        String(school.code) === educationForm.value.school_code,
+                );
+                personSchools.value =
+                    selectedSchool &&
+                    !schools.some(
+                        (school) =>
+                            String(school.code) ===
+                            String(selectedSchool.code),
+                    )
+                        ? [selectedSchool, ...schools]
+                        : schools;
+            } catch (cause) {
+                if (requestSequence === personSchoolOptionsSequence) {
+                    personSchoolOptionsError.value = errorMessage(cause);
+                }
+            } finally {
+                if (requestSequence === personSchoolOptionsSequence) {
+                    personSchoolOptionsLoading.value = false;
+                }
+            }
+        }, 150);
+    },
+);
 
 async function restoreHouseholdRoute(): Promise<void> {
     if (props.moduleKey !== "households" || householdRouteRestoreActive.value) {
@@ -4061,8 +4093,7 @@ async function beginMember(
     ]);
     ethnicities.value = [];
     personSchools.value = [];
-    personSchoolSearch.value = "";
-    personSchoolSearchError.value = "";
+    personSchoolOptionsError.value = "";
     memberFormErrors.value = {};
     notice.value = "";
     error.value = "";
@@ -4124,6 +4155,10 @@ async function beginMember(
                 educationForm.value[key] = String(value);
             }
         }
+        const classGrade = gradeFromClassName(
+            educationForm.value.current_class,
+        );
+        if (classGrade) educationForm.value.academic_block = classGrade;
         const disability =
             typeof result.disability === "object" && result.disability !== null
                 ? (result.disability as Row)
@@ -4152,7 +4187,6 @@ async function beginMember(
         }
         ethnicities.value = asRows(result.ethnicities);
         personSchools.value = asRows(result.schools);
-        personSchoolSearch.value = String(personSchools.value[0]?.name ?? "");
     } catch (cause) {
         error.value = errorMessage(cause);
     } finally {
@@ -4189,7 +4223,12 @@ async function saveMember(): Promise<void> {
     const body: Row = {
         ...memberForm.value,
         is_head: memberIsHead.value,
-        education: educationForm.value,
+        education: {
+            ...educationForm.value,
+            academic_block:
+                gradeFromClassName(educationForm.value.current_class) ||
+                educationForm.value.academic_block,
+        },
         school_province_code: selectedSchool?.province_code ?? "",
         school_commune_code: selectedSchool?.commune_code ?? "",
         disability: {
@@ -6297,10 +6336,10 @@ function handleHouseholdRouteChange(): void {
 
 onUnmounted(() => {
     document.body.style.overflow = previousBodyOverflow;
-    if (personSchoolSearchTimer !== undefined) {
-        window.clearTimeout(personSchoolSearchTimer);
+    if (personSchoolOptionsTimer !== undefined) {
+        window.clearTimeout(personSchoolOptionsTimer);
     }
-    personSchoolSearchSequence += 1;
+    personSchoolOptionsSequence += 1;
     window.removeEventListener("popstate", handleHouseholdRouteChange);
     window.removeEventListener(
         HOUSEHOLD_IMPORT_COMPLETED_EVENT,
@@ -12535,39 +12574,36 @@ onMounted(async () => {
                                 </small>
                             </label>
                             <label class="workspace-field"
-                                ><span>Khối học</span
-                                ><input
-                                    v-model.trim="educationForm.academic_block"
-                                    type="text"
-                                    maxlength="50"
-                            /></label>
-                            <label class="workspace-field"
                                 ><span>Lớp học</span
                                 ><input
                                     v-model.trim="educationForm.current_class"
                                     type="text"
                                     maxlength="50"
                             /></label>
-                            <label class="workspace-field">
-                                <span>Tìm trường học theo tên hoặc mã</span>
-                                <input
-                                    v-model.trim="personSchoolSearch"
-                                    type="search"
-                                    maxlength="100"
-                                    placeholder="Nhập ít nhất 2 ký tự"
-                                    autocomplete="off"
-                                />
-                                <small v-if="personSchoolSearchLoading">Đang tìm trường...</small>
-                                <small
-                                    v-if="personSchoolSearchError"
-                                    class="field-error"
-                                    role="alert"
-                                >{{ personSchoolSearchError }}</small>
-                            </label>
+                            <label class="workspace-field"
+                                ><span>Khối học (tự động)</span
+                                ><input
+                                    v-model="educationForm.academic_block"
+                                    type="text"
+                                    maxlength="2"
+                                    readonly
+                                    aria-readonly="true"
+                            /></label>
                             <label class="workspace-field">
                                 <span>Trường học / Mã trường</span>
-                                <select v-model="educationForm.school_code">
-                                    <option value="">Chưa chọn trường</option>
+                                <select
+                                    v-model="educationForm.school_code"
+                                    :aria-busy="personSchoolOptionsLoading"
+                                >
+                                    <option value="">
+                                        {{
+                                            !educationForm.academic_block
+                                                ? "Nhập lớp để chọn trường"
+                                                : personSchools.length
+                                                  ? "Chưa chọn trường"
+                                                  : "Không có trường phù hợp"
+                                        }}
+                                    </option>
                                     <option
                                         v-for="school in personSchools"
                                         :key="String(school.code)"
@@ -12576,6 +12612,15 @@ onMounted(async () => {
                                         {{ school.name }} · {{ school.code }}
                                     </option>
                                 </select>
+                                <small v-if="personSchoolOptionsLoading"
+                                    >Đang tải trường phù hợp...</small
+                                >
+                                <small
+                                    v-if="personSchoolOptionsError"
+                                    class="field-error"
+                                    role="alert"
+                                    >{{ personSchoolOptionsError }}</small
+                                >
                                 <small
                                     v-if="
                                         memberFormErrors[

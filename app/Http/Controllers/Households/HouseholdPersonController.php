@@ -71,29 +71,66 @@ class HouseholdPersonController extends Controller
     {
         $this->assertHouseholdAccess($request, $household);
         $filters = $request->validate([
-            'q' => ['required', 'string', 'min:2', 'max:100'],
+            'q' => ['nullable', 'string', 'min:2', 'max:100'],
+            'academic_block' => ['nullable', 'integer', 'between:1,12'],
         ]);
-        $user = $request->user();
-        $search = trim($filters['q']);
-        $query = School::query()->where('is_active', true);
+        $query = School::query()
+            ->where('is_active', true)
+            ->where('province_code', $household->province_code);
 
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('province_code', $user->province_code);
-            if ($user->roleScopeLevel() === 'commune') {
-                $query->where('commune_code', $user->commune_code);
-            }
+        if (filled($filters['academic_block'] ?? null)) {
+            $grade = (int) $filters['academic_block'];
+            $schoolLevels = $this->eligibleSchoolLevelsForGrade($grade);
+            $query->where(function ($builder) use ($schoolLevels): void {
+                $builder->where('level', $schoolLevels['level']);
+                if ($schoolLevels['multi_level'] !== []) {
+                    $builder->orWhere(function ($multiLevelQuery) use ($schoolLevels): void {
+                        $multiLevelQuery
+                            ->where('type', 'multi_level')
+                            ->whereIn('level', $schoolLevels['multi_level']);
+                    });
+                }
+            });
+        }
+
+        if (filled($filters['q'] ?? null)) {
+            $search = trim((string) $filters['q']);
+            $query->where(function ($builder) use ($search): void {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            });
+        } elseif (! filled($filters['academic_block'] ?? null)) {
+            return response()->json(['schools' => []]);
         }
 
         $schools = $query
-            ->where(function ($builder) use ($search): void {
-                $builder->where('name', 'like', "%{$search}%")
-                    ->orWhere('code', 'like', "%{$search}%");
-            })
             ->orderBy('name')
-            ->limit(50)
             ->get(['code', 'name', 'level', 'province_code', 'commune_code']);
 
         return response()->json(['schools' => $schools]);
+    }
+
+    private function schoolLevelForGrade(int $grade): string
+    {
+        return match (true) {
+            $grade <= 5 => 'TH',
+            $grade <= 9 => 'THCS',
+            default => 'THPT',
+        };
+    }
+
+    private function eligibleSchoolLevelsForGrade(int $grade): array
+    {
+        $level = $this->schoolLevelForGrade($grade);
+
+        return [
+            'level' => $level,
+            'multi_level' => match ($level) {
+                'TH' => ['THCS', 'THPT'],
+                'THCS' => ['THPT'],
+                default => [],
+            },
+        ];
     }
 
     public function store(Request $request, Household $household)
@@ -112,7 +149,7 @@ class HouseholdPersonController extends Controller
             return response()->json(['message' => 'Hộ này đã có hồ sơ chủ hộ.'], 422);
         }
 
-        $data = $request->validate($this->rules($request, $isHouseholdHead));
+        $data = $request->validate($this->rules($request, $isHouseholdHead, household: $household));
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return response()->json([
@@ -163,7 +200,7 @@ class HouseholdPersonController extends Controller
         // tìm năm học mới nhất vì trong bảng education sẽ có nhiều năm (varchar )
         $education = $this->people->latestEducation($person);
         // validate
-        $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education));
+        $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education, $household));
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return response()->json([
@@ -246,7 +283,13 @@ class HouseholdPersonController extends Controller
         ]);
     }
 
-    private function rules(Request $request, bool $isHouseholdHead = false, ?Person $person = null, ?PersonEducation $education = null): array
+    private function rules(
+        Request $request,
+        bool $isHouseholdHead = false,
+        ?Person $person = null,
+        ?PersonEducation $education = null,
+        ?Household $household = null,
+    ): array
     {
         $user = $request->user();
         $rules = [
@@ -299,24 +342,36 @@ class HouseholdPersonController extends Controller
         $schoolProvinceRules = ['nullable', 'exists:provinces,code'];
         $schoolCommuneRules = ['nullable', Rule::exists('communes', 'code')
             ->where('province_code', $request->input('school_province_code'))];
+        if ($household?->province_code !== null) {
+            $schoolProvinceRules[] = Rule::in([$household->province_code]);
+        }
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             if ($user->province_code !== null) {
                 $schoolProvinceRules[] = Rule::in([$user->province_code]);
             }
-
-            if ($user->roleScopeLevel() === 'commune') {
-                $schoolCommuneRules[] = Rule::in([$user->commune_code]);
-            }
         }
 
         $schoolExistsRule = Rule::exists('schools', 'code')
-            ->where('province_code', $request->input('school_province_code'))
-            ->where('commune_code', $request->input('school_commune_code'));
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)
-            && $user->roleScopeLevel() === 'commune') {
-            $schoolExistsRule
-                ->where('province_code', $user->province_code)
-                ->where('commune_code', $user->commune_code);
+            ->where('province_code', $household?->province_code);
+        $academicBlock = $this->gradeFromClassName(
+            $request->input('education.current_class'),
+        ) ?? filter_var(
+            $request->input('education.academic_block'),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 1, 'max_range' => 12]],
+        );
+        if ($academicBlock !== false) {
+            $schoolLevels = $this->eligibleSchoolLevelsForGrade((int) $academicBlock);
+            $schoolExistsRule->where(function ($query) use ($schoolLevels): void {
+                $query->where('level', $schoolLevels['level']);
+                if ($schoolLevels['multi_level'] !== []) {
+                    $query->orWhere(function ($multiLevelQuery) use ($schoolLevels): void {
+                        $multiLevelQuery
+                            ->where('type', 'multi_level')
+                            ->whereIn('level', $schoolLevels['multi_level']);
+                    });
+                }
+            });
         }
 
         $rules += [
@@ -355,6 +410,17 @@ class HouseholdPersonController extends Controller
         ];
 
         return $rules;
+    }
+
+    private function gradeFromClassName(mixed $className): ?int
+    {
+        if (! preg_match('/^\s*(?:lớp\s*)?(\d{1,2})(?=\D|$)/iu', (string) $className, $match)) {
+            return null;
+        }
+
+        $grade = (int) $match[1];
+
+        return $grade >= 1 && $grade <= 12 ? $grade : null;
     }
 
     private function assertHouseholdAccess(Request $request, Household $household): void

@@ -282,7 +282,7 @@ h2 {
     flex-wrap: wrap;
     gap: 8px;
     margin: 0;
-    padding: 0;
+    padding: 0 0 84px;
     list-style: none;
 }
 
@@ -1188,6 +1188,33 @@ h2 {
     box-shadow: 0 24px 70px rgb(20 40 80 / 24%);
 }
 
+.workspace.household-route-initializing {
+    min-height: calc(100dvh - 106px);
+}
+
+.household-route-loading {
+    position: absolute;
+    z-index: 20;
+    inset: 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px;
+    background: #fff;
+    color: #526178;
+    font-size: .88rem;
+    font-weight: 600;
+}
+
+.household-route-loading>span:last-child {
+    padding: 8px 13px;
+    border: 1px solid #e1e8f0;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgb(15 23 42 / 10%);
+}
+
 .household-member-dialog-header {
     display: flex;
     align-items: flex-start;
@@ -1973,7 +2000,7 @@ h2 {
 
 .household-member-dialog .workspace-field>span,
 .household-member-dialog .household-member-checkbox {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.25;
 }
 
@@ -1983,7 +2010,7 @@ h2 {
     min-height: 26px;
     height: 26px;
     padding: 2px 6px;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .household-member-dialog .workspace-field textarea {
@@ -2021,12 +2048,14 @@ h2 {
 }
 
 .household-member-dialog.household-head-education-step.household-member-create-page {
-    display: flex;
+    display: grid;
     width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    align-content: start;
     height: auto;
     max-height: none;
     min-height: calc(100dvh - 82px);
-    flex-direction: column;
     gap: 12px;
     padding: 24px;
     border: 0;
@@ -2037,23 +2066,183 @@ h2 {
 }
 
 .household-member-create-page .household-member-create-columns {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr);
-    align-items: start;
-    gap: 12px;
+    display: contents;
 }
 
 .household-member-create-page .household-member-create-column {
-    display: grid;
-    min-width: 0;
-    align-content: start;
-    gap: 10px;
+    display: contents;
+}
+
+.household-member-create-page .household-member-group-title,
+.household-member-create-page .household-member-form-section {
+    grid-column: 1 / -1;
+    grid-row: auto;
 }
 
 .household-member-create-page .household-member-create-column>.household-member-form-section {
-    grid-column: auto;
-    grid-row: auto;
-    align-self: start;
+    width: 100%;
+}
+
+.household-member-create-page .household-member-group-title {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    gap: 2px 10px;
+    margin: 18px 0 0;
+    padding: 0;
+    color: #173454;
+    font-size: 1.08rem;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.household-member-create-page .household-member-group-title:not([data-step]) {
+    display: block;
+    margin-top: 16px;
+    color: #38536f;
+    font-size: .95rem;
+}
+
+.household-member-create-page .household-member-group-title:not([data-step])::before {
+    content: none;
+}
+
+.household-member-create-page .household-member-group-title::before {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    grid-row: 1 / 3;
+    place-items: center;
+    border: 1px solid #d6e5f7;
+    border-radius: 9px;
+    background: #edf5ff;
+    color: #2863a5;
+    content: attr(data-step);
+    font-size: .73rem;
+    font-weight: 800;
+}
+
+.household-member-create-page .household-member-group-title small {
+    color: #728198;
+    font-size: .78rem;
+    font-weight: 450;
+    line-height: 1.45;
+}
+
+.household-member-create-page .household-member-person-title {
+    order: 1;
+}
+
+.household-member-create-page .household-member-person-section {
+    order: 2;
+}
+
+.household-member-create-page .household-member-contact-title {
+    order: 11;
+}
+
+.household-member-create-page .household-member-contact-section {
+    order: 12;
+}
+
+.household-member-create-page .household-member-education-title {
+    order: 3;
+}
+
+.household-member-create-page .household-member-education-section {
+    order: 4;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.household-member-create-page .household-member-subsection-title {
+    grid-column: 1 / -1;
+    margin: 2px 0 0;
+    padding: 0 0 7px;
+    border-bottom: 1px solid #e3eaf3;
+    color: #38536f;
+    font-size: .84rem;
+    font-weight: 700;
+}
+
+.household-member-create-page .household-member-subsection-title:not(:first-child) {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #e3eaf3;
+}
+
+.household-member-create-page .household-member-disability-title {
+    order: 7;
+}
+
+.household-member-create-page .household-member-disability-section {
+    order: 8;
+}
+
+.household-member-create-page .household-member-literacy-title {
+    order: 5;
+}
+
+.household-member-create-page .household-member-literacy-section {
+    order: 6;
+}
+
+.household-member-create-page .household-member-circumstance-title {
+    order: 9;
+}
+
+.household-member-create-page .household-member-circumstance-section {
+    order: 10;
+}
+
+.household-member-create-page .household-member-form-section {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 14px 20px;
+    padding: 18px;
+    border-color: #e2e9f2;
+    border-radius: 14px;
+    background: #fbfcfe;
+    box-shadow: 0 2px 8px rgb(27 55 88 / 4%);
+}
+
+.household-member-create-page .household-member-form-section>.workspace-field {
+    min-width: 0;
+}
+
+.household-member-create-page .household-member-form-section>.household-member-wide-field {
+    max-width: 760px;
+}
+
+.household-member-create-page .household-member-education-section>.workspace-field {
+    max-width: none;
+}
+
+.household-member-create-page .household-member-form-section .workspace-field input,
+.household-member-create-page .household-member-form-section .workspace-field select,
+.household-member-create-page .household-member-form-section .workspace-field textarea {
+    border-color: #d6dfeb;
+    border-radius: 10px;
+    background-color: #fff;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+
+.household-member-create-page .household-member-form-section .workspace-field input:focus,
+.household-member-create-page .household-member-form-section .workspace-field select:focus,
+.household-member-create-page .household-member-form-section .workspace-field textarea:focus {
+    border-color: #6b9cf0;
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+}
+
+.household-member-create-page .household-member-form-section .workspace-field textarea {
+    border: 1px solid #d6dfeb;
+    min-height: 76px;
+    height: auto;
+    padding: 9px 11px;
+    line-height: 1.5;
+    resize: vertical;
 }
 
 .household-head-education-step .household-member-form-actions {
@@ -2066,11 +2255,39 @@ h2 {
 }
 
 .household-member-create-page .household-member-form-actions {
-    position: static;
-    bottom: auto;
-    margin: auto -24px 0;
-    padding: 12px 24px;
-    border-top: 1px solid #e5ebf3;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: var(--household-form-sidebar-width, 236px);
+    z-index: 5;
+    align-self: auto;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    justify-content: flex-end;
+    padding: 12px clamp(16px, 2.4vw, 34px);
+    border-top: 0;
+    background: transparent;
+    box-shadow: none;
+    grid-row: auto;
+    pointer-events: none;
+}
+
+.household-member-create-page .household-member-form-actions>* {
+    pointer-events: auto;
+}
+
+.household-member-editor.household-member-create-page .household-member-form-actions {
+    width: auto;
+    margin: 0;
+}
+
+.household-member-create-page .household-member-dialog-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -24px -24px 0;
+    padding: 16px 24px 12px;
     background: rgb(255 255 255 / 96%);
 }
 
@@ -2114,6 +2331,33 @@ h2 {
 
 .household-member-editor-backdrop .field-error {
     display: none;
+}
+
+.household-member-editor-backdrop .workspace-field .household-member-required-error {
+    display: block;
+    min-height: 18px;
+    overflow: visible;
+    margin: 0;
+    color: #b42318;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    white-space: normal;
+}
+
+.household-member-editor .household-member-form-actions {
+    width: 100%;
+    margin-left: auto;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.household-member-editor .household-member-form-actions .primary-button,
+.household-member-editor .household-member-form-actions .secondary-button {
+    min-width: 0;
+    min-height: 32px;
+    padding: 6px 12px;
+    font-size: .78rem;
 }
 
 .household-member-form-section textarea {
@@ -2335,9 +2579,19 @@ h2 {
     .household-member-create-page .household-member-education-section {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .household-member-create-page .household-member-form-section:not(.household-member-education-section) {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 760px) {
+    .household-member-create-page .household-member-form-section {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px;
+    }
+
     .village-merge-configuration-form {
         grid-template-columns: minmax(0, 1fr);
         width: 100%;
@@ -2387,10 +2641,14 @@ h2 {
         padding: 16px;
     }
 
+    .household-member-create-page .household-member-dialog-header {
+        margin: -16px -16px 0;
+        padding: 12px 16px 10px;
+    }
+
     .household-member-create-page .household-member-form-actions {
-        margin-right: -16px;
-        margin-left: -16px;
-        padding: 12px 16px;
+        width: 100%;
+        padding: 10px 12px;
     }
 
     .household-create-members-page {
@@ -6160,6 +6418,11 @@ button {
     display: flex;
     min-height: 100vh;
     background: #f4f7fb;
+    --household-form-sidebar-width: 236px;
+}
+
+.app-layout:has(.sidebar-collapsed) {
+    --household-form-sidebar-width: 76px;
 }
 
 .sidebar {
@@ -9026,6 +9289,14 @@ button {
 }
 
 @media (max-width: 1050px) {
+    .app-layout {
+        --household-form-sidebar-width: 220px;
+    }
+
+    .app-layout:has(.sidebar-collapsed) {
+        --household-form-sidebar-width: 76px;
+    }
+
     .sidebar {
         width: 220px;
         flex-basis: 220px;
@@ -9077,6 +9348,10 @@ button {
 }
 
 @media (max-width: 640px) {
+    .app-layout:has(.sidebar-collapsed) {
+        --household-form-sidebar-width: 58px;
+    }
+
     .sidebar {
         width: 220px;
         flex-basis: 220px;

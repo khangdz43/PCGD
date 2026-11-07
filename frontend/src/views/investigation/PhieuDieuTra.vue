@@ -91,8 +91,8 @@ watch(communeCode, async (value, previous) => {
 });
 
 onMounted(async () => {
-    if (props.permissions.includes('create-imports')) {
-        importModalInitialized.value = true;
+    if (/^\/households\/\d+\/persons(?:\/create|\/\d+\/edit)?\/?$/.test(window.location.pathname)) {
+        return;
     }
 
     loadingLocations.value = true;

@@ -4146,8 +4146,15 @@ class AccessControlTest extends TestCase
         $this->actingAs($user)
             ->getJson(route('api.households.persons.create', ['household' => 1, 'is_head' => 1]))
             ->assertOk()
-            ->assertJsonFragment(['code' => 'S1'])
-            ->assertJsonFragment(['code' => 'S3', 'name' => null])
+            ->assertJsonPath('data.schools', []);
+
+        $this->getJson('/api/v1/households/1/persons/schools?q=S1')
+            ->assertOk()
+            ->assertJsonPath('data.schools.0.code', 'S1')
+            ->assertJsonMissing(['code' => 'S2']);
+        $this->getJson('/api/v1/households/1/persons/schools?q=S3')
+            ->assertOk()
+            ->assertJsonPath('data.schools.0.code', 'S3')
             ->assertJsonMissing(['code' => 'S2']);
 
         $this->getJson('/api/v1/provinces/P1/schools?commune_code=C1')

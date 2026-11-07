@@ -409,8 +409,15 @@ const selectedHouseholdPerson = ref<Row | null>(null);
 const pendingHouseholdPersonDelete = ref<Row | null>(null);
 const memberBusy = ref(false);
 const memberFormErrors = ref<Record<string, string>>({});
+const memberFormSubmitted = ref(false);
 const restoringHouseholdMemberDraft = ref(false);
 const householdRouteRestoreActive = ref(false);
+const householdRouteInitialLoading = ref(
+    props.moduleKey === "households" &&
+        /^\/households\/\d+\/persons(?:\/create|\/\d+\/edit)?\/?$/.test(
+            window.location.pathname,
+        ),
+);
 const householdMemberDraftPrefix = "pcgd:household-member-draft";
 const householdEditPageCount = computed(() =>
     Math.max(
@@ -418,6 +425,40 @@ const householdEditPageCount = computed(() =>
         Math.ceil(householdEditPersons.value.length / householdEditPageSize),
     ),
 );
+const memberClientValidationErrors = computed<Record<string, string>>(() => {
+    if (!memberFormSubmitted.value) return {};
+
+    const errors: Record<string, string> = {};
+    const requiredFields: Record<string, string> = {
+        last_name: "Vui lòng nhập họ và tên đệm.",
+        first_name: "Vui lòng nhập tên.",
+        dob: "Vui lòng nhập ngày sinh.",
+        gender: "Vui lòng chọn giới tính.",
+        ethnicity_code: "Vui lòng chọn dân tộc.",
+        "education.school_year": "Vui lòng chọn năm học.",
+    };
+    if (!memberIsHead.value) {
+        requiredFields.relationship_with_head =
+            "Vui lòng chọn quan hệ với chủ hộ.";
+    }
+
+    for (const [field, message] of Object.entries(requiredFields)) {
+        const value =
+            field === "education.school_year"
+                ? educationForm.value.school_year
+                : memberForm.value[field];
+        if (!String(value ?? "").trim()) errors[field] = message;
+    }
+
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(
+        today.getMonth() + 1,
+    ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    if (memberForm.value.dob && memberForm.value.dob > todayString) {
+        errors.dob = "Ngày sinh không được lớn hơn ngày hiện tại.";
+    }
+    return errors;
+});
 watch(householdEditPageCount, (lastPage) => {
     if (householdEditPage.value > lastPage) {
         householdEditPage.value = lastPage;
@@ -427,6 +468,11 @@ const householdQuery = ref("");
 const householdSchoolYear = ref("");
 const householdFormSchoolYears = ref<string[]>([]);
 const personSchools = ref<Row[]>([]);
+const personSchoolSearch = ref("");
+const personSchoolSearchError = ref("");
+const personSchoolSearchLoading = ref(false);
+let personSchoolSearchTimer: number | undefined;
+let personSchoolSearchSequence = 0;
 const disabilityForm = ref<Record<string, string | boolean>>({});
 const householdSchoolYearOptions = Array.from({ length: 11 }, (_, index) => {
     const year = 2020 + index;
@@ -3563,7 +3609,8 @@ function mergeStoredStringFields(
 ): void {
     const stored = asRow(source);
     for (const key of Object.keys(target)) {
-        if (typeof stored[key] === "string") target[key] = stored[key] as string;
+        const value = stored[key];
+        if (typeof value === "string") target[key] = value;
     }
 }
 
@@ -3639,6 +3686,70 @@ function clearHouseholdMemberDraft(
     }
 }
 
+watch(personSchoolSearch, (value) => {
+    if (personSchoolSearchTimer !== undefined) {
+        window.clearTimeout(personSchoolSearchTimer);
+    }
+    const requestSequence = ++personSchoolSearchSequence;
+    const query = value.trim();
+    personSchoolSearchError.value = "";
+
+    if (query.length < 2) {
+        const selectedSchool = personSchools.value.find(
+            (school) =>
+                String(school.code) === educationForm.value.school_code,
+        );
+        personSchools.value = selectedSchool ? [selectedSchool] : [];
+        personSchoolSearchLoading.value = false;
+        return;
+    }
+
+    const selectedSchool = personSchools.value.find(
+        (school) => String(school.code) === educationForm.value.school_code,
+    );
+    personSchools.value = selectedSchool ? [selectedSchool] : [];
+    personSchoolSearchTimer = window.setTimeout(async () => {
+        const householdId =
+            householdDetail.value?.id ?? createdHouseholdId.value;
+        if (householdId === null || householdId === undefined) {
+            personSchoolSearchLoading.value = false;
+            return;
+        }
+
+        personSchoolSearchLoading.value = true;
+        try {
+            const response = await api.get<unknown>(
+                `/households/${householdId}/persons/schools`,
+                { params: { q: query } },
+            );
+            if (requestSequence !== personSchoolSearchSequence) return;
+
+            const schools = asRows(apiData<Row>(response.data).schools);
+            const selectedSchool = personSchools.value.find(
+                (school) =>
+                    String(school.code) === educationForm.value.school_code,
+            );
+            personSchools.value =
+                selectedSchool &&
+                !schools.some(
+                    (school) =>
+                        String(school.code) ===
+                        String(selectedSchool.code),
+                )
+                    ? [selectedSchool, ...schools]
+                    : schools;
+        } catch (cause) {
+            if (requestSequence === personSchoolSearchSequence) {
+                personSchoolSearchError.value = errorMessage(cause);
+            }
+        } finally {
+            if (requestSequence === personSchoolSearchSequence) {
+                personSchoolSearchLoading.value = false;
+            }
+        }
+    }, 250);
+});
+
 async function restoreHouseholdRoute(): Promise<void> {
     if (props.moduleKey !== "households" || householdRouteRestoreActive.value) {
         return;
@@ -3681,7 +3792,9 @@ async function restoreHouseholdRoute(): Promise<void> {
         form.value.school_year = String(
             householdDetail.value.school_year ?? "",
         );
-        await refreshHouseholdEditPersons(householdId);
+        if (!isCreateRoute || personId !== null) {
+            await refreshHouseholdEditPersons(householdId);
+        }
 
         if (isCreateRoute || personId !== null) {
             const person =
@@ -3690,17 +3803,25 @@ async function restoreHouseholdRoute(): Promise<void> {
                     : householdEditPersons.value.find(
                           (row) => Number(row.id) === personId,
                       ) ?? { id: personId };
-            await beginMember(isHead, person);
+            await beginMember(isHead, person, false);
             restoreHouseholdMemberDraft(householdId, personId);
+            memberEditorOpen.value = true;
         }
     } catch (cause) {
         error.value = errorMessage(cause);
     } finally {
         householdRouteRestoreActive.value = false;
+        householdRouteInitialLoading.value = false;
     }
 }
 
-async function beginMember(isHead: boolean, person?: Row): Promise<void> {
+async function beginMember(
+    isHead: boolean,
+    person?: Row,
+    openAfterLoading = true,
+): Promise<void> {
+    memberFormSubmitted.value = false;
+    memberFormErrors.value = {};
     const householdId =
         householdDetail.value?.id ??
         createdHouseholdId.value ??
@@ -3790,11 +3911,13 @@ async function beginMember(isHead: boolean, person?: Row): Promise<void> {
     ]);
     ethnicities.value = [];
     personSchools.value = [];
+    personSchoolSearch.value = "";
+    personSchoolSearchError.value = "";
     memberFormErrors.value = {};
     notice.value = "";
     error.value = "";
     householdFormSchoolYears.value = memberSchoolYearOptions;
-    memberEditorOpen.value = true;
+    memberEditorOpen.value = false;
     if (isHouseholdCreatePage.value && createdHouseholdId.value !== null) {
         const route =
             memberId.value === null
@@ -3879,8 +4002,11 @@ async function beginMember(isHead: boolean, person?: Row): Promise<void> {
         }
         ethnicities.value = asRows(result.ethnicities);
         personSchools.value = asRows(result.schools);
+        personSchoolSearch.value = String(personSchools.value[0]?.name ?? "");
     } catch (cause) {
         error.value = errorMessage(cause);
+    } finally {
+        if (openAfterLoading) memberEditorOpen.value = true;
     }
 }
 
@@ -3894,7 +4020,9 @@ async function saveMember(): Promise<void> {
             ? ""
             : String(householdIdValue);
     if (!householdId || memberBusy.value) return;
+    memberFormSubmitted.value = true;
     memberFormErrors.value = {};
+    if (Object.keys(memberClientValidationErrors.value).length > 0) return;
     const booleanDisability = Object.fromEntries(
         memberDisabilityOptions.map(({ key }) => [
             key,
@@ -6001,6 +6129,10 @@ function handleHouseholdRouteChange(): void {
 
 onUnmounted(() => {
     document.body.style.overflow = previousBodyOverflow;
+    if (personSchoolSearchTimer !== undefined) {
+        window.clearTimeout(personSchoolSearchTimer);
+    }
+    personSchoolSearchSequence += 1;
     window.removeEventListener("popstate", handleHouseholdRouteChange);
     window.removeEventListener(
         HOUSEHOLD_IMPORT_COMPLETED_EVENT,
@@ -6014,8 +6146,17 @@ onMounted(async () => {
         handleImportCompleted,
     );
     window.addEventListener("popstate", handleHouseholdRouteChange);
-    await load();
-    await restoreHouseholdRoute();
+    const isHouseholdPersonRoute =
+        props.moduleKey === "households" &&
+        /^\/households\/\d+\/persons(?:\/create|\/\d+\/edit)?\/?$/.test(
+            window.location.pathname,
+        );
+    if (isHouseholdPersonRoute) {
+        await restoreHouseholdRoute();
+    } else {
+        await load();
+        await restoreHouseholdRoute();
+    }
 });
 </script>
 
@@ -6027,6 +6168,7 @@ onMounted(async () => {
             'user-management-workspace': moduleKey === 'users',
             'workspace-imports': moduleKey === 'imports',
             'household-creation-active': householdCreationPageActive,
+            'household-route-initializing': householdRouteInitialLoading,
             'import-upload-only':
                 moduleKey === 'imports' && importView === 'upload',
         }"
@@ -6037,6 +6179,15 @@ onMounted(async () => {
                 : undefined
         "
     >
+        <div
+            v-if="householdRouteInitialLoading"
+            class="household-route-loading"
+            role="status"
+            aria-live="polite"
+        >
+            <span class="workspace-loading-indicator" aria-hidden="true"></span>
+            <span>Đang tải thông tin phiếu điều tra…</span>
+        </div>
         <header
             v-if="
                 ![
@@ -11888,6 +12039,7 @@ onMounted(async () => {
         >
             <form
                 class="workspace-form household-member-editor household-member-dialog"
+                novalidate
                 :class="{
                     'household-head-education-step':
                         !editing &&
@@ -11901,7 +12053,6 @@ onMounted(async () => {
             >
                 <header class="household-member-dialog-header">
                     <div>
-                        <span>THEO MẪU PHIẾU EXCEL</span>
                         <h3 id="household-member-form-title">
                             {{
                                 isHouseholdWizardMemberPage
@@ -11941,6 +12092,16 @@ onMounted(async () => {
                         >
                             {{ error }}
                         </p>
+                        <h4
+                            class="household-member-group-title household-member-person-title"
+                            data-step="01"
+                        >
+                            <span>Thông tin đối tượng</span>
+                            <small>
+                                Thông tin cá nhân và các thông tin nhận diện
+                                nhân khẩu
+                            </small>
+                        </h4>
                         <section
                             v-if="
                                 (memberIsHead &&
@@ -11951,7 +12112,6 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-person-section"
                         >
-                            <h4>Thông tin đối tượng</h4>
                             <label class="workspace-field">
                                 <span>Họ và tên đệm</span>
                                 <input
@@ -11959,13 +12119,23 @@ onMounted(async () => {
                                     type="text"
                                     required
                                     maxlength="50"
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.last_name ||
+                                            memberFormErrors.last_name,
+                                        )
+                                    "
                                 />
                                 <small
-                                    v-if="memberFormErrors.last_name"
-                                    class="field-error"
+                                    class="field-error household-member-required-error"
                                     role="alert"
-                                    >{{ memberFormErrors.last_name }}</small
                                 >
+                                    {{
+                                        memberClientValidationErrors.last_name ||
+                                        memberFormErrors.last_name ||
+                                        ""
+                                    }}
+                                </small>
                             </label>
                             <label class="workspace-field">
                                 <span>Tên</span>
@@ -11974,13 +12144,23 @@ onMounted(async () => {
                                     type="text"
                                     required
                                     maxlength="100"
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.first_name ||
+                                            memberFormErrors.first_name,
+                                        )
+                                    "
                                 />
                                 <small
-                                    v-if="memberFormErrors.first_name"
-                                    class="field-error"
+                                    class="field-error household-member-required-error"
                                     role="alert"
-                                    >{{ memberFormErrors.first_name }}</small
                                 >
+                                    {{
+                                        memberClientValidationErrors.first_name ||
+                                        memberFormErrors.first_name ||
+                                        ""
+                                    }}
+                                </small>
                             </label>
                             <label class="workspace-field">
                                 <span>Ngày sinh</span>
@@ -11988,32 +12168,61 @@ onMounted(async () => {
                                     v-model="memberForm.dob"
                                     type="date"
                                     required
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.dob ||
+                                            memberFormErrors.dob,
+                                        )
+                                    "
                                 />
                                 <small
-                                    v-if="memberFormErrors.dob"
-                                    class="field-error"
+                                    class="field-error household-member-required-error"
                                     role="alert"
-                                    >{{ memberFormErrors.dob }}</small
                                 >
+                                    {{
+                                        memberClientValidationErrors.dob ||
+                                        memberFormErrors.dob ||
+                                        ""
+                                    }}
+                                </small>
                             </label>
                             <label class="workspace-field">
                                 <span>Giới tính</span>
-                                <select v-model="memberForm.gender" required>
+                                <select
+                                    v-model="memberForm.gender"
+                                    required
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.gender ||
+                                            memberFormErrors.gender,
+                                        )
+                                    "
+                                >
                                     <option value="NAM">Nam</option>
                                     <option value="NU">Nữ</option>
                                 </select>
                                 <small
-                                    v-if="memberFormErrors.gender"
-                                    class="field-error"
+                                    class="field-error household-member-required-error"
                                     role="alert"
-                                    >{{ memberFormErrors.gender }}</small
                                 >
+                                    {{
+                                        memberClientValidationErrors.gender ||
+                                        memberFormErrors.gender ||
+                                        ""
+                                    }}
+                                </small>
                             </label>
                             <label class="workspace-field">
                                 <span>Dân tộc</span>
                                 <select
                                     v-model="memberForm.ethnicity_code"
                                     required
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.ethnicity_code ||
+                                            memberFormErrors.ethnicity_code,
+                                        )
+                                    "
                                 >
                                     <option value="">Chọn dân tộc</option>
                                     <option
@@ -12025,56 +12234,13 @@ onMounted(async () => {
                                     </option>
                                 </select>
                                 <small
-                                    v-if="memberFormErrors.ethnicity_code"
-                                    class="field-error"
-                                    role="alert"
-                                    >{{
-                                        memberFormErrors.ethnicity_code
-                                    }}</small
-                                >
-                            </label>
-                            <label v-if="memberIsHead" class="workspace-field">
-                                <span>Quan hệ với chủ hộ</span>
-                                <input
-                                    :value="
-                                        memberForm.relationship_with_head ||
-                                        'Chủ hộ'
-                                    "
-                                    type="text"
-                                    readonly
-                                />
-                            </label>
-                            <label v-else class="workspace-field">
-                                <span>Quan hệ với chủ hộ <b>*</b></span>
-                                <select
-                                    v-model="memberForm.relationship_with_head"
-                                    required
-                                >
-                                    <option value="">Chọn quan hệ</option>
-                                    <option
-                                        v-for="relationship in [
-                                            ...new Set(
-                                                [
-                                                    ...memberRelationships,
-                                                    memberForm.relationship_with_head,
-                                                ].filter(Boolean),
-                                            ),
-                                        ]"
-                                        :key="relationship"
-                                        :value="relationship"
-                                    >
-                                        {{ relationship }}
-                                    </option>
-                                </select>
-                                <small
-                                    v-if="
-                                        memberFormErrors.relationship_with_head
-                                    "
-                                    class="field-error"
+                                    class="field-error household-member-required-error"
                                     role="alert"
                                 >
                                     {{
-                                        memberFormErrors.relationship_with_head
+                                        memberClientValidationErrors.ethnicity_code ||
+                                        memberFormErrors.ethnicity_code ||
+                                        ""
                                     }}
                                 </small>
                             </label>
@@ -12092,81 +12258,18 @@ onMounted(async () => {
                                     type="text"
                                     maxlength="100"
                             /></label>
-                            <label class="workspace-field"
-                                ><span>Họ tên cha / mẹ</span
-                                ><input
-                                    v-model.trim="memberForm.parent_name"
-                                    type="text"
-                                    maxlength="150"
-                            /></label>
-                        </section>
-                        <section
-                            v-if="
-                                (memberIsHead &&
-                                    !editing &&
-                                    memberId === null) ||
-                                !memberIsHead ||
-                                headMemberEducationStep
-                            "
-                            class="household-member-form-section household-member-contact-section"
-                        >
-                            <h4>Thông tin liên lạc</h4>
-                            <label class="workspace-field"
-                                ><span>Số điện thoại</span
-                                ><input
-                                    v-model.trim="memberForm.phone"
-                                    type="tel"
-                                    maxlength="20"
-                            /></label>
-                            <label
-                                class="workspace-field household-member-wide-field"
-                                ><span>Ghi chú</span
-                                ><textarea
-                                    v-model.trim="memberForm.note"
-                                    rows="2"
-                                    maxlength="2000"
-                                ></textarea>
-                            </label>
-                        </section>
-                        <section
-                            v-if="
-                                (memberIsHead &&
-                                    !editing &&
-                                    memberId === null) ||
-                                !memberIsHead ||
-                                headMemberEducationStep
-                            "
-                            class="household-member-form-section household-member-disability-section"
-                        >
-                            <h4>Khuyết tật</h4>
-                            <div class="household-member-checkbox-grid">
-                                <label
-                                    v-for="option in memberDisabilityOptions"
-                                    :key="option.key"
-                                    class="household-member-checkbox"
-                                >
-                                    <input
-                                        v-model="disabilityForm[option.key]"
-                                        type="checkbox"
-                                    />
-                                    <span>{{ option.label }}</span>
-                                </label>
-                            </div>
-                            <label class="workspace-field">
-                                <span>Khả năng học tập</span>
-                                <select v-model="disabilityForm.can_study">
-                                    <option value="">Chưa xác định</option>
-                                    <option value="true">
-                                        Có khả năng học tập
-                                    </option>
-                                    <option value="false">
-                                        Không có khả năng học tập
-                                    </option>
-                                </select>
-                            </label>
                         </section>
                     </div>
                     <div class="household-member-create-column">
+                        <h4
+                            class="household-member-group-title household-member-education-title"
+                            data-step="02"
+                        >
+                            <span>Thông tin học tập</span>
+                            <small>
+                                Năm học, trường lớp và kết quả học tập
+                            </small>
+                        </h4>
                         <section
                             v-if="
                                 (memberIsHead &&
@@ -12177,12 +12280,24 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-education-section"
                         >
-                            <h4>Thông tin học tập</h4>
+                            <h5 class="household-member-subsection-title">
+                                Tình hình học tập
+                            </h5>
                             <label class="workspace-field">
                                 <span>Năm học</span>
                                 <select
                                     v-model="educationForm.school_year"
                                     required
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors[
+                                                'education.school_year'
+                                            ] ||
+                                            memberFormErrors[
+                                                'education.school_year'
+                                            ],
+                                        )
+                                    "
                                 >
                                     <option value="">Chọn năm học</option>
                                     <option
@@ -12201,22 +12316,52 @@ onMounted(async () => {
                                     </option>
                                 </select>
                                 <small
-                                    v-if="
-                                        memberFormErrors[
-                                            'education.school_year'
-                                        ]
-                                    "
-                                    class="field-error"
+                                    class="field-error household-member-required-error"
                                     role="alert"
-                                    >{{
+                                >
+                                    {{
+                                        memberClientValidationErrors[
+                                            "education.school_year"
+                                        ] ||
                                         memberFormErrors[
                                             "education.school_year"
-                                        ]
-                                    }}</small
-                                >
+                                        ] ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Khối học</span
+                                ><input
+                                    v-model.trim="educationForm.academic_block"
+                                    type="text"
+                                    maxlength="50"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Lớp học</span
+                                ><input
+                                    v-model.trim="educationForm.current_class"
+                                    type="text"
+                                    maxlength="50"
+                            /></label>
+                            <label class="workspace-field">
+                                <span>Tìm trường học theo tên hoặc mã</span>
+                                <input
+                                    v-model.trim="personSchoolSearch"
+                                    type="search"
+                                    maxlength="100"
+                                    placeholder="Nhập ít nhất 2 ký tự"
+                                    autocomplete="off"
+                                />
+                                <small v-if="personSchoolSearchLoading">Đang tìm trường...</small>
+                                <small
+                                    v-if="personSchoolSearchError"
+                                    class="field-error"
+                                    role="alert"
+                                >{{ personSchoolSearchError }}</small>
                             </label>
                             <label class="workspace-field">
-                                <span>Trường học</span>
+                                <span>Trường học / Mã trường</span>
                                 <select v-model="educationForm.school_code">
                                     <option value="">Chưa chọn trường</option>
                                     <option
@@ -12237,20 +12382,13 @@ onMounted(async () => {
                                     role="alert"
                                     >{{
                                         memberFormErrors[
-                                            "education.school_code"
+                                            'education.school_code'
                                         ]
                                     }}</small
                                 >
                             </label>
-                            <label class="workspace-field"
-                                ><span>Lớp hiện tại</span
-                                ><input
-                                    v-model.trim="educationForm.current_class"
-                                    type="text"
-                                    maxlength="50"
-                            /></label>
                             <label class="workspace-field">
-                                <span>Trình độ phổ cập</span>
+                                <span>Bậc tốt nghiệp</span>
                                 <select
                                     v-model="educationForm.graduation_level"
                                 >
@@ -12265,6 +12403,9 @@ onMounted(async () => {
                                     </option>
                                 </select>
                             </label>
+                            <h5 class="household-member-subsection-title">
+                                Kết quả và quá trình học
+                            </h5>
                             <label class="workspace-field"
                                 ><span>Năm tốt nghiệp</span
                                 ><input
@@ -12282,7 +12423,7 @@ onMounted(async () => {
                                 </select>
                             </label>
                             <label class="workspace-field"
-                                ><span>Trình độ tốt nghiệp nghề</span
+                                ><span>Bậc tốt nghiệp nghề</span
                                 ><input
                                     v-model.trim="
                                         educationForm.vocational_grad_level
@@ -12328,6 +12469,16 @@ onMounted(async () => {
                                     maxlength="20"
                             /></label>
                         </section>
+                        <h4
+                            class="household-member-group-title household-member-literacy-title"
+                            data-step="03"
+                        >
+                            <span>Xóa mù chữ</span>
+                            <small>
+                                Thông tin học tập và hoàn thành chương trình
+                                xóa mù chữ
+                            </small>
+                        </h4>
                         <section
                             v-if="
                                 (memberIsHead &&
@@ -12338,7 +12489,6 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-literacy-section"
                         >
-                            <h4>Xóa mù chữ</h4>
                             <label class="workspace-field"
                                 ><span>Đang học lớp</span
                                 ><input
@@ -12349,7 +12499,7 @@ onMounted(async () => {
                                     maxlength="20"
                             /></label>
                             <label class="workspace-field"
-                                ><span>Lớp XMC đã hoàn thành</span
+                                ><span>Hoàn thành lớp</span
                                 ><input
                                     v-model.trim="
                                         educationForm.literacy_completed_class
@@ -12369,16 +12519,17 @@ onMounted(async () => {
                                     <option value="2">Mức độ 2</option>
                                 </select>
                             </label>
-                            <label class="workspace-field"
-                                ><span>Khả năng học tập</span
-                                ><input
-                                    v-model.trim="
-                                        educationForm.learning_capacity
-                                    "
-                                    type="text"
-                                    maxlength="50"
-                            /></label>
                         </section>
+                        <h4
+                            class="household-member-group-title household-member-circumstance-title"
+                            data-step="05"
+                        >
+                            <span>Hoàn cảnh</span>
+                            <small>
+                                Ghi nhận hoàn cảnh đặc biệt và thông tin chi
+                                tiết
+                            </small>
+                        </h4>
                         <section
                             v-if="
                                 (memberIsHead &&
@@ -12389,7 +12540,6 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-circumstance-section"
                         >
-                            <h4>Hoàn cảnh</h4>
                             <label class="workspace-field">
                                 <span>Hoàn cảnh đặc biệt</span>
                                 <select
@@ -12423,6 +12573,151 @@ onMounted(async () => {
                                                 $event.target as HTMLTextAreaElement
                                             ).value
                                     "
+                                ></textarea>
+                            </label>
+                        </section>
+                    </div>
+                    <div class="household-member-create-column">
+                        <h4
+                            class="household-member-group-title household-member-disability-title"
+                            data-step="04"
+                        >
+                            <span>Khuyết tật</span>
+                            <small>
+                                Tình trạng khuyết tật và khả năng học tập
+                            </small>
+                        </h4>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
+                            "
+                            class="household-member-form-section household-member-disability-section"
+                        >
+                            <div class="household-member-checkbox-grid">
+                                <label
+                                    v-for="option in memberDisabilityOptions"
+                                    :key="option.key"
+                                    class="household-member-checkbox"
+                                >
+                                    <input
+                                        v-model="disabilityForm[option.key]"
+                                        type="checkbox"
+                                    />
+                                    <span>{{ option.label }}</span>
+                                </label>
+                            </div>
+                            <label class="workspace-field">
+                                <span>Khả năng học tập</span>
+                                <select v-model="disabilityForm.can_study">
+                                    <option value="">Chưa xác định</option>
+                                    <option value="true">
+                                        Có khả năng học tập
+                                    </option>
+                                    <option value="false">
+                                        Không có khả năng học tập
+                                    </option>
+                                </select>
+                            </label>
+                        </section>
+                    </div>
+                    <div class="household-member-create-column">
+                        <h4
+                            class="household-member-group-title household-member-contact-title"
+                            data-step="06"
+                        >
+                            <span>Thông tin liên lạc</span>
+                            <small>
+                                Quan hệ với chủ hộ, cha mẹ và thông tin liên hệ
+                            </small>
+                        </h4>
+                        <section
+                            v-if="
+                                (memberIsHead &&
+                                    !editing &&
+                                    memberId === null) ||
+                                !memberIsHead ||
+                                headMemberEducationStep
+                            "
+                            class="household-member-form-section household-member-contact-section"
+                        >
+                            <label
+                                v-if="memberIsHead"
+                                class="workspace-field"
+                            >
+                                <span>Quan hệ với chủ hộ</span>
+                                <input
+                                    :value="
+                                        memberForm.relationship_with_head ||
+                                        'Chủ hộ'
+                                    "
+                                    type="text"
+                                    readonly
+                                />
+                            </label>
+                            <label v-else class="workspace-field">
+                                <span>Quan hệ với chủ hộ</span>
+                                <select
+                                    v-model="memberForm.relationship_with_head"
+                                    required
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors.relationship_with_head ||
+                                            memberFormErrors.relationship_with_head,
+                                        )
+                                    "
+                                >
+                                    <option value="">Chọn quan hệ</option>
+                                    <option
+                                        v-for="relationship in [
+                                            ...new Set(
+                                                [
+                                                    ...memberRelationships,
+                                                    memberForm.relationship_with_head,
+                                                ].filter(Boolean),
+                                            ),
+                                        ]"
+                                        :key="relationship"
+                                        :value="relationship"
+                                    >
+                                        {{ relationship }}
+                                    </option>
+                                </select>
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors.relationship_with_head ||
+                                        memberFormErrors.relationship_with_head ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
+                            <label class="workspace-field"
+                                ><span>Họ tên cha hoặc mẹ</span
+                                ><input
+                                    v-model.trim="memberForm.parent_name"
+                                    type="text"
+                                    maxlength="150"
+                            /></label>
+                            <label class="workspace-field"
+                                ><span>Điện thoại</span
+                                ><input
+                                    v-model.trim="memberForm.phone"
+                                    type="tel"
+                                    maxlength="20"
+                            /></label>
+                            <label
+                                class="workspace-field household-member-wide-field"
+                                ><span>Ghi chú</span
+                                ><textarea
+                                    v-model.trim="memberForm.note"
+                                    rows="2"
+                                    maxlength="2000"
                                 ></textarea>
                             </label>
                         </section>

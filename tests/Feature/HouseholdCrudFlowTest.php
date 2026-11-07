@@ -67,7 +67,10 @@ class HouseholdCrudFlowTest extends TestCase
 
     public function test_household_creation_rejects_a_commune_outside_the_users_area(): void
     {
-        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $user = $this->userWithPermissions([
+            AccessPermission::VIEW_HOUSEHOLDS,
+            AccessPermission::CREATE_HOUSEHOLDS,
+        ]);
 
         $this->actingAs($user)
             ->postJson(route('api.households.store'), [
@@ -447,9 +450,14 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertDatabaseHas('persons', [
             'household_id' => $household->id,
-            'first_name' => 'An',
-            'last_name' => 'Nguyễn',
+            'first_name' => 'Bình',
+            'last_name' => 'Trần',
             'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $this->assertDatabaseHas('households', [
+            'id' => $household->id,
+            'head_first_name' => 'Bình',
+            'head_last_name' => 'Trần',
         ]);
 
         $this->postJson(route('api.households.persons.store', $household).'?is_head=1', $this->personPayload(null))
@@ -473,6 +481,26 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('person_educations', [
             'current_class' => '12A1',
             'academic_block' => '12',
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
+        ]);
+    }
+
+    public function test_explicit_academic_block_is_preserved_when_saving_a_person(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['education']['academic_block'] = '5';
+        $payload['education']['current_class'] = 'Lớp Năm';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertCreated();
+
+        $this->assertDatabaseHas('person_educations', [
+            'current_class' => 'Lớp Năm',
+            'academic_block' => '5',
             'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
         ]);
     }
@@ -1873,6 +1901,42 @@ class HouseholdCrudFlowTest extends TestCase
         $this->getJson('/api/v1/communes/C02/villages')
             ->assertOk()
             ->assertJsonCount(0, 'data');
+    }
+
+    public function test_person_school_search_is_scoped_and_available_to_household_creators(): void
+    {
+        DB::table('schools')->insert([
+            [
+                'code' => 'S01',
+                'name' => 'Trường trong xã',
+                'level' => 'TH',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S02',
+                'name' => 'Trường ngoài địa bàn',
+                'level' => 'TH',
+                'province_code' => 'P02',
+                'commune_code' => 'C02',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/households/{$household->id}/persons/schools?q=Trường")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.schools')
+            ->assertJsonPath('data.schools.0.code', 'S01');
+
+        $this->getJson("/api/v1/households/{$household->id}/persons/form?is_head=1")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.schools');
     }
 
     public function test_import_completion_notifications_are_persistent_and_scoped_to_the_owner(): void

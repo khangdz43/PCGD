@@ -7,6 +7,7 @@ use App\Models\Household;
 use App\Models\Person;
 use App\Models\PersonEducation;
 use App\Models\Role;
+use App\Models\School;
 use App\Models\SchoolYear;
 use App\Services\Households\HouseholdPersonService;
 use App\Support\DataAccessScope;
@@ -64,6 +65,35 @@ class HouseholdPersonController extends Controller
             'is_household_head' => $isHouseholdHead,
             ...$formData,
         ]);
+    }
+
+    public function schoolOptions(Request $request, Household $household)
+    {
+        $this->assertHouseholdAccess($request, $household);
+        $filters = $request->validate([
+            'q' => ['required', 'string', 'min:2', 'max:100'],
+        ]);
+        $user = $request->user();
+        $search = trim($filters['q']);
+        $query = School::query()->where('is_active', true);
+
+        if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
+            $query->where('province_code', $user->province_code);
+            if ($user->roleScopeLevel() === 'commune') {
+                $query->where('commune_code', $user->commune_code);
+            }
+        }
+
+        $schools = $query
+            ->where(function ($builder) use ($search): void {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            })
+            ->orderBy('name')
+            ->limit(50)
+            ->get(['code', 'name', 'level', 'province_code', 'commune_code']);
+
+        return response()->json(['schools' => $schools]);
     }
 
     public function store(Request $request, Household $household)

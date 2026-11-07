@@ -88,22 +88,27 @@ class HouseholdPersonService
         $disability ??= new PersonDisability;
 
         $provinceQuery = Province::query()->orderBy('name');
-        $schoolQuery = School::query()->where('is_active', true)->orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             $provinceQuery->where('code', $user->province_code);
-            if ($user->roleScopeLevel() === 'commune') {
-                $schoolQuery->where('commune_code', $user->commune_code);
-            } else {
-                $schoolQuery->where('province_code', $user->province_code);
-            }
         }
+        $selectedSchool = $education->school_code
+            ? $education->school
+            : null;
 
         return [
             'education' => $education,
             'disability' => $disability,
             'ethnicities' => Ethnicity::orderBy('name')->get(['code', 'name']),
             'provinces' => $provinceQuery->get(['code', 'name']),
-            'schools' => $schoolQuery->get(['code', 'name', 'level', 'province_code', 'commune_code']),
+            'schools' => $selectedSchool
+                ? [[
+                    'code' => $selectedSchool->code,
+                    'name' => $selectedSchool->name,
+                    'level' => $selectedSchool->level,
+                    'province_code' => $selectedSchool->province_code,
+                    'commune_code' => $selectedSchool->commune_code,
+                ]]
+                : [],
         ];
     }
 
@@ -131,8 +136,6 @@ class HouseholdPersonService
     public function create(Household $household, array $data, bool $isHouseholdHead): Person
     {
         if ($isHouseholdHead) {
-            $data['last_name'] = $household->head_last_name;
-            $data['first_name'] = $household->head_first_name;
             $data['relationship_with_head'] = 'Chủ hộ';
         }
         [$personData, $educationData, $disabilityData] = $this->splitFormData($data);
@@ -140,6 +143,12 @@ class HouseholdPersonService
         return DB::transaction(function () use ($household, $personData, $educationData, $disabilityData): Person {
             $this->lockOpenVillages([$household->village_code]);
             $person = $household->persons()->create($personData);
+            if ($person->relationship_with_head === 'Chủ hộ') {
+                $household->update([
+                    'head_first_name' => $person->first_name,
+                    'head_last_name' => $person->last_name,
+                ]);
+            }
             $person->educations()->create($educationData);
             $person->disability()->create($disabilityData);
 
@@ -268,8 +277,10 @@ class HouseholdPersonService
         $educationData['school_year_id'] = $schoolYear->id;
         unset($educationData['school_year']);
         $educationData['is_complementary'] = (bool) ($educationData['is_complementary'] ?? false);
-        preg_match('/\d+/u', (string) ($educationData['current_class'] ?? ''), $classNumber);
-        $educationData['academic_block'] = $classNumber[0] ?? null;
+        if (blank($educationData['academic_block'] ?? null)) {
+            preg_match('/\d+/u', (string) ($educationData['current_class'] ?? ''), $classNumber);
+            $educationData['academic_block'] = $classNumber[0] ?? null;
+        }
 
         $disabilityData = $data['disability'] ?? [];
         foreach ($this->disabilityBooleanFields() as $field) {

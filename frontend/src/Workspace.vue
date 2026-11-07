@@ -12571,7 +12571,9 @@ onMounted(async () => {
                             <h5 class="household-member-subsection-title">
                                 Tình hình học tập
                             </h5>
-                            <label class="workspace-field">
+                            <label
+                                class="workspace-field household-member-compact-field"
+                            >
                                 <span>Năm học</span>
                                 <input
                                     v-model="educationForm.school_year"
@@ -12605,14 +12607,16 @@ onMounted(async () => {
                                     }}
                                 </small>
                             </label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Lớp học</span
                                 ><input
                                     v-model.trim="educationForm.current_class"
                                     type="text"
                                     maxlength="50"
                             /></label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-mini-field"
                                 ><span>Khối học (tự động)</span
                                 ><input
                                     v-model="educationForm.academic_block"
@@ -12687,7 +12691,8 @@ onMounted(async () => {
                             <h5 class="household-member-subsection-title">
                                 Kết quả và quá trình học
                             </h5>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Năm tốt nghiệp</span
                                 ><input
                                     v-model.trim="educationForm.graduation_year"
@@ -12737,7 +12742,8 @@ onMounted(async () => {
                                     type="text"
                                     maxlength="50"
                             /></label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Năm tốt nghiệp nghề</span
                                 ><input
                                     v-model.trim="
@@ -12771,14 +12777,16 @@ onMounted(async () => {
                                     }}
                                 </small>
                             </label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Lớp đã hoàn thành</span
                                 ><input
                                     v-model.trim="educationForm.finished_class"
                                     type="text"
                                     maxlength="20"
                             /></label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Năm hoàn thành lớp</span
                                 ><input
                                     v-model.trim="educationForm.finished_year"
@@ -12810,14 +12818,16 @@ onMounted(async () => {
                                     }}
                                 </small>
                             </label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Lớp đã bỏ học</span
                                 ><input
                                     v-model.trim="educationForm.dropped_class"
                                     type="text"
                                     maxlength="20"
                             /></label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Năm bỏ học</span
                                 ><input
                                     v-model.trim="educationForm.dropped_year"
@@ -12871,7 +12881,8 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-literacy-section"
                         >
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Đang học lớp</span
                                 ><input
                                     v-model.trim="
@@ -12880,7 +12891,8 @@ onMounted(async () => {
                                     type="text"
                                     maxlength="20"
                             /></label>
-                            <label class="workspace-field"
+                            <label
+                                class="workspace-field household-member-compact-field"
                                 ><span>Hoàn thành lớp</span
                                 ><input
                                     v-model.trim="
@@ -12889,7 +12901,9 @@ onMounted(async () => {
                                     type="text"
                                     maxlength="20"
                             /></label>
-                            <label class="workspace-field">
+                            <label
+                                class="workspace-field household-member-compact-field"
+                            >
                                 <span>Mức độ tái mù chữ</span>
                                 <select
                                     v-model="
@@ -12923,7 +12937,9 @@ onMounted(async () => {
                             "
                             class="household-member-form-section household-member-circumstance-section"
                         >
-                            <label class="workspace-field">
+                            <label
+                                class="workspace-field household-member-compact-field"
+                            >
                                 <span>Hoàn cảnh đặc biệt</span>
                                 <select
                                     v-model="
@@ -12994,7 +13010,9 @@ onMounted(async () => {
                                     <span>{{ option.label }}</span>
                                 </label>
                             </div>
-                            <label class="workspace-field">
+                            <label
+                                class="workspace-field household-member-compact-field"
+                            >
                                 <span>Khả năng học tập</span>
                                 <select v-model="disabilityForm.can_study">
                                     <option value="">Chưa xác định</option>

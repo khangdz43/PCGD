@@ -2017,6 +2017,12 @@ h2 {
     height: 32px;
 }
 
+.household-member-dialog .workspace-field input.household-member-locked-field {
+    background: #f1f5f9;
+    color: #64748b;
+    cursor: not-allowed;
+}
+
 .household-member-dialog .household-member-form-section h4 {
     font-size: 12px;
 }

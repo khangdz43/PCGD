@@ -646,6 +646,12 @@ const isHouseholdCreateContinuationPage = computed(
 const isHouseholdWizardMemberPage = computed(
     () => isHouseholdCreateContinuationPage.value && memberEditorOpen.value,
 );
+const isNewHouseholdHead = computed(
+    () =>
+        isHouseholdWizardMemberPage.value &&
+        memberIsHead.value &&
+        memberId.value === null,
+);
 const householdCreationPageActive = computed(
     () =>
         isHouseholdCreatePage.value &&
@@ -12119,6 +12125,11 @@ onMounted(async () => {
                                     type="text"
                                     required
                                     maxlength="50"
+                                    :readonly="isNewHouseholdHead"
+                                    :class="{
+                                        'household-member-locked-field':
+                                            isNewHouseholdHead,
+                                    }"
                                     :aria-invalid="
                                         Boolean(
                                             memberClientValidationErrors.last_name ||
@@ -12126,6 +12137,7 @@ onMounted(async () => {
                                         )
                                     "
                                 />
+                                
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"
@@ -12144,6 +12156,11 @@ onMounted(async () => {
                                     type="text"
                                     required
                                     maxlength="100"
+                                    :readonly="isNewHouseholdHead"
+                                    :class="{
+                                        'household-member-locked-field':
+                                            isNewHouseholdHead,
+                                    }"
                                     :aria-invalid="
                                         Boolean(
                                             memberClientValidationErrors.first_name ||
@@ -12151,6 +12168,7 @@ onMounted(async () => {
                                         )
                                     "
                                 />
+                     
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"

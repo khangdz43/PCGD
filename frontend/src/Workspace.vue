@@ -657,8 +657,7 @@ const isHouseholdWizardMemberPage = computed(
 const isNewHouseholdHead = computed(
     () =>
         isHouseholdWizardMemberPage.value &&
-        memberIsHead.value &&
-        memberId.value === null,
+        memberIsHead.value,
 );
 const householdCreationPageActive = computed(
     () =>
@@ -3513,6 +3512,7 @@ function editUserDetail(): void {
 }
 
 function closeHouseholdDetail(): void {
+    notice.value = "";
     householdDetail.value = null;
     householdDetailReadOnly.value = false;
     householdListRow.value = null;
@@ -3695,6 +3695,7 @@ function restoreHouseholdCreationDraft(
     try {
         const draft = asRow(JSON.parse(raw));
         for (const key of Object.keys(form.value)) {
+            if (key === "household_code") continue;
             const value = draft[key];
             if (typeof value === "string") form.value[key] = value;
         }
@@ -4228,10 +4229,7 @@ async function saveMember(): Promise<void> {
                 true,
             );
         }
-        notice.value =
-            memberId.value === null
-                ? "Đã thêm nhân khẩu."
-                : "Đã cập nhật nhân khẩu.";
+        notice.value = "";
         if (
             !editing.value &&
             props.moduleKey === "households" &&
@@ -4288,34 +4286,6 @@ async function finishHouseholdCreation(): Promise<void> {
     createdHouseholdId.value = null;
     createHouseholdWizardStep.value = 1;
     setHouseholdUrl("/households", true);
-}
-
-function goBackHouseholdCreation(): void {
-    if (!isHouseholdCreatePage.value || memberBusy.value || busy.value) return;
-
-    if (memberEditorOpen.value && createHouseholdWizardStep.value === 2) {
-        memberEditorOpen.value = false;
-        createHouseholdWizardStep.value = 1;
-        return;
-    }
-
-    if (memberEditorOpen.value && createHouseholdWizardStep.value === 3) {
-        memberEditorOpen.value = false;
-        return;
-    }
-
-    if (!memberEditorOpen.value && createHouseholdWizardStep.value === 3) {
-        const head = householdEditPersons.value.find(
-            (person) => person.relationship_with_head === "Chủ hộ",
-        );
-        if (head) {
-            createHouseholdWizardStep.value = 2;
-            void beginMember(true, head);
-        }
-        return;
-    }
-
-    closeConfigurationForm();
 }
 
 async function refreshHouseholdEditPersons(
@@ -6986,7 +6956,7 @@ onMounted(async () => {
             {{ error }}
         </p>
         <p
-            v-if="notice && moduleKey !== 'trash'"
+            v-if="notice && !['trash', 'households'].includes(moduleKey)"
             class="success-notice"
             role="status"
         >
@@ -7095,8 +7065,7 @@ onMounted(async () => {
                             !(
                                 moduleKey === 'households' &&
                                 !editing &&
-                                (field === 'household_code' ||
-                                    createHouseholdWizardStep !== 1)
+                                field === 'household_code'
                             ) &&
                             !(
                                 field === 'scope_level' &&
@@ -7121,6 +7090,17 @@ onMounted(async () => {
                                 ? "Thông tin nơi đang ở"
                                 : "Thông tin đối tượng và chủ hộ"
                         }}
+                        <span
+                            v-if="
+                                isHouseholdCreatePage &&
+                                (field === 'household_code' ||
+                                    field === 'school_year') &&
+                                String(form.household_code ?? '').trim()
+                            "
+                            class="household-form-section-code"
+                        >
+                            Mã phiếu: {{ form.household_code }}
+                        </span>
                     </h4>
                     <label
                         v-if="
@@ -7166,14 +7146,16 @@ onMounted(async () => {
                                     (moduleKey === 'households' &&
                                         [
                                             'school_year',
-                                            'household_code',
                                             'head_last_name',
                                             'head_first_name',
                                             'province_code',
                                             'commune_code',
                                             'village_code',
                                             'residence_type',
-                                        ].includes(field)),
+                                        ].includes(field)) ||
+                                    (moduleKey === 'households' &&
+                                        field === 'household_code' &&
+                                        editing),
                             }"
                         >
                             {{
@@ -7476,6 +7458,11 @@ onMounted(async () => {
                         <input
                             v-else
                             v-model="form[field]"
+                            :readonly="
+                                moduleKey === 'households' &&
+                                field === 'household_code' &&
+                                !editing
+                            "
                             @input="sanitizeUserNumericInput($event, field)"
                             :type="
                                 field.includes('password')
@@ -7534,10 +7521,12 @@ onMounted(async () => {
                                             field === 'name'))) ||
                                 (moduleKey === 'households' &&
                                     [
-                                        'household_code',
                                         'head_first_name',
                                         'head_last_name',
                                     ].includes(field)) ||
+                                (moduleKey === 'households' &&
+                                    field === 'household_code' &&
+                                    editing) ||
                                 (moduleKey === 'villages' &&
                                     field === 'name') ||
                                 (moduleKey === 'merge' &&
@@ -8848,20 +8837,17 @@ onMounted(async () => {
                         }}
                     </button>
                     <button
+                        v-if="!isHouseholdCreatePage"
                         class="secondary-button"
                         type="button"
                         @click="
-                            isHouseholdCreatePage
-                                ? goBackHouseholdCreation()
-                                : moduleKey === 'merge'
-                                  ? clearVillageMergeSelection()
-                                  : closeConfigurationForm()
+                            moduleKey === 'merge'
+                                ? clearVillageMergeSelection()
+                                : closeConfigurationForm()
                         "
                     >
                         {{
-                            isHouseholdCreatePage
-                                ? "Quay lại"
-                                : moduleKey === "merge"
+                            moduleKey === "merge"
                                   ? "Xóa lựa chọn"
                                   : "Hủy"
                         }}
@@ -8881,7 +8867,16 @@ onMounted(async () => {
             <header class="household-create-members-heading">
                 <div>
                     <p class="workspace-eyebrow">TẠO MỚI PHIẾU ĐIỀU TRA</p>
-                    <h3>Thành viên hộ gia đình</h3>
+                    <h3>
+                        Thành viên hộ gia đình
+                        <span
+                            v-if="String(form.household_code ?? '').trim()"
+                            class="household-number-label"
+                            :aria-label="`Mã phiếu ${form.household_code}`"
+                        >
+                            · Mã phiếu: {{ form.household_code }}
+                        </span>
+                    </h3>
                     <p>
                         Chủ hộ đã được lưu. Thêm các thành viên còn lại hoặc
                         hoàn tất phiếu.
@@ -8929,14 +8924,6 @@ onMounted(async () => {
                     @click="finishHouseholdCreation"
                 >
                     Hoàn tất phiếu
-                </button>
-                <button
-                    class="secondary-button"
-                    type="button"
-                    :disabled="busy || memberBusy"
-                    @click="goBackHouseholdCreation"
-                >
-                    Quay lại chủ hộ
                 </button>
             </footer>
         </section>
@@ -10944,13 +10931,6 @@ onMounted(async () => {
                     Đang tải thông tin nhân khẩu…
                 </p>
                 <p
-                    v-if="notice"
-                    class="success-notice household-detail-notice"
-                    role="status"
-                >
-                    {{ notice }}
-                </p>
-                <p
                     v-if="error && !memberEditorOpen"
                     class="notice household-detail-notice"
                     role="alert"
@@ -12272,6 +12252,16 @@ onMounted(async () => {
                             }}
                         </h3>
                     </div>
+                    <span
+                        v-if="
+                            isHouseholdWizardMemberPage &&
+                            String(form.household_code ?? '').trim()
+                        "
+                        class="household-number-label"
+                        :aria-label="`Mã phiếu ${form.household_code}`"
+                    >
+                        Mã phiếu: {{ form.household_code }}
+                    </span>
                     <button
                         v-if="!isHouseholdWizardMemberPage"
                         class="modal-icon-button"
@@ -12304,6 +12294,7 @@ onMounted(async () => {
                         </h4>
                         <section
                             v-if="
+                                isHouseholdWizardMemberPage ||
                                 (memberIsHead &&
                                     !editing &&
                                     memberId === null) ||
@@ -12484,6 +12475,7 @@ onMounted(async () => {
                         </h4>
                         <section
                             v-if="
+                                isHouseholdWizardMemberPage ||
                                 (memberIsHead &&
                                     !editing &&
                                     memberId === null) ||
@@ -12693,6 +12685,7 @@ onMounted(async () => {
                         </h4>
                         <section
                             v-if="
+                                isHouseholdWizardMemberPage ||
                                 (memberIsHead &&
                                     !editing &&
                                     memberId === null) ||
@@ -12744,6 +12737,7 @@ onMounted(async () => {
                         </h4>
                         <section
                             v-if="
+                                isHouseholdWizardMemberPage ||
                                 (memberIsHead &&
                                     !editing &&
                                     memberId === null) ||
@@ -12801,6 +12795,7 @@ onMounted(async () => {
                         </h4>
                         <section
                             v-if="
+                                isHouseholdWizardMemberPage ||
                                 (memberIsHead &&
                                     !editing &&
                                     memberId === null) ||
@@ -12848,6 +12843,7 @@ onMounted(async () => {
                         </h4>
                         <section
                             v-if="
+                                isHouseholdWizardMemberPage ||
                                 (memberIsHead &&
                                     !editing &&
                                     memberId === null) ||
@@ -12950,16 +12946,13 @@ onMounted(async () => {
                         }}
                     </button>
                     <button
+                        v-if="!isHouseholdWizardMemberPage"
                         class="secondary-button"
                         type="button"
                         :disabled="memberBusy"
-                        @click="
-                            isHouseholdWizardMemberPage
-                                ? goBackHouseholdCreation()
-                                : (memberEditorOpen = false)
-                        "
+                        @click="memberEditorOpen = false"
                     >
-                        {{ isHouseholdWizardMemberPage ? "Quay lại" : "Hủy" }}
+                        Hủy
                     </button>
                 </div>
             </form>

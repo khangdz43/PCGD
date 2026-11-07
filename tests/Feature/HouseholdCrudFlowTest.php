@@ -42,6 +42,11 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->actingAs($user)
+            ->getJson(route('api.households.create'))
+            ->assertOk()
+            ->assertJsonPath('data.household.household_code', '01');
+
+        $this->actingAs($user)
             ->postJson(route('api.households.store'), [
                 'school_year' => $this->currentSchoolYear(),
                 'head_first_name' => 'An',

@@ -3534,7 +3534,11 @@ h2 {
 }
 
 .household-configuration-form .household-form-section-heading {
+    display: flex;
     grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     margin: 2px 0 -1px;
     padding: 5px 10px;
     border: 1px solid #e5ebf3;
@@ -3542,6 +3546,25 @@ h2 {
     background: #f4f7fb;
     color: #35445c;
     font-size: .88rem;
+}
+
+.household-form-section-code {
+    color: #526178;
+    font-size: .82rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.household-number-label {
+    color: #526178;
+    font-size: .85rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.household-member-dialog-header .household-number-label {
+    margin-left: auto;
+    align-self: center;
 }
 
 .household-configuration-form .household-form-section-heading:not(:first-of-type) {

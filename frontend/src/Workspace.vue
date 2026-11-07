@@ -410,6 +410,7 @@ const pendingHouseholdPersonDelete = ref<Row | null>(null);
 const memberBusy = ref(false);
 const memberFormErrors = ref<Record<string, string>>({});
 const memberFormSubmitted = ref(false);
+const memberEditorForm = ref<HTMLFormElement | null>(null);
 const restoringHouseholdMemberDraft = ref(false);
 const householdRouteRestoreActive = ref(false);
 const householdRouteInitialLoading = ref(
@@ -4028,7 +4029,11 @@ async function saveMember(): Promise<void> {
     if (!householdId || memberBusy.value) return;
     memberFormSubmitted.value = true;
     memberFormErrors.value = {};
-    if (Object.keys(memberClientValidationErrors.value).length > 0) return;
+    if (Object.keys(memberClientValidationErrors.value).length > 0) {
+        await nextTick();
+        scrollToFirstMemberError();
+        return;
+    }
     const booleanDisability = Object.fromEntries(
         memberDisabilityOptions.map(({ key }) => [
             key,
@@ -4094,14 +4099,41 @@ async function saveMember(): Promise<void> {
         }
     } catch (cause) {
         memberFormErrors.value = validationErrors(cause);
-        managementResult.value = {
-            success: false,
-            title: "Không thể lưu nhân khẩu",
-            message: errorMessage(cause),
-        };
+        if (Object.keys(memberFormErrors.value).length > 0) {
+            await nextTick();
+            scrollToFirstMemberError();
+        } else {
+            managementResult.value = {
+                success: false,
+                title: "Không thể lưu nhân khẩu",
+                message: errorMessage(cause),
+            };
+        }
     } finally {
         memberBusy.value = false;
     }
+}
+
+function scrollToFirstMemberError(): void {
+    const formElement = memberEditorForm.value;
+    if (!formElement) return;
+
+    const errorElement = Array.from(
+        formElement.querySelectorAll<HTMLElement>(".field-error"),
+    ).find(
+        (element) =>
+            element.textContent?.trim() &&
+            element.getClientRects().length > 0,
+    );
+    const field = errorElement?.closest<HTMLElement>(".workspace-field");
+    if (!field) return;
+
+    field.scrollIntoView({ behavior: "smooth", block: "center" });
+    field
+        .querySelector<HTMLElement>(
+            "input:not([type='hidden']), select, textarea",
+        )
+        ?.focus({ preventScroll: true });
 }
 
 async function finishHouseholdCreation(): Promise<void> {
@@ -12044,6 +12076,7 @@ onMounted(async () => {
             @keydown.esc="memberEditorOpen = false"
         >
             <form
+                ref="memberEditorForm"
                 class="workspace-form household-member-editor household-member-dialog"
                 novalidate
                 :class="{

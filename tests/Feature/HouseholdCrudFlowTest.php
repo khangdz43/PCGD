@@ -9,6 +9,7 @@ use App\Models\Permission;
 use App\Models\Person;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Village;
 use App\Services\Households\HouseholdImportErrorCollector;
 use App\Services\Households\HouseholdImportHistoryService;
 use App\Services\Households\HouseholdImportProcessingService;
@@ -1629,13 +1630,14 @@ class HouseholdCrudFlowTest extends TestCase
             'target_code' => 'V01',
         ])
             ->assertOk()
-            ->assertJsonPath('message', 'Đã gộp 1 thôn nguồn vào thôn đích và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
+            ->assertJsonPath('message', 'Đã gộp 1 thôn nguồn vào thôn đích, xóa thôn nguồn và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
 
         $this->assertDatabaseHas('villages', ['code' => 'V01']);
-        $this->assertDatabaseHas('villages', [
-            'code' => 'V03',
-            'merged_into_code' => 'V01',
-        ]);
+        $this->assertDatabaseMissing('villages', ['code' => 'V03']);
+        $mergeHistory = DB::table('village_merge_histories')->first();
+        self::assertNotNull($mergeHistory);
+        self::assertSame(['V03'], json_decode($mergeHistory->source_codes, true));
+        self::assertSame('V01', $mergeHistory->target_code);
         $this->assertDatabaseHas('households', [
             'id' => $activeHousehold->id,
             'village_code' => 'V01',
@@ -1708,6 +1710,7 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        self::assertSame('paused', Village::query()->findOrFail('V03')->operational_status);
         $user = $this->userWithPermissions([AccessPermission::DELETE_VILLAGES]);
 
         $this->actingAs($user)
@@ -1717,6 +1720,42 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertDatabaseMissing('villages', ['code' => 'V03']);
         $this->assertDatabaseHas('villages', ['code' => 'V01']);
+    }
+
+    public function test_merge_target_can_be_deleted_with_legacy_sources_while_merge_history_is_preserved(): void
+    {
+        DB::table('villages')->insert([
+            'code' => 'V03',
+            'name' => 'Thôn đã gộp',
+            'commune_code' => 'C01',
+            'merged_into_code' => 'V01',
+            'merged_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $historyId = DB::table('village_merge_histories')->insertGetId([
+            'commune_code' => 'C01',
+            'source_codes' => json_encode(['V03']),
+            'source_names' => json_encode(['Thôn đã gộp']),
+            'target_code' => 'V01',
+            'target_name' => 'Thôn Một',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $user = $this->userWithPermissions([AccessPermission::DELETE_VILLAGES]);
+
+        $this->actingAs($user)
+            ->deleteJson('/api/v1/villages/V01')
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
+
+        $this->assertDatabaseMissing('villages', ['code' => 'V01']);
+        $this->assertDatabaseMissing('villages', ['code' => 'V03']);
+        $this->assertDatabaseHas('village_merge_histories', [
+            'id' => $historyId,
+            'target_code' => 'V01',
+            'source_codes' => json_encode(['V03']),
+        ]);
     }
 
     public function test_village_merge_waits_for_active_imports_and_paused_villages_reject_new_households(): void

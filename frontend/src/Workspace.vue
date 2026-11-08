@@ -247,7 +247,7 @@ const villageMergeSourceSearch = ref("");
 const selectableVillageMergeSources = computed(() =>
     rows.value.filter(
         (village) =>
-            village.operational_status !== "merged" &&
+            !village.merged_into_code &&
             String(village.code) !== String(form.value.target_code ?? ""),
     ),
 );
@@ -279,15 +279,12 @@ const selectedSourcesHaveActive = computed(() =>
 function isAvailableVillageMergeTarget(village: Row): boolean {
     return (
         !village.intake_paused_at &&
-        !village.merged_into_code &&
-        village.operational_status !== "merged"
+        !village.merged_into_code
     );
 }
 
 function villageOperationalStatusLabel(status: unknown): string {
-    if (status === "merged") return "Đã gộp";
-    if (status === "paused") return "Tạm dừng nhận phiếu";
-    return "Đang nhận phiếu";
+    return status === "active" ? "Đang hoạt động" : "Không hoạt động";
 }
 
 function changeVillageMergeTarget(): void {
@@ -323,7 +320,7 @@ async function loadVillageMergeOptions(): Promise<void> {
             rows.value.some(
                 (village) =>
                     String(village.code) === code &&
-                    village.operational_status !== "merged",
+                    !village.merged_into_code,
             ),
     );
 }
@@ -6294,7 +6291,8 @@ async function save(): Promise<void> {
                 success: true,
                 title: "Gộp thôn thành công",
                 message:
-                    responseMessage || "Đã gộp các thôn nguồn vào thôn đích.",
+                    responseMessage ||
+                    "Đã gộp các thôn nguồn vào thôn đích và xóa khỏi danh mục.",
             };
         }
         if (props.moduleKey === "households" && wasEditing) {
@@ -8136,7 +8134,7 @@ onMounted(async () => {
                             required
                         >
                             <option value="active">Đang hoạt động</option>
-                            <option value="paused">Đã vô hiệu hóa</option>
+                            <option value="paused">Không hoạt động</option>
                         </select>
                         <select
                             v-else-if="field === 'scope_level'"
@@ -8655,6 +8653,16 @@ onMounted(async () => {
                             Thôn đích phải đang nhận phiếu. Toàn bộ phiếu từ
                             thôn nguồn sẽ được chuyển sang địa bàn này.
                         </p>
+                        <ol class="village-merge-guide">
+                            <li>Chọn một hoặc nhiều thôn nguồn cần gộp.</li>
+                            <li>
+                                Tạm dừng nhận phiếu ở tất cả thôn nguồn đã chọn.
+                            </li>
+                            <li>
+                                Nhấn <strong>Gộp thôn</strong> để chuyển phiếu
+                                sang thôn đích.
+                            </li>
+                        </ol>
                     </section>
                     <section
                         class="merge-selection-card village-merge-card village-merge-source-card"
@@ -11085,7 +11093,7 @@ onMounted(async () => {
                                 {{
                                     row.operational_status === "active"
                                         ? "Đang hoạt động"
-                                        : "Đã vô hiệu hóa"
+                                        : "Không hoạt động"
                                 }}
                             </span>
                             <span
@@ -11139,16 +11147,19 @@ onMounted(async () => {
                                 <span>{{ pathValue(row, column) }}</span>
                                 <small
                                     v-if="
-                                        row.scope_level === 'commune'
+                                        row.village_names ||
+                                        (row.scope_level === 'commune'
                                             ? row.commune_name
                                             : row.scope_level === 'province' &&
-                                              row.province_name
+                                              row.province_name)
                                     "
                                 >
                                     {{
-                                        row.scope_level === "commune"
-                                            ? row.commune_name
-                                            : row.province_name
+                                        row.village_names
+                                            ? `Thôn: ${row.village_names}`
+                                            : row.scope_level === "commune"
+                                              ? row.commune_name
+                                              : row.province_name
                                     }}
                                 </small>
                             </div>
@@ -11372,7 +11383,7 @@ onMounted(async () => {
                                     <button
                                         v-if="
                                             canUpdate &&
-                                            row.operational_status !== 'merged'
+                                            !row.merged_into_code
                                         "
                                         class="role-icon-button"
                                         type="button"

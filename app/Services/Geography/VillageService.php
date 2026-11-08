@@ -133,18 +133,38 @@ class VillageService
     public function delete(User $user, Village $village): void
     {
         $this->assertCanUseCommune($user, $village->commune_code, $village);
-        if (Village::query()->where('merged_into_code', $village->code)->exists()) {
-            throw ValidationException::withMessages([
-                'village' => 'Không thể xóa thôn đích vì đang lưu lịch sử các thôn đã gộp vào đây.',
-            ]);
-        }
-        if ($village->households()->exists()) {
-            throw ValidationException::withMessages([
-                'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
-            ]);
-        }
 
-        $village->delete();
+        DB::transaction(function () use ($user, $village): void {
+            $lockedVillage = Village::query()
+                ->where('code', $village->code)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $this->assertCanUseCommune($user, $lockedVillage->commune_code, $lockedVillage);
+
+            if ($lockedVillage->households()->exists()) {
+                throw ValidationException::withMessages([
+                    'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',
+                ]);
+            }
+
+            $mergedSources = Village::query()
+                ->where('merged_into_code', $lockedVillage->code)
+                ->lockForUpdate()
+                ->get();
+            if ($mergedSources->isNotEmpty()) {
+                $sourceCodes = $mergedSources->pluck('code')->all();
+                if (Household::withTrashed()->whereIn('village_code', $sourceCodes)->exists()) {
+                    throw ValidationException::withMessages([
+                        'village' => 'Không thể xóa thôn đích vì thôn nguồn đã gộp vẫn còn phiếu điều tra.',
+                    ]);
+                }
+
+                $this->assertNoActiveImports($sourceCodes, 'village');
+                Village::query()->whereIn('code', $sourceCodes)->delete();
+            }
+
+            $lockedVillage->delete();
+        });
     }
 
     public function merge(User $user, array $sourceCodes, string $targetCode): int
@@ -226,11 +246,7 @@ class VillageService
             DB::table('user_villages')->whereIn('village_code', $sourceCodes)->delete();
             Village::query()
                 ->whereIn('code', $sourceCodes)
-                ->update([
-                    'merged_into_code' => $target->code,
-                    'merged_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                ->delete();
 
             return $householdCount;
         });

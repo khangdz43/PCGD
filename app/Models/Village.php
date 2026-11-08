@@ -31,11 +31,9 @@ class Village extends Model
 
     public function getOperationalStatusAttribute(): string
     {
-        if ($this->merged_into_code !== null) {
-            return 'merged';
-        }
-
-        return $this->intake_paused_at !== null ? 'paused' : 'active';
+        return $this->merged_into_code !== null || $this->intake_paused_at !== null
+            ? 'paused'
+            : 'active';
     }
 
     public function commune(): BelongsTo

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { api, apiData, errorMessage } from '../api';
+import { api, apiData, apiRows, errorMessage } from '../api';
 import type { ModuleKey } from '../components/Sidebar.vue';
 import type { User } from '../types';
 
@@ -28,9 +28,32 @@ type SystemOverview = {
     };
     provinces: { code: string; name: string; households: number }[];
 };
+type OrganizationUnit = {
+    code: string;
+    name: string;
+    kind: 'province' | 'commune' | 'village';
+    account_count?: number;
+    expanded: boolean;
+    loaded: boolean;
+    loading: boolean;
+    error: string;
+    children: OrganizationUnit[];
+};
+type OrganizationUnitResponse = {
+    code: string;
+    name: string;
+    account_count?: number;
+};
 
 const isCentralAdmin = computed(() => props.user.role_name === 'system-admin');
+const canViewOrganizationTree = computed(() =>
+    isCentralAdmin.value &&
+    props.user.permissions?.includes('view-organization-accounts'),
+);
 const systemOverview = ref<SystemOverview | null>(null);
+const organizationUnits = ref<OrganizationUnit[]>([]);
+const organizationTreeLoading = ref(false);
+const organizationTreeError = ref('');
 const overviewError = ref('');
 const overviewBusy = ref(false);
 const selectedSchoolYear = ref('');
@@ -76,8 +99,73 @@ async function loadOverview(schoolYear?: string): Promise<void> {
     }
 }
 
+function organizationUnit(
+    unit: OrganizationUnitResponse,
+    kind: OrganizationUnit['kind'],
+): OrganizationUnit {
+    return {
+        ...unit,
+        kind,
+        expanded: false,
+        loaded: false,
+        loading: false,
+        error: '',
+        children: [],
+    };
+}
+
+async function loadOrganizationUnits(): Promise<void> {
+    if (!canViewOrganizationTree.value || organizationUnits.value.length) return;
+
+    organizationTreeLoading.value = true;
+    organizationTreeError.value = '';
+    try {
+        const { data } = await api.get<unknown>('/provinces', {
+            params: { include_account_counts: 1 },
+        });
+        organizationUnits.value = apiRows<OrganizationUnitResponse>(
+            apiData<unknown>(data),
+        ).map((unit) => organizationUnit(unit, 'province'));
+    } catch (cause) {
+        organizationTreeError.value = errorMessage(cause);
+    } finally {
+        organizationTreeLoading.value = false;
+    }
+}
+
+async function toggleOrganizationUnit(unit: OrganizationUnit): Promise<void> {
+    if (unit.kind === 'village' || unit.loading) return;
+    if (unit.loaded) {
+        unit.expanded = !unit.expanded;
+        return;
+    }
+
+    unit.expanded = true;
+    unit.loading = true;
+    unit.error = '';
+    const endpoint = unit.kind === 'province'
+        ? `/provinces/${encodeURIComponent(unit.code)}/communes`
+        : `/communes/${encodeURIComponent(unit.code)}/villages`;
+    const childKind = unit.kind === 'province' ? 'commune' : 'village';
+
+    try {
+        const { data } = await api.get<unknown>(endpoint, {
+            params: { include_account_counts: 1 },
+        });
+        unit.children = apiRows<OrganizationUnitResponse>(
+            apiData<unknown>(data),
+        ).map((child) => organizationUnit(child, childKind));
+        unit.loaded = true;
+    } catch (cause) {
+        unit.error = errorMessage(cause);
+    } finally {
+        unit.loading = false;
+    }
+}
+
 onMounted(() => {
     if (isCentralAdmin.value) void loadOverview();
+    if (canViewOrganizationTree.value) void loadOrganizationUnits();
 });
 </script>
 
@@ -228,28 +316,92 @@ onMounted(() => {
                         <div><span>Thôn / xóm</span><strong>{{ systemOverview.totals.villages.toLocaleString('vi-VN') }}</strong></div>
                         <div><span>Trường học</span><strong>{{ systemOverview.totals.schools.toLocaleString('vi-VN') }}</strong></div>
                         <div><span>Đơn vị cấp xã</span><strong>{{ systemOverview.totals.communes.toLocaleString('vi-VN') }}</strong></div>
+                        <section
+                            v-if="canViewOrganizationTree"
+                            class="central-organization-tree"
+                            aria-labelledby="central-organization-tree-title"
+                        >
+                            <div class="central-organization-heading">
+                                <h4 id="central-organization-tree-title">Cây đơn vị</h4>
+                                <span>{{ organizationUnits.length.toLocaleString('vi-VN') }} tỉnh</span>
+                            </div>
+                            <p v-if="organizationTreeLoading" class="central-organization-status" role="status">
+                                Đang tải danh sách đơn vị…
+                            </p>
+                            <div v-else-if="organizationTreeError" class="central-organization-error" role="alert">
+                                {{ organizationTreeError }}
+                                <button type="button" @click="loadOrganizationUnits">Thử lại</button>
+                            </div>
+                            <div v-else class="central-organization-list">
+                                <div
+                                    v-for="province in organizationUnits"
+                                    :key="province.code"
+                                    class="central-organization-branch"
+                                >
+                                    <button
+                                        class="central-organization-row central-organization-province"
+                                        type="button"
+                                        :aria-expanded="province.expanded"
+                                        @click="toggleOrganizationUnit(province)"
+                                    >
+                                        <span class="central-organization-chevron" :class="{ 'is-expanded': province.expanded }">›</span>
+                                        <span class="central-organization-name">{{ province.name }}</span>
+                                        <span class="central-organization-count">{{ province.account_count ?? 0 }}</span>
+                                    </button>
+                                    <div v-if="province.expanded" class="central-organization-children">
+                                        <p v-if="province.loading" class="central-organization-status" role="status">Đang tải xã / phường…</p>
+                                        <p v-else-if="province.error" class="central-organization-error" role="alert">
+                                            {{ province.error }}
+                                            <button type="button" @click="toggleOrganizationUnit(province)">Thử tải lại</button>
+                                        </p>
+                                        <p v-else-if="province.loaded && !province.children.length" class="central-organization-empty">
+                                            Chưa có đơn vị cấp xã.
+                                        </p>
+                                        <div
+                                            v-for="commune in province.children"
+                                            :key="commune.code"
+                                            class="central-organization-branch"
+                                        >
+                                            <button
+                                                class="central-organization-row central-organization-commune"
+                                                type="button"
+                                                :aria-expanded="commune.expanded"
+                                                @click="toggleOrganizationUnit(commune)"
+                                            >
+                                                <span class="central-organization-chevron" :class="{ 'is-expanded': commune.expanded }">›</span>
+                                                <span class="central-organization-name">{{ commune.name }}</span>
+                                                <span class="central-organization-count">{{ commune.account_count ?? 0 }}</span>
+                                            </button>
+                                            <div v-if="commune.expanded" class="central-organization-children">
+                                                <p v-if="commune.loading" class="central-organization-status" role="status">Đang tải thôn / xóm…</p>
+                                                <p v-else-if="commune.error" class="central-organization-error" role="alert">
+                                                    {{ commune.error }}
+                                                    <button type="button" @click="toggleOrganizationUnit(commune)">Thử tải lại</button>
+                                                </p>
+                                                <p v-else-if="commune.loaded && !commune.children.length" class="central-organization-empty">
+                                                    Chưa có thôn / xóm.
+                                                </p>
+                                                <div
+                                                    v-for="village in commune.children"
+                                                    :key="village.code"
+                                                    class="central-organization-row central-organization-village"
+                                                >
+                                                    <span class="central-organization-leaf" aria-hidden="true">•</span>
+                                                    <span class="central-organization-name">{{ village.name }}</span>
+                                                    <span class="central-organization-count">{{ village.account_count ?? 0 }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <p class="central-organization-hint">
+                                Số bên phải là tài khoản được phân công tại đơn vị.
+                            </p>
+                        </section>
                     </article>
                 </section>
 
-                <section class="central-shortcuts">
-                    <div class="dashboard-section-heading">
-                        <div><span class="section-eyebrow">ĐIỀU HÀNH</span><h3>Truy cập nhanh</h3></div>
-                    </div>
-                    <div class="shortcut-grid">
-                        <button
-                            v-for="item in shortcuts"
-                            :key="item.key"
-                            class="shortcut-card"
-                            type="button"
-                            @click="emit('navigate', item.key)"
-                        >
-                            <span class="shortcut-icon" :class="`tone-${item.tone}`">{{ item.icon }}</span>
-                            <span class="shortcut-card-title">{{ item.title }}</span>
-                            <span class="shortcut-card-detail">{{ item.detail }}</span>
-                            <span class="shortcut-arrow" aria-hidden="true">↗</span>
-                        </button>
-                    </div>
-                </section>
             </template>
         </template>
 

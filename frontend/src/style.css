@@ -5534,7 +5534,7 @@ h2 {
 .account-creation-result-username {
     display: inline-flex;
     margin-top: 15px;
-    padding: 7px 12px;
+    padding: 6px 9px;
     border: 1px solid #dceee2;
     border-radius: 999px;
     background: #f5fbf6;
@@ -7525,6 +7525,143 @@ button {
     font-size: .7rem;
 }
 
+.central-organization-tree {
+    display: grid;
+    gap: 8px;
+    margin-top: 15px;
+    padding-top: 14px;
+    border-top: 1px solid #eef1f5;
+}
+
+.central-organization-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.central-organization-heading h4 {
+    margin: 0;
+    color: #344a69;
+    font-size: .85rem;
+}
+
+.central-organization-heading span {
+    color: #8b97a8;
+    font-size: .68rem;
+}
+
+.central-organization-hint,
+.central-organization-status,
+.central-organization-empty {
+    margin: 0;
+    color: #8491a4;
+    font-size: .66rem;
+}
+
+.central-organization-list {
+    max-height: 360px;
+    overflow: auto;
+    border: 1px solid #e9edf3;
+    border-radius: 9px;
+}
+
+.central-organization-branch+.central-organization-branch {
+    border-top: 1px solid #edf0f5;
+}
+
+.central-organization-row {
+    display: grid;
+    width: 100%;
+    min-height: 41px;
+    grid-template-columns: 18px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 12px;
+    border: 0;
+    background: #fff;
+    color: #43536b;
+    font: inherit;
+    text-align: left;
+}
+
+button.central-organization-row {
+    cursor: pointer;
+}
+
+button.central-organization-row:hover {
+    background: #f6f9fd;
+}
+
+.central-organization-province {
+    font-size: .73rem;
+    font-weight: 700;
+}
+
+.central-organization-commune {
+    background: #fbfcfe;
+    font-size: .7rem;
+}
+
+.central-organization-village {
+    padding-left: 18px;
+    color: #697991;
+    font-size: .68rem;
+}
+
+.central-organization-chevron,
+.central-organization-leaf {
+    color: #7d91ad;
+    font-size: 1.15rem;
+    text-align: center;
+    transition: transform .16s ease;
+}
+
+.central-organization-chevron.is-expanded {
+    transform: rotate(90deg);
+}
+
+.central-organization-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.central-organization-code {
+    color: #9aa5b5;
+    font-size: .66rem;
+}
+
+.central-organization-count {
+    color: #536b8e;
+    font-size: .66rem;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.central-organization-children {
+    padding-left: 18px;
+    border-top: 1px solid #eef1f5;
+    background: #fbfcfe;
+}
+
+.central-organization-error {
+    margin: 8px 12px;
+    color: #b94b4b;
+    font-size: .74rem;
+}
+
+.central-organization-error button {
+    margin-left: 8px;
+    border: 0;
+    background: none;
+    color: #2563eb;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 700;
+}
+
 .metric-geography {
     border-top: 3px solid #477bd0;
 }
@@ -7705,6 +7842,21 @@ button {
 
     .central-ranking-bar {
         display: none;
+    }
+
+    .central-organization-children {
+        padding-left: 8px;
+    }
+
+    .central-organization-row {
+        grid-template-columns: 18px minmax(0, 1fr) auto;
+        gap: 6px;
+        padding-inline: 8px;
+    }
+
+    .central-organization-count {
+        grid-column: 2 / -1;
+        text-align: left;
     }
 }
 

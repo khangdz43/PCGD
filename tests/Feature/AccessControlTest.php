@@ -6133,6 +6133,10 @@ class AccessControlTest extends TestCase
             ->get('/admin/organization-accounts')
             ->assertNotFound();
 
+        $this->getJson('/api/v1/provinces?include_account_counts=1')
+            ->assertOk()
+            ->assertJsonFragment(['code' => 'P1', 'name' => 'Tỉnh một', 'account_count' => 2]);
+
         $this->getJson('/api/v1/provinces/P1/communes?include_account_counts=1')
             ->assertOk()
             ->assertJsonFragment(['code' => 'C1', 'name' => 'Xã một', 'account_count' => 1]);

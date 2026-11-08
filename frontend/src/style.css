@@ -2255,6 +2255,48 @@ h2 {
     max-width: none;
 }
 
+.household-member-create-page .household-member-education-pair {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: 210px minmax(0, 280px);
+    align-items: start;
+    gap: 14px 24px;
+}
+
+.household-member-create-page .household-member-education-completion-row {
+    display: flex;
+    align-items: end;
+    gap: 14px;
+}
+
+.household-member-create-page .household-member-education-pair .workspace-field {
+    align-content: start;
+    max-width: 190px;
+}
+
+.household-member-create-page .household-member-education-completion-row>.workspace-field {
+    flex: 0 0 150px;
+}
+
+.household-member-create-page .household-member-complementary-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    align-self: start;
+    padding-top: 22px;
+    color: #35445c;
+    font-size: .82rem;
+    white-space: nowrap;
+}
+
+.household-member-create-page .household-member-complementary-checkbox input {
+    width: 16px;
+    min-height: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #2563eb;
+}
+
 @media (max-width: 960px) {
     .household-member-create-page .household-member-form-section.household-member-education-section {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2733,6 +2775,10 @@ h2 {
     }
 
     .household-member-create-page .household-member-form-section.household-member-education-section {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .household-member-create-page .household-member-education-pair {
         grid-template-columns: minmax(0, 1fr);
     }
 
@@ -5683,13 +5729,13 @@ h2 {
     font-weight: 400;
 }
 
-.graduation-year-control {
+.education-year-control {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
-.workspace-field .graduation-year-control input {
+.workspace-field .education-year-control input {
     flex: 0 1 110px;
     width: 110px;
     min-width: 0;

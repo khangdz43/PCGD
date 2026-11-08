@@ -492,6 +492,23 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
     }
 
+    public function test_general_education_class_fields_reject_grades_above_twelve(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
+
+        foreach (['current_class', 'finished_class', 'dropped_class'] as $field) {
+            $payload = $this->personPayload('Con');
+            $payload['education'][$field] = '13A1';
+
+            $this->actingAs($user)
+                ->postJson(route('api.households.persons.store', $household), $payload)
+                ->assertUnprocessable()
+                ->assertJsonPath('error.details.0.field', "education.{$field}");
+        }
+    }
+
     public function test_member_phone_accepts_plus_84_but_rejects_text(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
@@ -526,22 +543,29 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonPath('error.details.0.field', 'education.graduation_year');
     }
 
-    public function test_graduation_year_accepts_the_current_year_range_with_next_year(): void
+    public function test_education_year_fields_accept_the_current_year_range_with_next_year(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
         $household = $this->createHousehold();
         $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
         $currentYear = now()->year;
-        $payload = $this->personPayload('Con');
-        $payload['education']['graduation_year'] = "{$currentYear}-" . ($currentYear + 1);
+        $yearRange = "{$currentYear}-" . ($currentYear + 1);
 
-        $this->actingAs($user)
-            ->postJson(route('api.households.persons.store', $household), $payload)
-            ->assertCreated();
+        foreach ([
+            'graduation_year',
+            'vocational_grad_year',
+            'finished_year',
+            'dropped_year',
+        ] as $field) {
+            $payload = $this->personPayload('Con');
+            $payload['education'][$field] = $yearRange;
 
-        $this->assertDatabaseHas('person_educations', [
-            'graduation_year' => "{$currentYear}-" . ($currentYear + 1),
-        ]);
+            $this->actingAs($user)
+                ->postJson(route('api.households.persons.store', $household), $payload)
+                ->assertCreated();
+
+            $this->assertDatabaseHas('person_educations', [$field => $yearRange]);
+        }
     }
 
     public function test_explicit_academic_block_is_preserved_when_saving_a_person(): void

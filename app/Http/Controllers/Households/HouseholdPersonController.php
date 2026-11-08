@@ -344,7 +344,7 @@ class HouseholdPersonController extends Controller
                 }
             }
         };
-        $notFutureGraduationYear = function ($attribute, $value, $fail) use ($notFutureYear) {
+        $notFutureEducationYear = function ($attribute, $value, $fail) use ($notFutureYear) {
             $currentYear = now()->year;
             if (
                 preg_match('/^(\d{4})-(\d{4})$/', (string) $value, $matches) === 1
@@ -355,6 +355,14 @@ class HouseholdPersonController extends Controller
             }
 
             $notFutureYear($attribute, $value, $fail);
+        };
+        $classWithinGradeRange = function ($attribute, $value, $fail): void {
+            if (
+                preg_match('/^\s*(?:lớp\s*)?(\d+)/iu', (string) $value, $matches) === 1
+                && (int) $matches[1] > 12
+            ) {
+                $fail('Khối lớp không được lớn hơn lớp 12.');
+            }
         };
 
         $schoolProvinceRules = ['nullable', 'exists:provinces,code'];
@@ -397,20 +405,20 @@ class HouseholdPersonController extends Controller
             'school_commune_code' => $schoolCommuneRules,
             'education.school_year' => $schoolYearRules,
             'education.academic_block' => 'nullable|string|max:50',
-            'education.current_class' => 'nullable|string|max:50',
+            'education.current_class' => ['nullable', 'string', 'max:50', $classWithinGradeRange],
             'education.school_code' => [
                 'nullable',
                 $schoolExistsRule,
             ],
             'education.graduation_level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
             'education.is_complementary' => 'nullable|boolean',
-            'education.graduation_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureGraduationYear],
+            'education.graduation_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
             'education.vocational_grad_level' => 'nullable|string|max:50',
-            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
-            'education.finished_class' => 'nullable|string|max:20',
-            'education.finished_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
-            'education.dropped_class' => 'nullable|string|max:20',
-            'education.dropped_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureYear],
+            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
+            'education.finished_class' => ['nullable', 'string', 'max:20', $classWithinGradeRange],
+            'education.finished_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
+            'education.dropped_class' => ['nullable', 'string', 'max:20', $classWithinGradeRange],
+            'education.dropped_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
             'education.literacy_current_class' => 'nullable|string|max:20',
             'education.literacy_completed_class' => 'nullable|string|max:20',
             'education.literacy_relapse_level' => 'nullable|integer|between:1,2',

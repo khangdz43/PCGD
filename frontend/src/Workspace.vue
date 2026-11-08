@@ -479,6 +479,19 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
     }
 
     for (const [field, label] of [
+        ["current_class", "Lớp học"],
+        ["finished_class", "Lớp đã hoàn thành"],
+        ["dropped_class", "Lớp đã bỏ học"],
+    ]) {
+        const value = String(educationForm.value[field] ?? "");
+        const gradeMatch = value.match(/^\s*(?:lớp\s*)?(\d+)/iu);
+        if (gradeMatch && Number(gradeMatch[1]) > 12) {
+            errors[`education.${field}`] =
+                `${label} không được lớn hơn lớp 12.`;
+        }
+    }
+
+    for (const [field, label] of [
         ["graduation_year", "Năm tốt nghiệp"],
         ["vocational_grad_year", "Năm tốt nghiệp nghề"],
         ["finished_year", "Năm hoàn thành lớp"],
@@ -492,7 +505,12 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
         } else if (
             value.split("-").some((year) => Number(year) > today.getFullYear()) &&
             !(
-                field === "graduation_year" &&
+                [
+                    "graduation_year",
+                    "vocational_grad_year",
+                    "finished_year",
+                    "dropped_year",
+                ].includes(field) &&
                 value === `${today.getFullYear()}-${today.getFullYear() + 1}`
             )
         ) {
@@ -569,25 +587,33 @@ const headMemberEducationStep = ref(false);
 const memberForm = ref<Record<string, string>>({});
 const ethnicities = ref<Row[]>([]);
 const educationForm = ref<Record<string, string>>({});
-const graduationYearStart = computed({
-    get(): string {
-        const value = String(educationForm.value.graduation_year ?? "");
-        return value.match(/^(\d{4})(?:-\d{4})?$/)?.[1] ?? value;
-    },
-    set(value: string): void {
-        const year = value.trim();
-        educationForm.value.graduation_year = /^\d{4}$/.test(year)
-            ? `${year}-${Number(year) + 1}`
-            : year;
-    },
-});
-const graduationYearEnd = computed(() => {
-    const value = String(educationForm.value.graduation_year ?? "");
+function createEducationYearStart(field: string) {
+    return computed({
+        get(): string {
+            const value = String(educationForm.value[field] ?? "");
+            return value.match(/^(\d{4})(?:-\d{4})?$/)?.[1] ?? value;
+        },
+        set(value: string): void {
+            const year = value.trim();
+            educationForm.value[field] = /^\d{4}$/.test(year)
+                ? `${year}-${Number(year) + 1}`
+                : year;
+        },
+    });
+}
+function educationYearEnd(field: string): string {
+    const value = String(educationForm.value[field] ?? "");
     const range = value.match(/^\d{4}-(\d{4})$/);
     if (range) return range[1];
 
     return /^\d{4}$/.test(value) ? String(Number(value) + 1) : "";
-});
+}
+const graduationYearStart = createEducationYearStart("graduation_year");
+const vocationalGraduationYearStart = createEducationYearStart(
+    "vocational_grad_year",
+);
+const finishedYearStart = createEducationYearStart("finished_year");
+const droppedYearStart = createEducationYearStart("dropped_year");
 
 const moduleInfo: Record<
     ModuleKey,
@@ -12637,7 +12663,32 @@ onMounted(async () => {
                                     v-model.trim="educationForm.current_class"
                                     type="text"
                                     maxlength="50"
-                            /></label>
+                                    :aria-invalid="
+                                        Boolean(
+                                            memberClientValidationErrors[
+                                                'education.current_class'
+                                            ] ||
+                                            memberFormErrors[
+                                                'education.current_class'
+                                            ],
+                                        )
+                                    "
+                                />
+                                <small
+                                    class="field-error household-member-required-error"
+                                    role="alert"
+                                >
+                                    {{
+                                        memberClientValidationErrors[
+                                            "education.current_class"
+                                        ] ||
+                                        memberFormErrors[
+                                            "education.current_class"
+                                        ] ||
+                                        ""
+                                    }}
+                                </small>
+                            </label>
                             <label
                                 class="workspace-field household-member-mini-field"
                                 ><span>Khối học (tự động)</span
@@ -12695,199 +12746,320 @@ onMounted(async () => {
                                     }}</small
                                 >
                             </label>
-                            <label class="workspace-field">
-                                <span>Bậc tốt nghiệp</span>
-                                <select
-                                    v-model="educationForm.graduation_level"
-                                >
-                                    <option value="">Chưa xác định</option>
-                                    <option value="MN">Mầm non</option>
-                                    <option value="TH">Tiểu học</option>
-                                    <option value="THCS">
-                                        Trung học cơ sở
-                                    </option>
-                                    <option value="THPT">
-                                        Trung học phổ thông
-                                    </option>
-                                </select>
-                            </label>
                             <h5 class="household-member-subsection-title">
                                 Kết quả và quá trình học
                             </h5>
-                            <label
-                                class="workspace-field household-member-compact-field"
-                                ><span>Năm tốt nghiệp</span
-                                ><div class="graduation-year-control">
+                            <div class="household-member-education-pair">
+                                <label class="workspace-field">
+                                    <span>Bậc tốt nghiệp</span>
+                                    <select
+                                        v-model="educationForm.graduation_level"
+                                    >
+                                        <option value="">Chưa xác định</option>
+                                        <option value="MN">Mầm non</option>
+                                        <option value="TH">Tiểu học</option>
+                                        <option value="THCS">
+                                            Trung học cơ sở
+                                        </option>
+                                        <option value="THPT">
+                                            Trung học phổ thông
+                                        </option>
+                                    </select>
+                                </label>
+                                <div
+                                    class="household-member-education-completion-row"
+                                >
+                                    <label class="workspace-field">
+                                        <span>Năm tốt nghiệp</span>
+                                        <div class="education-year-control">
+                                            <input
+                                                v-model.trim="graduationYearStart"
+                                                type="text"
+                                                maxlength="4"
+                                                placeholder="YYYY"
+                                                :aria-invalid="
+                                                    Boolean(
+                                                        memberClientValidationErrors[
+                                                            'education.graduation_year'
+                                                        ] ||
+                                                        memberFormErrors[
+                                                            'education.graduation_year'
+                                                        ],
+                                                    )
+                                                "
+                                            />
+                                            <span
+                                                v-if="
+                                                    educationYearEnd(
+                                                        'graduation_year',
+                                                    )
+                                                "
+                                                >-{{
+                                                    educationYearEnd(
+                                                        'graduation_year',
+                                                    )
+                                                }}</span
+                                            >
+                                        </div>
+                                        <small
+                                            class="field-error household-member-required-error"
+                                            role="alert"
+                                        >
+                                            {{
+                                                memberClientValidationErrors[
+                                                    "education.graduation_year"
+                                                ] ||
+                                                memberFormErrors[
+                                                    "education.graduation_year"
+                                                ] ||
+                                                ""
+                                            }}
+                                        </small>
+                                    </label>
+                                    <label
+                                        class="household-member-complementary-checkbox"
+                                    >
+                                        <input
+                                            v-model="
+                                                educationForm.is_complementary
+                                            "
+                                            type="checkbox"
+                                            true-value="1"
+                                            false-value="0"
+                                        />
+                                        <span>Học bổ túc</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="household-member-education-pair">
+                                <label class="workspace-field">
+                                    <span>Bậc tốt nghiệp nghề</span>
                                     <input
-                                        v-model.trim="graduationYearStart"
+                                        v-model.trim="
+                                            educationForm.vocational_grad_level
+                                        "
                                         type="text"
-                                        maxlength="4"
-                                        placeholder="YYYY"
+                                        maxlength="50"
+                                    />
+                                </label>
+                                <label
+                                    class="workspace-field household-member-compact-field"
+                                >
+                                    <span>Năm tốt nghiệp nghề</span>
+                                    <div class="education-year-control">
+                                        <input
+                                            v-model.trim="
+                                                vocationalGraduationYearStart
+                                            "
+                                            type="text"
+                                            maxlength="4"
+                                            placeholder="YYYY"
+                                            :aria-invalid="
+                                                Boolean(
+                                                    memberClientValidationErrors[
+                                                        'education.vocational_grad_year'
+                                                    ] ||
+                                                    memberFormErrors[
+                                                        'education.vocational_grad_year'
+                                                    ],
+                                                )
+                                            "
+                                        />
+                                        <span
+                                            v-if="
+                                                educationYearEnd(
+                                                    'vocational_grad_year',
+                                                )
+                                            "
+                                            >-{{
+                                                educationYearEnd(
+                                                    'vocational_grad_year',
+                                                )
+                                            }}</span
+                                        >
+                                    </div>
+                                    <small
+                                        class="field-error household-member-required-error"
+                                        role="alert"
+                                    >
+                                        {{
+                                            memberClientValidationErrors[
+                                                "education.vocational_grad_year"
+                                            ] ||
+                                            memberFormErrors[
+                                                "education.vocational_grad_year"
+                                            ] ||
+                                            ""
+                                        }}
+                                    </small>
+                                </label>
+                            </div>
+                            <div class="household-member-education-pair">
+                                <label
+                                    class="workspace-field household-member-compact-field"
+                                >
+                                    <span>Lớp đã hoàn thành</span>
+                                    <input
+                                        v-model.trim="
+                                            educationForm.finished_class
+                                        "
+                                        type="text"
+                                        maxlength="20"
                                         :aria-invalid="
                                             Boolean(
                                                 memberClientValidationErrors[
-                                                    'education.graduation_year'
+                                                    'education.finished_class'
                                                 ] ||
                                                 memberFormErrors[
-                                                    'education.graduation_year'
+                                                    'education.finished_class'
                                                 ],
                                             )
                                         "
                                     />
-                                    <span v-if="graduationYearEnd"
-                                        >-{{ graduationYearEnd }}</span
+                                    <small
+                                        class="field-error household-member-required-error"
+                                        role="alert"
                                     >
-                                </div>
-                                <small
-                                    class="field-error household-member-required-error"
-                                    role="alert"
-                                >
-                                    {{
-                                        memberClientValidationErrors[
-                                            "education.graduation_year"
-                                        ] ||
-                                        memberFormErrors[
-                                            "education.graduation_year"
-                                        ] ||
-                                        ""
-                                    }}
-                                </small>
-                            </label>
-                            <label class="workspace-field">
-                                <span>Học bổ túc</span>
-                                <select
-                                    v-model="educationForm.is_complementary"
-                                >
-                                    <option value="0">Không</option>
-                                    <option value="1">Có</option>
-                                </select>
-                            </label>
-                            <label class="workspace-field"
-                                ><span>Bậc tốt nghiệp nghề</span
-                                ><input
-                                    v-model.trim="
-                                        educationForm.vocational_grad_level
-                                    "
-                                    type="text"
-                                    maxlength="50"
-                            /></label>
-                            <label
-                                class="workspace-field household-member-compact-field"
-                                ><span>Năm tốt nghiệp nghề</span
-                                ><input
-                                    v-model.trim="
-                                        educationForm.vocational_grad_year
-                                    "
-                                    type="text"
-                                    maxlength="20"
-                                    :aria-invalid="
-                                        Boolean(
+                                        {{
                                             memberClientValidationErrors[
-                                                'education.vocational_grad_year'
+                                                "education.finished_class"
                                             ] ||
                                             memberFormErrors[
-                                                'education.vocational_grad_year'
-                                            ],
-                                        )
-                                    "
-                                />
-                                <small
-                                    class="field-error household-member-required-error"
-                                    role="alert"
+                                                "education.finished_class"
+                                            ] ||
+                                            ""
+                                        }}
+                                    </small>
+                                </label>
+                                <label
+                                    class="workspace-field household-member-compact-field"
                                 >
-                                    {{
-                                        memberClientValidationErrors[
-                                            "education.vocational_grad_year"
-                                        ] ||
-                                        memberFormErrors[
-                                            "education.vocational_grad_year"
-                                        ] ||
-                                        ""
-                                    }}
-                                </small>
-                            </label>
-                            <label
-                                class="workspace-field household-member-compact-field"
-                                ><span>Lớp đã hoàn thành</span
-                                ><input
-                                    v-model.trim="educationForm.finished_class"
-                                    type="text"
-                                    maxlength="20"
-                            /></label>
-                            <label
-                                class="workspace-field household-member-compact-field"
-                                ><span>Năm hoàn thành lớp</span
-                                ><input
-                                    v-model.trim="educationForm.finished_year"
-                                    type="text"
-                                    maxlength="20"
-                                    :aria-invalid="
-                                        Boolean(
+                                    <span>Năm hoàn thành lớp</span>
+                                    <div class="education-year-control">
+                                        <input
+                                            v-model.trim="finishedYearStart"
+                                            type="text"
+                                            maxlength="4"
+                                            placeholder="YYYY"
+                                            :aria-invalid="
+                                                Boolean(
+                                                    memberClientValidationErrors[
+                                                        'education.finished_year'
+                                                    ] ||
+                                                    memberFormErrors[
+                                                        'education.finished_year'
+                                                    ],
+                                                )
+                                            "
+                                        />
+                                        <span
+                                            v-if="
+                                                educationYearEnd('finished_year')
+                                            "
+                                            >-{{
+                                                educationYearEnd('finished_year')
+                                            }}</span
+                                        >
+                                    </div>
+                                    <small
+                                        class="field-error household-member-required-error"
+                                        role="alert"
+                                    >
+                                        {{
                                             memberClientValidationErrors[
-                                                'education.finished_year'
+                                                "education.finished_year"
                                             ] ||
                                             memberFormErrors[
-                                                'education.finished_year'
-                                            ],
-                                        )
-                                    "
-                                />
-                                <small
-                                    class="field-error household-member-required-error"
-                                    role="alert"
+                                                "education.finished_year"
+                                            ] ||
+                                            ""
+                                        }}
+                                    </small>
+                                </label>
+                            </div>
+                            <div class="household-member-education-pair">
+                                <label
+                                    class="workspace-field household-member-compact-field"
                                 >
-                                    {{
-                                        memberClientValidationErrors[
-                                            "education.finished_year"
-                                        ] ||
-                                        memberFormErrors[
-                                            "education.finished_year"
-                                        ] ||
-                                        ""
-                                    }}
-                                </small>
-                            </label>
-                            <label
-                                class="workspace-field household-member-compact-field"
-                                ><span>Lớp đã bỏ học</span
-                                ><input
-                                    v-model.trim="educationForm.dropped_class"
-                                    type="text"
-                                    maxlength="20"
-                            /></label>
-                            <label
-                                class="workspace-field household-member-compact-field"
-                                ><span>Năm bỏ học</span
-                                ><input
-                                    v-model.trim="educationForm.dropped_year"
-                                    type="text"
-                                    maxlength="20"
-                                    :aria-invalid="
-                                        Boolean(
+                                    <span>Lớp đã bỏ học</span>
+                                    <input
+                                        v-model.trim="
+                                            educationForm.dropped_class
+                                        "
+                                        type="text"
+                                        maxlength="20"
+                                        :aria-invalid="
+                                            Boolean(
+                                                memberClientValidationErrors[
+                                                    'education.dropped_class'
+                                                ] ||
+                                                memberFormErrors[
+                                                    'education.dropped_class'
+                                                ],
+                                            )
+                                        "
+                                    />
+                                    <small
+                                        class="field-error household-member-required-error"
+                                        role="alert"
+                                    >
+                                        {{
                                             memberClientValidationErrors[
-                                                'education.dropped_year'
+                                                "education.dropped_class"
                                             ] ||
                                             memberFormErrors[
-                                                'education.dropped_year'
-                                            ],
-                                        )
-                                    "
-                                />
-                                <small
-                                    class="field-error household-member-required-error"
-                                    role="alert"
+                                                "education.dropped_class"
+                                            ] ||
+                                            ""
+                                        }}
+                                    </small>
+                                </label>
+                                <label
+                                    class="workspace-field household-member-compact-field"
                                 >
-                                    {{
-                                        memberClientValidationErrors[
-                                            "education.dropped_year"
-                                        ] ||
-                                        memberFormErrors[
-                                            "education.dropped_year"
-                                        ] ||
-                                        ""
-                                    }}
-                                </small>
-                            </label>
+                                    <span>Năm bỏ học</span>
+                                    <div class="education-year-control">
+                                        <input
+                                            v-model.trim="droppedYearStart"
+                                            type="text"
+                                            maxlength="4"
+                                            placeholder="YYYY"
+                                            :aria-invalid="
+                                                Boolean(
+                                                    memberClientValidationErrors[
+                                                        'education.dropped_year'
+                                                    ] ||
+                                                    memberFormErrors[
+                                                        'education.dropped_year'
+                                                    ],
+                                                )
+                                            "
+                                        />
+                                        <span
+                                            v-if="
+                                                educationYearEnd('dropped_year')
+                                            "
+                                            >-{{
+                                                educationYearEnd('dropped_year')
+                                            }}</span
+                                        >
+                                    </div>
+                                    <small
+                                        class="field-error household-member-required-error"
+                                        role="alert"
+                                    >
+                                        {{
+                                            memberClientValidationErrors[
+                                                "education.dropped_year"
+                                            ] ||
+                                            memberFormErrors[
+                                                "education.dropped_year"
+                                            ] ||
+                                            ""
+                                        }}
+                                    </small>
+                                </label>
+                            </div>
                         </section>
                         <h4
                             class="household-member-group-title household-member-literacy-title"

@@ -447,6 +447,8 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
         const value =
             field === "education.school_year"
                 ? educationForm.value.school_year
+                : field === "dob"
+                  ? memberForm.value.dob_display
                 : memberForm.value[field];
         if (!String(value ?? "").trim()) errors[field] = message;
     }
@@ -470,12 +472,27 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
             "Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +, ví dụ +84912345678.";
     }
 
+    const dateOfBirth = parseDateInput(memberForm.value.dob_display);
+    if (memberForm.value.dob_display && !dateOfBirth) {
+        errors.dob = "Ngày sinh phải theo định dạng ngày/tháng/năm (dd/mm/yyyy).";
+    }
+
     const today = new Date();
     const todayString = `${today.getFullYear()}-${String(
         today.getMonth() + 1,
     ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    if (memberForm.value.dob && memberForm.value.dob > todayString) {
+    if (dateOfBirth && dateOfBirth > todayString) {
         errors.dob = "Ngày sinh không được lớn hơn ngày hiện tại.";
+    }
+
+    if (!memberIsHead.value) {
+        const relationshipError = relationshipSlotError(
+            memberForm.value.relationship_with_head,
+            memberId.value,
+        );
+        if (relationshipError) {
+            errors.relationship_with_head = relationshipError;
+        }
     }
 
     for (const [field, label] of [
@@ -534,6 +551,10 @@ const personSchoolOptionsError = ref("");
 const personSchoolOptionsLoading = ref(false);
 let personSchoolOptionsTimer: number | undefined;
 let personSchoolOptionsSequence = 0;
+const inlineSchoolOptions = ref<Record<string, Row[]>>({});
+const inlineSchoolOptionsLoading = ref<Record<string, boolean>>({});
+const inlineSchoolOptionsErrors = ref<Record<string, string>>({});
+const inlineSchoolRequests = new Map<string, Promise<void>>();
 const disabilityForm = ref<Record<string, string | boolean>>({});
 const householdSchoolYearOptions = Array.from({ length: 11 }, (_, index) => {
     const year = 2020 + index;
@@ -566,6 +587,10 @@ const memberRelationships = [
     "Bà",
     "Cháu",
     "Khác",
+];
+const relationshipSlotGroups = [
+    { relationships: ["Vợ", "Chồng"], label: "vợ hoặc chồng" },
+    { relationships: ["Cha", "Mẹ"], label: "cha hoặc mẹ" },
 ];
 const memberDisabilityOptions = [
     { key: "mobility_disability", label: "Khuyết tật vận động" },
@@ -2064,6 +2089,60 @@ function displayDate(value: unknown): string {
     if (typeof value !== "string" || !value) return "Chưa cập nhật";
     const date = value.slice(0, 10).split("-");
     return date.length === 3 ? `${date[2]}/${date[1]}/${date[0]}` : value;
+}
+
+function dateInputValue(value: unknown): string {
+    const date = String(value ?? "").trim();
+    const isoDate = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+    return /^\d{2}\/\d{2}\/\d{4}$/.test(date) ? date : "";
+}
+
+function parseDateInput(value: unknown): string | null {
+    const match = String(value ?? "")
+        .trim()
+        .match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!match) return null;
+
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+        date.getUTCFullYear() !== year ||
+        date.getUTCMonth() !== month - 1 ||
+        date.getUTCDate() !== day
+    ) {
+        return null;
+    }
+
+    return `${match[3]}-${match[2]}-${match[1]}`;
+}
+
+function relationshipSlotError(
+    relationship: unknown,
+    currentPerson?: Row | string | number | null,
+): string {
+    const selectedRelationship = String(relationship ?? "");
+    const slot = relationshipSlotGroups.find(({ relationships }) =>
+        relationships.includes(selectedRelationship),
+    );
+    if (!slot) return "";
+
+    const conflict = householdEditPersons.value.some(
+        (person) =>
+            (typeof currentPerson === "object" && currentPerson !== null
+                ? person !== currentPerson
+                : currentPerson === null || currentPerson === undefined
+                  ? true
+                  : String(person.id ?? "") !== String(currentPerson)) &&
+            slot.relationships.includes(
+                String(person.relationship_with_head ?? ""),
+            ),
+    );
+    return conflict
+        ? `Phiếu chỉ được có một người là ${slot.label}.`
+        : "";
 }
 
 function displayFormValue(value: unknown): string {
@@ -4108,6 +4187,7 @@ async function beginMember(
             first_name: "",
             last_name: "",
             dob: "",
+            dob_display: "",
             gender: "NAM",
             ethnicity_code: "",
             relationship_with_head: isHead ? "Chủ hộ" : "",
@@ -4148,6 +4228,7 @@ async function beginMember(
         first_name: "",
         last_name: "",
         dob: "",
+        dob_display: "",
         gender: "NAM",
         ethnicity_code: "",
         relationship_with_head: isHead ? "Chủ hộ" : "",
@@ -4222,6 +4303,7 @@ async function beginMember(
             )
                 memberForm.value[key] = String(value);
         }
+        memberForm.value.dob_display = dateInputValue(person.dob);
         if (memberId.value === null && memberIsHead.value) {
             memberForm.value.relationship_with_head = "Chủ hộ";
         }
@@ -4285,6 +4367,22 @@ async function beginMember(
     }
 }
 
+function updateMemberDateInput(event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    memberForm.value.dob_display = input.value;
+    memberForm.value.dob = parseDateInput(input.value) ?? "";
+}
+
+function updateInlineMemberDateInput(person: Row, event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    person.dob_display = input.value;
+    person.dob = parseDateInput(input.value) ?? "";
+}
+
 function sanitizeMemberPhone(event: Event): void {
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
@@ -4323,8 +4421,14 @@ async function saveMember(): Promise<void> {
     const selectedSchool = personSchools.value.find(
         (school) => String(school.code) === educationForm.value.school_code,
     );
+    const memberFields = Object.fromEntries(
+        Object.entries(memberForm.value).filter(
+            ([field]) => field !== "dob_display",
+        ),
+    );
     const body: Row = {
-        ...memberForm.value,
+        ...memberFields,
+        dob: parseDateInput(memberForm.value.dob_display) ?? "",
         is_head: memberIsHead.value,
         education: {
             ...educationForm.value,
@@ -4458,6 +4562,7 @@ function normalizeInlineHouseholdPersons(persons: Row[]): Row[] {
         return {
             ...person,
             dob: normalizeInlineDate(person.dob),
+            dob_display: dateInputValue(person.dob),
             religion: person.religion ?? "",
             priority_type: person.priority_type ?? "",
             relationship_with_head: person.relationship_with_head ?? "",
@@ -4485,6 +4590,7 @@ function normalizeInlineHouseholdPersons(persons: Row[]): Row[] {
                 literacy_relapse_level: education.literacy_relapse_level ?? "",
                 learning_capacity: education.learning_capacity ?? "",
             },
+            _school_name: pathValue(education, "school.name") ?? "",
             disability: {
                 ...((typeof person.disability === "object" &&
                 person.disability !== null
@@ -4547,6 +4653,7 @@ function ensureLegacyHouseholdHead(
             first_name: firstName,
             relationship_with_head: "Chủ hộ",
             dob: "",
+            dob_display: "",
             gender: "",
             ethnicity_code: "",
             religion: "",
@@ -4590,6 +4697,7 @@ function inlineHouseholdPersonSnapshot(person: Row): string {
         first_name: person.first_name ?? "",
         last_name: person.last_name ?? "",
         dob: person.dob ?? "",
+        dob_display: person.dob_display ?? dateInputValue(person.dob),
         gender: person.gender ?? "",
         ethnicity_code: person.ethnicity_code ?? "",
         relationship_with_head: person.relationship_with_head ?? "",
@@ -4638,6 +4746,289 @@ function inlineEducation(person: Row): Row {
     return person.education as Row;
 }
 
+function inlineSchoolGrade(person: Row): string {
+    const education = inlineEducation(person);
+    return (
+        gradeFromClassName(education.current_class) ||
+        gradeFromClassName(education.academic_block)
+    );
+}
+
+function inlineSchoolOptionsKey(person: Row): string {
+    const householdId =
+        householdDetail.value?.id ?? selected.value?.id ?? "";
+    return `${String(householdId)}:${inlineSchoolGrade(person)}`;
+}
+
+async function loadInlineSchoolOptions(person: Row): Promise<void> {
+    const grade = inlineSchoolGrade(person);
+    const householdId =
+        householdDetail.value?.id ?? selected.value?.id;
+    if (!grade || householdId === undefined || householdId === null) return;
+
+    const key = `${String(householdId)}:${grade}`;
+    if (inlineSchoolOptions.value[key] || inlineSchoolRequests.has(key)) {
+        await inlineSchoolRequests.get(key);
+        return;
+    }
+
+    inlineSchoolOptionsLoading.value[key] = true;
+    inlineSchoolOptionsErrors.value[key] = "";
+    const request = api
+        .get<unknown>(`/households/${householdId}/persons/schools`, {
+            params: { academic_block: grade },
+        })
+        .then(({ data }) => {
+            inlineSchoolOptions.value[key] = asRows(
+                apiData<Row>(data).schools,
+            );
+        })
+        .catch((cause: unknown) => {
+            inlineSchoolOptionsErrors.value[key] = errorMessage(cause);
+        })
+        .finally(() => {
+            inlineSchoolOptionsLoading.value[key] = false;
+            inlineSchoolRequests.delete(key);
+        });
+    inlineSchoolRequests.set(key, request);
+    await request;
+}
+
+function updateInlineClass(person: Row, event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    const education = inlineEducation(person);
+    const grade = gradeFromClassName(input.value);
+    if (grade !== String(education.academic_block ?? "")) {
+        education.school_code = "";
+        person._school_name = "";
+    }
+    education.academic_block = grade;
+    if (grade) void loadInlineSchoolOptions(person);
+}
+
+function inlineSchoolChanged(person: Row): void {
+    const education = inlineEducation(person);
+    const school = (inlineSchoolOptions.value[inlineSchoolOptionsKey(person)] ?? [])
+        .find((item) => String(item.code) === String(education.school_code));
+    person._school_name = school?.name ?? education.school_code ?? "";
+}
+
+function inlineSchoolYearStart(person: Row): string {
+    const value = String(inlineEducation(person).school_year ?? "");
+    return value.match(/^(\d{4})(?:-\d{4})?$/)?.[1] ?? value;
+}
+
+function inlineSchoolYearEnd(person: Row): string {
+    const value = String(inlineEducation(person).school_year ?? "");
+    const range = value.match(/^\d{4}-(\d{4})$/);
+    if (range) return range[1];
+
+    return /^\d{4}$/.test(value) ? String(Number(value) + 1) : "";
+}
+
+function updateInlineSchoolYear(person: Row, event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    const value = input.value.trim();
+    const yearRange = /^\d{4}$/.test(value)
+        ? `${value}-${Number(value) + 1}`
+        : value;
+    inlineEducation(person).school_year = yearRange;
+}
+
+function sanitizeInlineMemberPhone(person: Row, event: Event): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    const value = input.value.replace(/[^\d+]/g, "");
+    const phone = value.startsWith("+")
+        ? `+${value.slice(1).replace(/\+/g, "")}`
+        : value.replace(/\+/g, "");
+    person.phone = phone;
+    input.value = phone;
+}
+
+function inlineMemberValidationError(person: Row): string {
+    const value = (field: string): string => String(person[field] ?? "").trim();
+    const education = inlineEducation(person);
+    const educationValue = (field: string): string =>
+        String(education[field] ?? "").trim();
+    const personNamePattern =
+        /^[\p{L}\p{M}]+(?:[ '-][\p{L}\p{M}]+)*$/u;
+    const orderedFields: Array<[string, unknown]> = [
+        ["Họ và tên đệm", person.last_name],
+        ["Tên", person.first_name],
+        ["Quan hệ", person.relationship_with_head],
+        ["Ngày sinh", person.dob_display],
+        ["Giới tính", person.gender],
+        ["Dân tộc", person.ethnicity_code],
+        ["Năm học", education.school_year],
+    ];
+    const missingField = orderedFields.find(
+        ([, fieldValue]) => !String(fieldValue ?? "").trim(),
+    );
+    if (missingField) return `Vui lòng nhập ${missingField[0].toLocaleLowerCase("vi-VN")}.`;
+
+    for (const [field, label, maxLength] of [
+        ["last_name", "Họ và tên đệm", 50],
+        ["first_name", "Tên", 100],
+        ["parent_name", "Họ tên cha hoặc mẹ", 150],
+    ] as const) {
+        const text = value(field);
+        if (text && !personNamePattern.test(text)) {
+            return `${label} chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.`;
+        }
+        if (text.length > maxLength) {
+            return `${label} không được vượt quá ${maxLength} ký tự.`;
+        }
+    }
+
+    const phone = value("phone");
+    if (phone && !/^\+?[0-9]+$/.test(phone)) {
+        return "Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +.";
+    }
+    if (phone.length > 20) return "Số điện thoại không được vượt quá 20 ký tự.";
+
+    for (const [field, label, maxLength] of [
+        ["religion", "Tôn giáo", 50],
+        ["priority_type", "Diện ưu tiên", 100],
+        ["note", "Ghi chú", 2000],
+    ] as const) {
+        if (value(field).length > maxLength) {
+            return `${label} không được vượt quá ${maxLength} ký tự.`;
+        }
+    }
+
+    const relationship = value("relationship_with_head");
+    if (relationship.length > 100) {
+        return "Quan hệ với chủ hộ không được vượt quá 100 ký tự.";
+    }
+
+    const dob = parseDateInput(person.dob_display);
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    if (!dob) {
+        return "Ngày sinh phải theo định dạng ngày/tháng/năm (dd/mm/yyyy).";
+    }
+    if (dob > todayString) return "Ngày sinh không được lớn hơn ngày hiện tại.";
+    if (!["NAM", "NU"].includes(value("gender"))) {
+        return "Vui lòng chọn giới tính hợp lệ.";
+    }
+
+    const schoolYear = educationValue("school_year");
+    const yearMatch = schoolYear.match(/^(\d{4})-(\d{4})$/);
+    const year = Number(yearMatch?.[1]);
+    const now = new Date();
+    const latestYear =
+        now.getFullYear() - (now.getMonth() < 7 ? 1 : 0);
+    if (
+        !yearMatch ||
+        Number(yearMatch[2]) !== year + 1 ||
+        year < 2020 ||
+        year > latestYear
+    ) {
+        return "Năm học không hợp lệ.";
+    }
+
+    if (educationValue("academic_block").length > 50) {
+        return "Khối học không được vượt quá 50 ký tự.";
+    }
+
+    const classFields = [
+        ["current_class", "Lớp đang học"],
+        ["finished_class", "Lớp đã hoàn thành"],
+        ["dropped_class", "Lớp bỏ học"],
+    ] as const;
+    for (const [field, label] of classFields) {
+        const className = educationValue(field);
+        if (className.length > (field === "current_class" ? 50 : 20)) {
+            return `${label} vượt quá số ký tự cho phép.`;
+        }
+        const gradeMatch = className.match(/^\s*(?:lớp\s*)?(\d+)/iu);
+        if (gradeMatch && Number(gradeMatch[1]) > 12) {
+            return `${label} không được lớn hơn lớp 12.`;
+        }
+    }
+
+    const graduationLevel = educationValue("graduation_level");
+    if (
+        graduationLevel &&
+        !["MN", "TH", "THCS", "THPT"].includes(graduationLevel)
+    ) {
+        return "Trình độ phổ cập không hợp lệ.";
+    }
+    if (educationValue("vocational_grad_level").length > 50) {
+        return "Trình độ tốt nghiệp nghề không được vượt quá 50 ký tự.";
+    }
+
+    for (const [field, label] of [
+        ["graduation_year", "Năm tốt nghiệp văn hóa"],
+        ["vocational_grad_year", "Năm tốt nghiệp nghề"],
+        ["finished_year", "Năm hoàn thành lớp"],
+        ["dropped_year", "Năm bỏ học"],
+    ] as const) {
+        const text = educationValue(field);
+        if (!text) continue;
+        if (text.length > 20 || !/^\d{4}(?:-\d{4})?$/.test(text)) {
+            return `${label} phải có dạng YYYY hoặc YYYY-YYYY.`;
+        }
+        const years = text.split("-").map(Number);
+        const nextYearRange = `${now.getFullYear()}-${now.getFullYear() + 1}`;
+        if (
+            years.some((item) => item > now.getFullYear()) &&
+            text !== nextYearRange
+        ) {
+            return `${label} không được lớn hơn năm hiện tại.`;
+        }
+    }
+
+    for (const [field, label, maxLength] of [
+        ["literacy_current_class", "Lớp xóa mù chữ đang học", 20],
+        ["literacy_completed_class", "Lớp xóa mù chữ đã hoàn thành", 20],
+        ["learning_capacity", "Năng lực học tập", 50],
+    ] as const) {
+        if (educationValue(field).length > maxLength) {
+            return `${label} không được vượt quá ${maxLength} ký tự.`;
+        }
+    }
+
+    const relapseLevel = educationValue("literacy_relapse_level");
+    if (relapseLevel && !["1", "2"].includes(relapseLevel)) {
+        return "Mức độ tái mù chữ phải là 1 hoặc 2.";
+    }
+    if (
+        person.relationship_with_head !== "Chủ hộ" &&
+        value("relationship_with_head") === "Chủ hộ"
+    ) {
+        return "Thành viên không thể có quan hệ là chủ hộ.";
+    }
+    const slotError = relationshipSlotError(
+        person.relationship_with_head,
+        person,
+    );
+    if (slotError) return slotError;
+    const specialCircumstance = String(
+        inlineDisability(person).special_circumstance ?? "",
+    );
+    if (
+        specialCircumstance &&
+        !["Chuyển đến", "Chuyển đi"].includes(specialCircumstance)
+    ) {
+        return "Hoàn cảnh đặc biệt không hợp lệ.";
+    }
+    if (
+        String(inlineDisability(person).special_circumstance_detail ?? "")
+            .length > 2000
+    ) {
+        return "Chi tiết hoàn cảnh đặc biệt không được vượt quá 2000 ký tự.";
+    }
+
+    return "";
+}
+
 function inlineDisability(person: Row): Row {
     if (typeof person.disability !== "object" || person.disability === null) {
         person.disability = {};
@@ -4652,6 +5043,7 @@ async function addInlineHouseholdMember(): Promise<void> {
         first_name: "",
         relationship_with_head: "Con",
         dob: "",
+        dob_display: "",
         gender: "NAM",
         ethnicity_code: "",
         religion: "",
@@ -4730,23 +5122,13 @@ async function saveInlineHouseholdMember(
             : String(householdIdValue);
     if (!householdId || memberBusy.value) return false;
 
-    const requiredFields = [
-        ["Họ và tên đệm", person.last_name],
-        ["Tên", person.first_name],
-        ["Ngày sinh", person.dob],
-        ["Giới tính", person.gender],
-        ["Dân tộc", person.ethnicity_code],
-        ["Quan hệ", person.relationship_with_head],
-    ];
-    const missingField = requiredFields.find(
-        ([, value]) => String(value ?? "").trim() === "",
-    );
-    if (missingField) {
-        error.value = `Vui lòng nhập ${String(missingField[0]).toLocaleLowerCase("vi-VN")}.`;
+    const validationError = inlineMemberValidationError(person);
+    if (validationError) {
+        error.value = validationError;
         managementResult.value = {
             success: false,
             title: "Không thể lưu nhân khẩu",
-            message: error.value,
+            message: validationError,
         };
         return false;
     }
@@ -4790,7 +5172,7 @@ async function saveInlineHouseholdMember(
         const body = {
             first_name: String(person.first_name ?? ""),
             last_name: String(person.last_name ?? ""),
-            dob: String(person.dob ?? ""),
+            dob: parseDateInput(person.dob_display) ?? "",
             gender: String(person.gender ?? ""),
             ethnicity_code: ethnicityCode,
             relationship_with_head: String(person.relationship_with_head ?? ""),
@@ -8340,9 +8722,10 @@ onMounted(async () => {
                                 <col class="member-col-medium" />
                                 <col class="member-col-phone" />
                                 <col class="member-col-medium" />
+                                <col class="member-col-school-year" />
                                 <col
                                     class="member-col-small"
-                                    v-for="column in 29"
+                                    v-for="column in 28"
                                     :key="`member-col-${column}`"
                                 />
                                 <col class="member-col-actions" />
@@ -8362,11 +8745,11 @@ onMounted(async () => {
                                     <th>Số điện thoại</th>
                                     <th>Ghi chú</th>
                                     <th class="is-required">Năm học</th>
-                                    <th>Khối học</th>
                                     <th>Lớp đang học</th>
+                                    <th>Khối học</th>
                                     <th>Trường đang học</th>
-                                    <th>Tốt nghiệp văn hóa</th>
                                     <th>Bổ túc</th>
+                                    <th>Tốt nghiệp văn hóa</th>
                                     <th>Năm tốt nghiệp văn hóa</th>
                                     <th>Tốt nghiệp nghề</th>
                                     <th>Năm tốt nghiệp nghề</th>
@@ -8455,9 +8838,18 @@ onMounted(async () => {
                                         </td>
                                         <td>
                                             <input
-                                                v-model="person.dob"
+                                                v-model="person.dob_display"
+                                                @input="
+                                                    updateInlineMemberDateInput(
+                                                        person,
+                                                        $event,
+                                                    )
+                                                "
                                                 :name="`members[${index}][dob]`"
-                                                type="date"
+                                                type="text"
+                                                inputmode="numeric"
+                                                placeholder="dd/mm/yyyy"
+                                                maxlength="10"
                                                 aria-label="Ngày sinh"
                                             />
                                         </td>
@@ -8516,7 +8908,14 @@ onMounted(async () => {
                                         <td>
                                             <input
                                                 v-model="person.phone"
+                                                @input="
+                                                    sanitizeInlineMemberPhone(
+                                                        person,
+                                                        $event,
+                                                    )
+                                                "
                                                 maxlength="20"
+                                                inputmode="tel"
                                                 aria-label="Số điện thoại"
                                             />
                                         </td>
@@ -8528,30 +8927,47 @@ onMounted(async () => {
                                             />
                                         </td>
                                         <td>
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .school_year
-                                                "
-                                                maxlength="20"
-                                                aria-label="Năm học"
-                                            />
-                                        </td>
-                                        <td>
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .academic_block
-                                                "
-                                                maxlength="50"
-                                                aria-label="Khối học"
-                                            />
+                                            <div class="inline-school-year-control">
+                                                <input
+                                                    :value="
+                                                        inlineSchoolYearStart(
+                                                            person,
+                                                        )
+                                                    "
+                                                    @input="
+                                                        updateInlineSchoolYear(
+                                                            person,
+                                                            $event,
+                                                        )
+                                                    "
+                                                    maxlength="4"
+                                                    aria-label="Năm học"
+                                                />
+                                                <span
+                                                    v-if="
+                                                        inlineSchoolYearEnd(
+                                                            person,
+                                                        )
+                                                    "
+                                                    >-{{
+                                                        inlineSchoolYearEnd(
+                                                            person,
+                                                        )
+                                                    }}</span
+                                                >
+                                            </div>
                                         </td>
                                         <td>
                                             <input
                                                 v-model="
                                                     inlineEducation(person)
                                                         .current_class
+                                                "
+                                                @input="
+                                                    updateInlineClass(
+                                                        person,
+                                                        $event,
+                                                    )
                                                 "
                                                 maxlength="50"
                                                 aria-label="Lớp đang học"
@@ -8561,10 +8977,132 @@ onMounted(async () => {
                                             <input
                                                 v-model="
                                                     inlineEducation(person)
+                                                        .academic_block
+                                                "
+                                                readonly
+                                                maxlength="50"
+                                                aria-label="Khối học"
+                                            />
+                                        </td>
+                                        <td>
+                                            <select
+                                                v-model="
+                                                    inlineEducation(person)
                                                         .school_code
                                                 "
-                                                maxlength="50"
+                                                :disabled="
+                                                    !inlineSchoolGrade(person)
+                                                "
+                                                :aria-busy="
+                                                    inlineSchoolOptionsLoading[
+                                                        inlineSchoolOptionsKey(
+                                                            person,
+                                                        )
+                                                    ]
+                                                "
+                                                @focus="
+                                                    loadInlineSchoolOptions(
+                                                        person,
+                                                    )
+                                                "
+                                                @change="
+                                                    inlineSchoolChanged(person)
+                                                "
                                                 aria-label="Trường đang học"
+                                            >
+                                                <option value="">
+                                                    {{
+                                                        !inlineSchoolGrade(
+                                                            person,
+                                                        )
+                                                            ? "Nhập lớp trước"
+                                                            : inlineSchoolOptionsLoading[
+                                                                    inlineSchoolOptionsKey(
+                                                                        person,
+                                                                    )
+                                                                ]
+                                                              ? "Đang tải trường..."
+                                                              : "Chọn trường"
+                                                    }}
+                                                </option>
+                                                <option
+                                                    v-if="
+                                                        inlineEducation(person)
+                                                            .school_code &&
+                                                        !(
+                                                            inlineSchoolOptions[
+                                                                inlineSchoolOptionsKey(
+                                                                    person,
+                                                                )
+                                                            ] ?? []
+                                                        ).some(
+                                                            (school) =>
+                                                                String(
+                                                                    school.code,
+                                                                ) ===
+                                                                String(
+                                                                    inlineEducation(
+                                                                        person,
+                                                                    )
+                                                                        .school_code,
+                                                                ),
+                                                        )
+                                                    "
+                                                    :value="
+                                                        String(
+                                                            inlineEducation(
+                                                                person,
+                                                            ).school_code,
+                                                        )
+                                                    "
+                                                >
+                                                    {{
+                                                        person._school_name ||
+                                                        inlineEducation(person)
+                                                            .school_code
+                                                    }}
+                                                </option>
+                                                <option
+                                                    v-for="school in inlineSchoolOptions[
+                                                        inlineSchoolOptionsKey(
+                                                            person,
+                                                        )
+                                                    ] ?? []"
+                                                    :key="String(school.code)"
+                                                    :value="String(school.code)"
+                                                >
+                                                    {{ school.name }} ·
+                                                    {{ school.code }}
+                                                </option>
+                                            </select>
+                                            <small
+                                                v-if="
+                                                    inlineSchoolOptionsErrors[
+                                                        inlineSchoolOptionsKey(
+                                                            person,
+                                                        )
+                                                    ]
+                                                "
+                                                class="field-error"
+                                                role="alert"
+                                            >
+                                                {{
+                                                    inlineSchoolOptionsErrors[
+                                                        inlineSchoolOptionsKey(
+                                                            person,
+                                                        )
+                                                    ]
+                                                }}
+                                            </small>
+                                        </td>
+                                        <td class="household-inline-checkbox">
+                                            <input
+                                                v-model="
+                                                    inlineEducation(person)
+                                                        .is_complementary
+                                                "
+                                                type="checkbox"
+                                                aria-label="Bổ túc"
                                             />
                                         </td>
                                         <td>
@@ -8587,16 +9125,6 @@ onMounted(async () => {
                                                     THPT
                                                 </option>
                                             </select>
-                                        </td>
-                                        <td class="household-inline-checkbox">
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .is_complementary
-                                                "
-                                                type="checkbox"
-                                                aria-label="Bổ túc"
-                                            />
                                         </td>
                                         <td>
                                             <input
@@ -8940,6 +9468,18 @@ onMounted(async () => {
                         'village-merge-form-actions': moduleKey === 'merge',
                     }"
                 >
+                    <button
+                        v-if="
+                            moduleKey === 'households' &&
+                            isHouseholdCreatePage &&
+                            !editing
+                        "
+                        class="secondary-button"
+                        type="button"
+                        @click="closeConfigurationForm"
+                    >
+                        Quay lại danh sách phiếu
+                    </button>
                     <button
                         class="primary-button"
                         type="submit"
@@ -12501,8 +13041,12 @@ onMounted(async () => {
                             <label class="workspace-field">
                                 <span>Ngày sinh</span>
                                 <input
-                                    v-model="memberForm.dob"
-                                    type="date"
+                                    v-model="memberForm.dob_display"
+                                    @input="updateMemberDateInput"
+                                    type="text"
+                                    inputmode="numeric"
+                                    placeholder="dd/mm/yyyy"
+                                    maxlength="10"
                                     required
                                     :aria-invalid="
                                         Boolean(

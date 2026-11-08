@@ -529,6 +529,74 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('persons', ['phone' => '+84912345678']);
     }
 
+    public function test_member_update_rejects_non_numeric_phone(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::UPDATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $person = $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Chủ hộ');
+        $payload['phone'] = '09012abc';
+
+        $this->actingAs($user)
+            ->putJson(route('api.households.persons.update', [$household, $person->id]), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'phone');
+    }
+
+    public function test_household_allows_only_one_spouse_and_one_parent_but_multiple_children(): void
+    {
+        $user = $this->userWithPermissions([
+            AccessPermission::CREATE_HOUSEHOLDS,
+            AccessPermission::UPDATE_HOUSEHOLDS,
+        ]);
+        $household = $this->createHousehold();
+        $head = $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $this->actingAs($user);
+
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Vợ'))
+            ->assertCreated();
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Chồng'))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'relationship_with_head');
+
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Cha', '1960-01-01'))
+            ->assertCreated();
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Mẹ', '1962-01-01'))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'relationship_with_head');
+
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Con'))
+            ->assertCreated();
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Con'))
+            ->assertCreated();
+
+        $child = $household->persons()->where('relationship_with_head', 'Con')->firstOrFail();
+        $this->putJson(
+            route('api.households.persons.update', [$household, $child->id]),
+            $this->personPayload('Vợ'),
+        )->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'relationship_with_head');
+
+        $this->assertDatabaseHas('persons', ['id' => $head->id, 'relationship_with_head' => 'Chủ hộ']);
+    }
+
+    public function test_trashed_spouse_cannot_be_restored_when_the_slot_is_taken(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $trashedSpouse = $this->createPerson($household, ['relationship_with_head' => 'Vợ']);
+        $trashedSpouse->delete();
+        $this->createPerson($household, ['relationship_with_head' => 'Chồng']);
+
+        $this->actingAs($user)
+            ->patchJson(route('api.trash.persons.restore', $trashedSpouse->id))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'trash');
+
+        $this->assertSoftDeleted('persons', ['id' => $trashedSpouse->id]);
+    }
+
     public function test_education_year_fields_reject_non_year_text(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);

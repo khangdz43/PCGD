@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onUnmounted, ref } from 'vue';
 import { api, apiData, apiPage, errorMessage } from '../../api';
 
 type School = {
@@ -44,6 +44,7 @@ let searchTimer: number | null = null;
 let targetSearchTimer: number | null = null;
 let activeRequest: AbortController | null = null;
 let activeTargetRequest: AbortController | null = null;
+const targetHasSearched = ref(false);
 
 const canViewMerges = computed(() =>
     props.scopeLevel !== 'global' &&
@@ -73,19 +74,6 @@ const targetOptions = computed(() => targetSchools.value.filter(school =>
     selectedSourceSchools.value.every(source => isCompatible(source, school))
         && !sourceCodes.value.includes(school.code),
 ));
-const preservedTargetOption = computed(() => {
-    const target = targetSchool.value;
-    if (
-        !target
-        || targetOptions.value.some(school => school.code === target.code)
-        || sourceCodes.value.includes(target.code)
-        || !selectedSourceSchools.value.every(source => isCompatible(source, target))
-    ) {
-        return null;
-    }
-
-    return target;
-});
 function isCompatible(source: School, target: School): boolean {
     return getCompatibilityMessage(source, target) === '';
 }
@@ -195,10 +183,21 @@ async function loadSchools(page = 1): Promise<void> {
 
 async function loadTargetSchools(page = 1): Promise<void> {
     if (!canViewMerges.value) return;
+    if (!targetSearchQuery.value.trim()) {
+        activeTargetRequest?.abort();
+        targetSchools.value = [];
+        targetCurrentPage.value = 1;
+        targetLastPage.value = 1;
+        targetTotalSchools.value = 0;
+        targetHasSearched.value = false;
+        return;
+    }
+
     activeTargetRequest?.abort();
     const controller = new AbortController();
     activeTargetRequest = controller;
     targetLoading.value = true;
+    targetHasSearched.value = true;
     error.value = '';
     try {
         const response = await api.get<unknown>('/school-merges', {
@@ -239,6 +238,11 @@ function scheduleSearch(): void {
 
 function scheduleTargetSearch(): void {
     if (targetSearchTimer !== null) window.clearTimeout(targetSearchTimer);
+    if (!targetSearchQuery.value.trim()) {
+        void loadTargetSchools(1);
+        return;
+    }
+
     targetSearchTimer = window.setTimeout(() => {
         targetSearchTimer = null;
         void loadTargetSchools(1);
@@ -252,12 +256,11 @@ function toggleSource(school: School, event: Event): void {
         : selectedSourceSchools.value.filter(selected => selected.code !== school.code);
 }
 
-function changeTarget(event: Event): void {
-    const nextTargetId = (event.target as HTMLSelectElement).value;
-    if (nextTargetId === targetId.value) return;
+function selectTarget(school: School): void {
+    if (school.code === targetId.value) return;
 
-    targetId.value = nextTargetId;
-    targetSchool.value = targetSchools.value.find(school => school.code === targetId.value) ?? null;
+    targetId.value = school.code;
+    targetSchool.value = school;
     selectedSourceSchools.value = [];
     sourceNotice.value = '';
     searchQuery.value = '';
@@ -298,11 +301,13 @@ async function submitMerge(): Promise<void> {
         selectedSourceSchools.value = [];
         targetId.value = '';
         targetSchool.value = null;
+        targetSearchQuery.value = '';
+        targetSchools.value = [];
+        targetHasSearched.value = false;
         sourceNotice.value = '';
         decisionNumber.value = '';
         confirmMerge.value = false;
         schools.value = [];
-        await loadTargetSchools(1);
     } catch (cause) {
         error.value = errorMessage(cause);
         confirmMerge.value = false;
@@ -311,10 +316,6 @@ async function submitMerge(): Promise<void> {
     }
 }
 
-onMounted(() => {
-    if (!canViewMerges.value) return;
-    void loadTargetSchools();
-});
 onUnmounted(() => {
     if (searchTimer !== null) window.clearTimeout(searchTimer);
     if (targetSearchTimer !== null) window.clearTimeout(targetSearchTimer);
@@ -325,12 +326,26 @@ onUnmounted(() => {
 
 <template>
     <section class="workspace school-merge-view">
-        <p v-if="error" class="notice" role="alert">{{ error }}</p>
-        <p v-if="successMessage" class="success-notice" role="status">{{ successMessage }}</p>
+        <div v-if="error" class="school-merge-feedback is-error" role="alert">
+            <span aria-hidden="true">!</span>
+            <p>{{ error }}</p>
+        </div>
+        <div v-if="successMessage" class="school-merge-feedback is-success" role="status">
+            <span aria-hidden="true">✓</span>
+            <p>{{ successMessage }}</p>
+        </div>
 
         <div class="merge-constraint-note" role="note">
-            <span aria-hidden="true">ⓘ</span>
-            <p>Chọn trường đích đang hoạt động trước. Các trường nguồn phải được chuyển sang trạng thái không hoạt động trong danh mục trường học rồi mới được gộp. Mầm non chỉ gộp với Mầm non; các cấp phổ thông được gộp khác cấp. Trường Mầm non, Tiểu học và THCS gộp trong cùng xã; trường THPT gộp trong cùng tỉnh. Lớp trùng tên được đổi thành tên lớp_mã trường nguồn.</p>
+            <span class="merge-constraint-icon" aria-hidden="true">!</span>
+            <div>
+                <strong>Lưu ý khi gộp trường</strong>
+                <p>
+                    Chọn trường đích đang hoạt động; trường nguồn phải ngừng hoạt động.
+                    Mầm non chỉ gộp với Mầm non. Tiểu học và THCS gộp trong cùng xã;
+                    THPT gộp trong cùng tỉnh. Lớp trùng tên sẽ được đổi theo tên lớp
+                    và mã trường nguồn.
+                </p>
+            </div>
         </div>
 
         <form @submit.prevent="openMergeConfirmation">
@@ -351,23 +366,44 @@ onUnmounted(() => {
                             placeholder="Nhập mã hoặc tên trường đích"
                             :disabled="saving"
                             @input="scheduleTargetSearch"
+                            @keydown.enter.prevent
                         >
                     </label>
-                    <label class="workspace-field">
-                        <span>Chọn trường đích</span>
-                        <select :value="targetId" required :disabled="saving || targetLoading" @change="changeTarget">
-                            <option value="">Chọn trường tiếp nhận</option>
-                            <option
-                                v-if="preservedTargetOption"
-                                :value="preservedTargetOption.code"
-                            >
-                                {{ preservedTargetOption.name }} · {{ preservedTargetOption.code }}
-                            </option>
-                            <option v-for="school in targetOptions" :key="school.code" :value="school.code">
-                                {{ school.name }} · {{ school.code }} · {{ schoolLevelLabel(school.level) }}
-                            </option>
-                        </select>
-                    </label>
+                    <p v-if="targetLoading" class="muted" role="status">Đang tìm trường đích…</p>
+                    <div v-else-if="targetOptions.length" class="school-target-list" aria-label="Kết quả tìm trường đích">
+                        <button
+                            v-for="school in targetOptions"
+                            :key="school.code"
+                            class="school-target-option"
+                            :class="{ selected: targetId === school.code }"
+                            type="button"
+                            :aria-pressed="targetId === school.code"
+                            :disabled="saving"
+                            @click="selectTarget(school)"
+                        >
+                            <span class="school-target-option-copy">
+                                <strong>{{ school.name || 'Chưa cập nhật tên' }}</strong>
+                                <small>{{ school.code }} · {{ schoolLevelLabel(school.level) }} · {{ schoolTypeLabel(school.type) }} · {{ schoolLocationLabel(school) }}</small>
+                            </span>
+                            <span class="school-target-option-action">{{ targetId === school.code ? 'Đã chọn' : 'Chọn' }}</span>
+                        </button>
+                    </div>
+                    <p v-else-if="targetHasSearched" class="muted" role="status">
+                        Không tìm thấy trường đích phù hợp.
+                    </p>
+                    <p v-else-if="!targetSchool" class="muted" role="status">
+                        Nhập mã hoặc tên trường để tìm và chọn trường tiếp nhận.
+                    </p>
+                    <div v-if="targetLastPage > 1 && targetOptions.length" class="pagination-controls" aria-label="Phân trang kết quả trường đích">
+                        <button class="secondary-button" type="button" :disabled="targetLoading || saving || targetCurrentPage <= 1" @click="loadTargetSchools(targetCurrentPage - 1)">Trước</button>
+                        <span>Trang {{ targetCurrentPage }} / {{ targetLastPage }} · {{ targetTotalSchools.toLocaleString('vi-VN') }} trường</span>
+                        <button class="secondary-button" type="button" :disabled="targetLoading || saving || targetCurrentPage >= targetLastPage" @click="loadTargetSchools(targetCurrentPage + 1)">Sau</button>
+                    </div>
+                    <div v-if="targetSchool" class="school-target-summary">
+                        <strong>Trường đích: {{ targetSchool.name }}</strong>
+                        <span>{{ targetSchool.code }} · {{ schoolLevelLabel(targetSchool.level) }} · {{ schoolTypeLabel(targetSchool.type) }}</span>
+                        <span>{{ targetSchool.level === 'THPT' ? 'Phạm vi gộp: cùng tỉnh' : 'Phạm vi gộp: cùng xã' }}</span>
+                    </div>
                     <label class="workspace-field">
                         <span>Số quyết định sáp nhập <small>(không bắt buộc)</small></span>
                         <input
@@ -378,26 +414,6 @@ onUnmounted(() => {
                             :disabled="saving"
                         >
                     </label>
-                    <p v-if="targetLoading" class="muted" role="status">Đang tải trường đích…</p>
-                    <p v-else-if="!targetOptions.length" class="muted" role="status">
-                        {{
-                            targetSearchQuery.trim()
-                                ? 'Không tìm thấy trường đích phù hợp với nội dung tìm kiếm.'
-                                : selectedSourceSchools.length
-                                    ? 'Trang này không có trường đích phù hợp. Hãy tìm theo tên/mã hoặc chuyển trang.'
-                                    : 'Chưa có trường trong trang này. Hãy tìm theo tên/mã hoặc chuyển trang.'
-                        }}
-                    </p>
-                    <div v-if="targetLastPage > 1" class="pagination-controls" aria-label="Phân trang trường đích">
-                        <button class="secondary-button" type="button" :disabled="targetLoading || saving || targetCurrentPage <= 1" @click="loadTargetSchools(targetCurrentPage - 1)">Trước</button>
-                        <span>Trang {{ targetCurrentPage }} / {{ targetLastPage }} · {{ targetTotalSchools.toLocaleString('vi-VN') }} trường</span>
-                        <button class="secondary-button" type="button" :disabled="targetLoading || saving || targetCurrentPage >= targetLastPage" @click="loadTargetSchools(targetCurrentPage + 1)">Sau</button>
-                    </div>
-                    <div v-if="targetSchool" class="school-target-summary">
-                        <strong>{{ targetSchool.name }}</strong>
-                        <span>{{ targetSchool.code }} · {{ schoolLevelLabel(targetSchool.level) }} · {{ schoolTypeLabel(targetSchool.type) }}</span>
-                        <span>{{ targetSchool.level === 'THPT' ? 'Phạm vi gộp: cùng tỉnh' : 'Phạm vi gộp: cùng xã' }}</span>
-                    </div>
                     <p v-if="targetId && selectedSourceSchools.length && !mergeCompatible" class="merge-constraint-warning" role="alert">
                         {{ compatibilityMessage }}
                     </p>
@@ -436,7 +452,7 @@ onUnmounted(() => {
                             </label>
                             <p v-if="!schools.length && !error" class="empty-state">Không có trường phù hợp trong phạm vi quản lý.</p>
                         </div>
-                        <div class="selected-source-list" aria-label="Trường nguồn đã chọn">
+                        <div v-if="selectedSourceSchools.length" class="selected-source-list" aria-label="Trường nguồn đã chọn">
                             <span v-for="school in selectedSourceSchools" :key="school.code">
                                 {{ school.name }} · {{ school.code }}
                                 <button type="button" :disabled="saving" :aria-label="`Bỏ chọn ${school.name}`" @click="removeSource(school.code)">×</button>

@@ -9,6 +9,7 @@ const emit = defineEmits<{ navigate: [module: ModuleKey] }>();
 type SystemOverview = {
     school_year: string;
     school_years: string[];
+    age_reference_date: string;
     totals: {
         provinces: number;
         communes: number;
@@ -17,6 +18,13 @@ type SystemOverview = {
         active_users: number;
         households: number;
         persons: number;
+    };
+    education_summary: {
+        preschool_age_5: { population: number; studying: number; completed: number };
+        primary_age_6_to_14: { population: number; studying: number; completed: number };
+        lower_secondary_age_11_to_18: { population: number; studying: number; completed: number };
+        literacy_age_15_to_60: { population: number; studying: number; completed: number; relapse: number };
+        data_quality: { school_age_missing_education: number; missing_birth_dates: number };
     };
     provinces: { code: string; name: string; households: number }[];
 };
@@ -135,6 +143,61 @@ onMounted(() => {
                         <strong>{{ systemOverview.totals.active_users.toLocaleString('vi-VN') }}</strong>
                         <small>Đang được phép đăng nhập</small>
                     </article>
+                </section>
+
+                <section class="central-education-summary">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="section-eyebrow">PHỔ CẬP GIÁO DỤC &amp; XÓA MÙ CHỮ</span>
+                            <h3>Tình hình theo nhóm tuổi</h3>
+                        </div>
+                        <span class="dashboard-count">
+                            Tuổi tính đến {{ systemOverview.age_reference_date }}
+                        </span>
+                    </div>
+                    <div class="central-cohort-grid">
+                        <article class="central-cohort-card">
+                            <span class="central-cohort-age">5 tuổi</span>
+                            <h4>Mầm non</h4>
+                            <strong>{{ systemOverview.education_summary.preschool_age_5.population.toLocaleString('vi-VN') }}</strong>
+                            <small>Người có ngày sinh trong nhóm tuổi</small>
+                            <div><span>Đang học mầm non</span><b>{{ systemOverview.education_summary.preschool_age_5.studying.toLocaleString('vi-VN') }}</b></div>
+                            <div><span>Ghi nhận hoàn thành</span><b>{{ systemOverview.education_summary.preschool_age_5.completed.toLocaleString('vi-VN') }}</b></div>
+                        </article>
+                        <article class="central-cohort-card">
+                            <span class="central-cohort-age">6–14 tuổi</span>
+                            <h4>Tiểu học</h4>
+                            <strong>{{ systemOverview.education_summary.primary_age_6_to_14.population.toLocaleString('vi-VN') }}</strong>
+                            <small>Người có ngày sinh trong nhóm tuổi</small>
+                            <div><span>Đang học lớp 1–5</span><b>{{ systemOverview.education_summary.primary_age_6_to_14.studying.toLocaleString('vi-VN') }}</b></div>
+                            <div><span>Ghi nhận hoàn thành</span><b>{{ systemOverview.education_summary.primary_age_6_to_14.completed.toLocaleString('vi-VN') }}</b></div>
+                        </article>
+                        <article class="central-cohort-card">
+                            <span class="central-cohort-age">11–18 tuổi</span>
+                            <h4>Trung học cơ sở</h4>
+                            <strong>{{ systemOverview.education_summary.lower_secondary_age_11_to_18.population.toLocaleString('vi-VN') }}</strong>
+                            <small>Người có ngày sinh trong nhóm tuổi</small>
+                            <div><span>Đang học lớp 6–9</span><b>{{ systemOverview.education_summary.lower_secondary_age_11_to_18.studying.toLocaleString('vi-VN') }}</b></div>
+                            <div><span>Ghi nhận tốt nghiệp</span><b>{{ systemOverview.education_summary.lower_secondary_age_11_to_18.completed.toLocaleString('vi-VN') }}</b></div>
+                        </article>
+                        <article class="central-cohort-card central-cohort-literacy">
+                            <span class="central-cohort-age">15–60 tuổi</span>
+                            <h4>Xóa mù chữ</h4>
+                            <strong>{{ systemOverview.education_summary.literacy_age_15_to_60.population.toLocaleString('vi-VN') }}</strong>
+                            <small>Người có ngày sinh trong nhóm tuổi</small>
+                            <div><span>Ghi nhận đang học</span><b>{{ systemOverview.education_summary.literacy_age_15_to_60.studying.toLocaleString('vi-VN') }}</b></div>
+                            <div><span>Có ghi nhận lớp hoàn thành</span><b>{{ systemOverview.education_summary.literacy_age_15_to_60.completed.toLocaleString('vi-VN') }}</b></div>
+                            <div><span>Ghi nhận tái mù chữ</span><b>{{ systemOverview.education_summary.literacy_age_15_to_60.relapse.toLocaleString('vi-VN') }}</b></div>
+                        </article>
+                    </div>
+                    <!-- <div class="central-data-quality" role="note">
+                        <strong>Cần rà soát dữ liệu</strong>
+                        <span>{{ systemOverview.education_summary.data_quality.school_age_missing_education.toLocaleString('vi-VN') }} hồ sơ 5–18 tuổi chưa có thông tin học tập</span>
+                        <span>{{ systemOverview.education_summary.data_quality.missing_birth_dates.toLocaleString('vi-VN') }} hồ sơ thiếu ngày sinh</span>
+                    </div> -->
+                    <p class="central-data-disclaimer">
+                        Số liệu đếm từ phiếu đã nhập, không phải tỷ lệ hoặc kết quả công nhận đạt chuẩn.
+                    </p>
                 </section>
 
                 <section class="central-dashboard-lower">

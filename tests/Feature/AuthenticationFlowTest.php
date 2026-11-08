@@ -212,7 +212,29 @@ class AuthenticationFlowTest extends TestCase
         Schema::create('persons', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('household_id');
+            $table->date('dob')->nullable();
             $table->timestamp('deleted_at')->nullable();
+        });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status')->default(false);
+        });
+        Schema::create('person_educations', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('person_id');
+            $table->foreignId('school_year_id');
+            $table->string('academic_block')->nullable();
+            $table->string('current_class')->nullable();
+            $table->string('graduation_level')->nullable();
+            $table->string('finished_class')->nullable();
+            $table->string('dropped_class')->nullable();
+            $table->string('completed_class')->nullable();
+            $table->string('literacy_current_class')->nullable();
+            $table->string('literacy_completed_class')->nullable();
+            $table->string('literacy_relapse_level')->nullable();
+            $table->string('learning_capacity')->nullable();
         });
 
         DB::table('provinces')->insert([
@@ -229,16 +251,76 @@ class AuthenticationFlowTest extends TestCase
         ]);
 
         $schoolYear = (new \App\Services\Households\HouseholdService)->currentSchoolYear();
+        $schoolYearStart = (int) substr($schoolYear, 0, 4);
+        DB::table('school_years')->insert([
+            ['id' => 1, 'start_time' => "{$schoolYearStart}-08-01", 'end_time' => ($schoolYearStart + 1).'-07-31', 'status' => true],
+            ['id' => 2, 'start_time' => '2020-08-01', 'end_time' => '2021-07-31', 'status' => false],
+        ]);
         DB::table('households')->insert([
             ['school_year' => $schoolYear, 'province_code' => 'P01'],
             ['school_year' => $schoolYear, 'province_code' => 'P01'],
             ['school_year' => '2020-2021', 'province_code' => 'P02'],
         ]);
         DB::table('persons')->insert([
-            ['household_id' => 1],
-            ['household_id' => 1],
-            ['household_id' => 2],
-            ['household_id' => 3],
+            ['household_id' => 1, 'dob' => null],
+            ['household_id' => 1, 'dob' => null],
+            ['household_id' => 2, 'dob' => null],
+            ['household_id' => 3, 'dob' => null],
+            ['household_id' => 1, 'dob' => ($schoolYearStart - 5).'-06-01'],
+            ['household_id' => 1, 'dob' => ($schoolYearStart - 8).'-06-01'],
+            ['household_id' => 2, 'dob' => ($schoolYearStart - 15).'-06-01'],
+            ['household_id' => 2, 'dob' => ($schoolYearStart - 25).'-06-01'],
+            ['household_id' => 2, 'dob' => ($schoolYearStart - 10).'-06-01'],
+        ]);
+        DB::table('person_educations')->insert([
+            [
+                'person_id' => 5,
+                'school_year_id' => 1,
+                'academic_block' => '5-6 tuổi',
+                'current_class' => 'MN5A',
+                'graduation_level' => 'MN',
+                'completed_class' => null,
+                'literacy_current_class' => null,
+                'literacy_completed_class' => null,
+                'literacy_relapse_level' => null,
+                'learning_capacity' => null,
+            ],
+            [
+                'person_id' => 6,
+                'school_year_id' => 1,
+                'academic_block' => '3',
+                'current_class' => '3A',
+                'graduation_level' => null,
+                'completed_class' => null,
+                'literacy_current_class' => null,
+                'literacy_completed_class' => null,
+                'literacy_relapse_level' => null,
+                'learning_capacity' => null,
+            ],
+            [
+                'person_id' => 7,
+                'school_year_id' => 1,
+                'academic_block' => '7',
+                'current_class' => '7A',
+                'graduation_level' => 'THCS',
+                'completed_class' => null,
+                'literacy_current_class' => null,
+                'literacy_completed_class' => '3',
+                'literacy_relapse_level' => '1',
+                'learning_capacity' => null,
+            ],
+            [
+                'person_id' => 8,
+                'school_year_id' => 1,
+                'academic_block' => null,
+                'current_class' => null,
+                'graduation_level' => null,
+                'completed_class' => null,
+                'literacy_current_class' => '1',
+                'literacy_completed_class' => null,
+                'literacy_relapse_level' => null,
+                'learning_capacity' => null,
+            ],
         ]);
 
         $user = User::create([
@@ -268,7 +350,21 @@ class AuthenticationFlowTest extends TestCase
             ->assertJsonPath('data.totals.schools', 1)
             ->assertJsonPath('data.totals.active_users', 1)
             ->assertJsonPath('data.totals.households', 2)
-            ->assertJsonPath('data.totals.persons', 3)
+            ->assertJsonPath('data.totals.persons', 8)
+            ->assertJsonPath('data.age_reference_date', "{$schoolYearStart}-12-31")
+            ->assertJsonPath('data.education_summary.preschool_age_5.population', 1)
+            ->assertJsonPath('data.education_summary.preschool_age_5.studying', 1)
+            ->assertJsonPath('data.education_summary.preschool_age_5.completed', 1)
+            ->assertJsonPath('data.education_summary.primary_age_6_to_14.population', 2)
+            ->assertJsonPath('data.education_summary.primary_age_6_to_14.studying', 1)
+            ->assertJsonPath('data.education_summary.lower_secondary_age_11_to_18.population', 1)
+            ->assertJsonPath('data.education_summary.lower_secondary_age_11_to_18.completed', 1)
+            ->assertJsonPath('data.education_summary.literacy_age_15_to_60.population', 2)
+            ->assertJsonPath('data.education_summary.literacy_age_15_to_60.studying', 1)
+            ->assertJsonPath('data.education_summary.literacy_age_15_to_60.completed', 1)
+            ->assertJsonPath('data.education_summary.literacy_age_15_to_60.relapse', 1)
+            ->assertJsonPath('data.education_summary.data_quality.school_age_missing_education', 1)
+            ->assertJsonPath('data.education_summary.data_quality.missing_birth_dates', 3)
             ->assertJsonPath('data.provinces.0.name', 'Tỉnh Một')
             ->assertJsonPath('data.provinces.0.households', 2)
             ->assertJsonPath('data.school_years.0', $schoolYear);

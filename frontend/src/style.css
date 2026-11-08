@@ -7427,6 +7427,104 @@ button {
     font-size: .7rem;
 }
 
+.central-education-summary {
+    display: grid;
+    gap: 14px;
+    padding: 20px;
+    border: 1px solid #e7ecf3;
+    border-radius: 13px;
+    background: #fff;
+}
+
+.central-cohort-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.central-cohort-card {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid #e8edf4;
+    border-radius: 11px;
+    background: #fbfcfe;
+}
+
+.central-cohort-age {
+    color: #5278b3;
+    font-size: .68rem;
+    font-weight: 750;
+    letter-spacing: .04em;
+}
+
+.central-cohort-card h4 {
+    margin: 0;
+    color: #344a69;
+    font-size: .92rem;
+}
+
+.central-cohort-card>strong {
+    color: #263a57;
+    font-size: 1.65rem;
+    line-height: 1.1;
+}
+
+.central-cohort-card>small {
+    min-height: 30px;
+    color: #8b97a8;
+    font-size: .68rem;
+}
+
+.central-cohort-card>div {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding-top: 8px;
+    border-top: 1px solid #e9edf3;
+    color: #687b99;
+    font-size: .72rem;
+}
+
+.central-cohort-card>div b {
+    flex: 0 0 auto;
+    color: #344a69;
+}
+
+.central-cohort-literacy {
+    border-color: #e4def7;
+    background: #fcfbff;
+}
+
+.central-cohort-literacy .central-cohort-age {
+    color: #7562b2;
+}
+
+.central-data-quality {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    padding: 12px 14px;
+    border: 1px solid #f0dfb8;
+    border-radius: 9px;
+    background: #fffbf2;
+    color: #795b25;
+    font-size: .76rem;
+}
+
+.central-data-quality strong {
+    color: #715014;
+}
+
+.central-data-disclaimer {
+    margin: -5px 0 0;
+    color: #8b97a8;
+    font-size: .7rem;
+}
+
 .metric-geography {
     border-top: 3px solid #477bd0;
 }
@@ -7560,6 +7658,10 @@ button {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .central-cohort-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .central-dashboard-lower {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -7587,8 +7689,13 @@ button {
 
     .central-ranking-card,
     .central-catalog-card,
-    .central-shortcuts {
+    .central-shortcuts,
+    .central-education-summary {
         padding: 15px;
+    }
+
+    .central-cohort-grid {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .central-ranking-row {

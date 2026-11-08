@@ -2238,6 +2238,26 @@ class HouseholdCrudFlowTest extends TestCase
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'code' => 'S06',
+                'name' => 'Trường Mầm non cùng tỉnh',
+                'type' => 'single_level',
+                'level' => 'MN',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S07',
+                'name' => 'Trường Mầm non ngoài tỉnh',
+                'type' => 'single_level',
+                'level' => 'MN',
+                'province_code' => 'P02',
+                'commune_code' => 'C02',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
         $household = $this->createHousehold();
@@ -2245,7 +2265,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/v1/households/{$household->id}/persons/schools?q=Trường")
             ->assertOk()
-            ->assertJsonCount(4, 'data.schools')
+            ->assertJsonCount(5, 'data.schools')
             ->assertJsonFragment(['code' => 'S01']);
 
         $this->getJson("/api/v1/households/{$household->id}/persons/form?is_head=1")
@@ -2260,6 +2280,12 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonMissing(['code' => 'S01'])
             ->assertJsonMissing(['code' => 'S05'])
             ->assertJsonMissing(['code' => 'S02']);
+
+        $this->getJson("/api/v1/households/{$household->id}/persons/schools?school_level=MN")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.schools')
+            ->assertJsonFragment(['code' => 'S06'])
+            ->assertJsonMissing(['code' => 'S07']);
 
         $this->createPerson($household, [
             'dob' => '1980-01-01',
@@ -2276,6 +2302,26 @@ class HouseholdCrudFlowTest extends TestCase
             ->postJson(route('api.households.persons.store', $household), $payload)
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'education.school_code');
+
+        $preschoolPayload = $this->personPayload('Con', '2020-01-01');
+        $preschoolPayload['school_province_code'] = 'P01';
+        $preschoolPayload['school_commune_code'] = 'C01';
+        $preschoolPayload['education']['current_class'] = 'MN4A1';
+        $preschoolPayload['education']['academic_block'] = '4-5 tuổi';
+        $preschoolPayload['education']['school_code'] = 'S01';
+
+        $this->postJson(route('api.households.persons.store', $household), $preschoolPayload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.school_code');
+
+        $preschoolPayload['education']['school_code'] = 'S06';
+        $this->postJson(route('api.households.persons.store', $household), $preschoolPayload)
+            ->assertCreated();
+        $this->assertDatabaseHas('person_educations', [
+            'current_class' => 'MN4A1',
+            'academic_block' => '4-5 tuổi',
+            'school_code' => 'S06',
+        ]);
     }
 
     public function test_import_completion_notifications_are_persistent_and_scoped_to_the_owner(): void

@@ -2311,8 +2311,8 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
         const preferenceKey = table.classList.contains(
             "household-view-member-table",
         )
-            ? "pcgd-household-view-member-column-widths"
-            : "pcgd-household-edit-member-column-widths";
+            ? "pcgd-household-view-member-column-widths-fit-v1"
+            : "pcgd-household-edit-member-column-widths-fit-v1";
         const columns =
             table.querySelectorAll<HTMLTableColElement>("colgroup col");
         const loadWidths = (): number[] | null => {
@@ -2358,18 +2358,104 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
                 (sum, column) => sum + column.getBoundingClientRect().width,
                 0,
             );
-            const tableWidth = Math.max(3200, totalWidth);
+            const tableWidth = Math.ceil(totalWidth);
             table.style.width = `${tableWidth}px`;
             table.style.minWidth = `${tableWidth}px`;
         };
+        const fitColumnsToContent = () => {
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+            if (!context) {
+                throw new Error("Không thể đo nội dung các cột nhân khẩu.");
+            }
+
+            const bodyRows = table.querySelectorAll<HTMLTableRowElement>(
+                "tbody tr",
+            );
+            columns.forEach((column, columnIndex) => {
+                let width =
+                    columnIndex === 0
+                        ? 38
+                        : columnIndex === 4
+                          ? 136
+                          : 56;
+                const cells = Array.from(
+                    bodyRows,
+                    (row) => row.cells[columnIndex],
+                ).filter(
+                    (cell): cell is HTMLTableCellElement =>
+                        cell !== undefined,
+                );
+
+                for (const cell of cells) {
+                    const style = window.getComputedStyle(cell);
+                    context.font = style.font;
+                    const controls = Array.from(
+                        cell.querySelectorAll<
+                            HTMLInputElement | HTMLSelectElement | HTMLButtonElement
+                        >("input, select, button"),
+                    );
+                    const contentWidths = [
+                        context.measureText(cell.innerText.trim()).width,
+                        ...controls.map((control) => {
+                            if (
+                                control instanceof HTMLInputElement &&
+                                control.type === "checkbox"
+                            ) {
+                                return 40;
+                            }
+                            const text =
+                                control instanceof HTMLSelectElement
+                                    ? control.selectedOptions[0]?.textContent ?? ""
+                                    : control instanceof HTMLInputElement
+                                      ? control.value ||
+                                        control.placeholder ||
+                                        ""
+                                      : control.innerText;
+                            const controlStyle =
+                                window.getComputedStyle(control);
+                            context.font = controlStyle.font;
+                            const extra =
+                                control instanceof HTMLSelectElement
+                                    ? 28
+                                    : control instanceof HTMLInputElement &&
+                                        control.type === "date"
+                                      ? 112
+                                      : 18;
+                            const minimum =
+                                control instanceof HTMLInputElement &&
+                                control.type !== "checkbox"
+                                    ? 64
+                                    : 0;
+                            return Math.max(
+                                minimum,
+                                context.measureText(text.trim()).width + extra,
+                            );
+                        }),
+                    ];
+                    const cellContentWidth =
+                        contentWidths.length > 0
+                            ? Math.max(...contentWidths) +
+                              Number.parseFloat(style.paddingLeft) +
+                              Number.parseFloat(style.paddingRight) +
+                              10
+                            : 48;
+                    width = Math.max(width, cellContentWidth);
+                }
+
+                column.style.width = `${Math.ceil(Math.min(width, 280))}px`;
+            });
+        };
         const savedWidths = loadWidths();
+        fitColumnsToContent();
         savedWidths?.slice(0, columns.length).forEach((width, index) => {
-            columns[index].style.width = `${width}px`;
+            columns[index].style.width = `${Math.max(
+                width,
+                index === 4 ? 136 : 48,
+            )}px`;
         });
-        if (savedWidths) {
-            resizeTableToColumns();
-            syncStickyColumns();
-        }
+        resizeTableToColumns();
+        syncStickyColumns();
 
         const onPointerDown = (event: PointerEvent) => {
             if (event.button !== 0) return;
@@ -2400,7 +2486,7 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
 
             const onPointerMove = (moveEvent: PointerEvent) => {
                 const width = Math.max(
-                    48,
+                    headerIndex === 4 ? 136 : 48,
                     startWidth + moveEvent.clientX - startX,
                 );
                 column.style.width = `${width}px`;
@@ -4627,6 +4713,12 @@ function normalizeInlineHouseholdPersons(persons: Row[]): Row[] {
             ) ??
             educations[0] ??
             {};
+        const educationYearRange = (value: unknown): string => {
+            const text = String(value ?? "");
+            return /^\d{4}$/.test(text)
+                ? `${text}-${Number(text) + 1}`
+                : text;
+        };
 
         return {
             ...person,
@@ -4645,13 +4737,17 @@ function normalizeInlineHouseholdPersons(persons: Row[]): Row[] {
                 school_code: education.school_code ?? "",
                 graduation_level: education.graduation_level ?? "",
                 is_complementary: education.is_complementary ?? false,
-                graduation_year: education.graduation_year ?? "",
+                graduation_year: educationYearRange(
+                    education.graduation_year,
+                ),
                 vocational_grad_level: education.vocational_grad_level ?? "",
-                vocational_grad_year: education.vocational_grad_year ?? "",
+                vocational_grad_year: educationYearRange(
+                    education.vocational_grad_year,
+                ),
                 finished_class: education.finished_class ?? "",
-                finished_year: education.finished_year ?? "",
+                finished_year: educationYearRange(education.finished_year),
                 dropped_class: education.dropped_class ?? "",
-                dropped_year: education.dropped_year ?? "",
+                dropped_year: educationYearRange(education.dropped_year),
                 literacy_current_class: education.literacy_current_class ?? "",
                 literacy_completed_class:
                     education.literacy_completed_class ?? "",
@@ -4905,6 +5001,37 @@ function updateInlineSchoolYear(person: Row, event: Event): void {
     inlineEducation(person).school_year = yearRange;
 }
 
+function inlineEducationYearStart(person: Row, field: string): string {
+    const value = String(inlineEducation(person)[field] ?? "");
+    return value.match(/^(\d{4})(?:-\d{4})?$/)?.[1] ?? value;
+}
+
+function inlineEducationYearEnd(person: Row, field: string): string {
+    const value = String(inlineEducation(person)[field] ?? "");
+    const range = value.match(/^(\d{4})-(\d{4})$/);
+    if (range) return range[2];
+
+    return /^\d{4}$/.test(value) ? String(Number(value) + 1) : "";
+}
+
+function inlineEducationYearEndHint(person: Row, field: string): string {
+    return inlineEducationYearEnd(person, field) || "YYYY";
+}
+
+function updateInlineEducationYear(
+    person: Row,
+    field: string,
+    event: Event,
+): void {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+
+    const value = input.value.trim();
+    inlineEducation(person)[field] = /^\d{4}$/.test(value)
+        ? `${value}-${Number(value) + 1}`
+        : value;
+}
+
 function sanitizeInlineMemberPhone(person: Row, event: Event): void {
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
@@ -4917,26 +5044,33 @@ function sanitizeInlineMemberPhone(person: Row, event: Event): void {
     input.value = phone;
 }
 
-function inlineMemberValidationError(person: Row): string {
+function inlineMemberValidationError(
+    person: Row,
+): { field: string; message: string } | null {
     const value = (field: string): string => String(person[field] ?? "").trim();
     const education = inlineEducation(person);
     const educationValue = (field: string): string =>
         String(education[field] ?? "").trim();
     const personNamePattern =
         /^[\p{L}\p{M}]+(?:[ '-][\p{L}\p{M}]+)*$/u;
-    const orderedFields: Array<[string, unknown]> = [
-        ["Họ và tên đệm", person.last_name],
-        ["Tên", person.first_name],
-        ["Quan hệ", person.relationship_with_head],
-        ["Ngày sinh", person.dob],
-        ["Giới tính", person.gender],
-        ["Dân tộc", person.ethnicity_code],
-        ["Năm học", education.school_year],
+    const orderedFields: Array<[string, string, unknown]> = [
+        ["last_name", "Họ và tên đệm", person.last_name],
+        ["first_name", "Tên", person.first_name],
+        ["relationship_with_head", "Quan hệ", person.relationship_with_head],
+        ["dob", "Ngày sinh", person.dob],
+        ["gender", "Giới tính", person.gender],
+        ["ethnicity_code", "Dân tộc", person.ethnicity_code],
+        ["school_year", "Năm học", education.school_year],
     ];
     const missingField = orderedFields.find(
-        ([, fieldValue]) => !String(fieldValue ?? "").trim(),
+        ([, , fieldValue]) => !String(fieldValue ?? "").trim(),
     );
-    if (missingField) return `Vui lòng nhập ${missingField[0].toLocaleLowerCase("vi-VN")}.`;
+    if (missingField) {
+        return {
+            field: missingField[0],
+            message: `Vui lòng nhập ${missingField[1].toLocaleLowerCase("vi-VN")}.`,
+        };
+    }
 
     for (const [field, label, maxLength] of [
         ["last_name", "Họ và tên đệm", 50],
@@ -4945,18 +5079,20 @@ function inlineMemberValidationError(person: Row): string {
     ] as const) {
         const text = value(field);
         if (text && !personNamePattern.test(text)) {
-            return `${label} chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.`;
+            return { field, message: `${label} chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.` };
         }
         if (text.length > maxLength) {
-            return `${label} không được vượt quá ${maxLength} ký tự.`;
+            return { field, message: `${label} không được vượt quá ${maxLength} ký tự.` };
         }
     }
 
     const phone = value("phone");
     if (phone && !/^\+?[0-9]+$/.test(phone)) {
-        return "Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +.";
+        return { field: "phone", message: "Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +." };
     }
-    if (phone.length > 20) return "Số điện thoại không được vượt quá 20 ký tự.";
+    if (phone.length > 20) {
+        return { field: "phone", message: "Số điện thoại không được vượt quá 20 ký tự." };
+    }
 
     for (const [field, label, maxLength] of [
         ["religion", "Tôn giáo", 50],
@@ -4964,13 +5100,13 @@ function inlineMemberValidationError(person: Row): string {
         ["note", "Ghi chú", 2000],
     ] as const) {
         if (value(field).length > maxLength) {
-            return `${label} không được vượt quá ${maxLength} ký tự.`;
+            return { field, message: `${label} không được vượt quá ${maxLength} ký tự.` };
         }
     }
 
     const relationship = value("relationship_with_head");
     if (relationship.length > 100) {
-        return "Quan hệ với chủ hộ không được vượt quá 100 ký tự.";
+        return { field: "relationship_with_head", message: "Quan hệ với chủ hộ không được vượt quá 100 ký tự." };
     }
 
     const dob = value("dob");
@@ -4980,11 +5116,13 @@ function inlineMemberValidationError(person: Row): string {
         !/^\d{4}-\d{2}-\d{2}$/.test(dob) ||
         Number.isNaN(Date.parse(`${dob}T00:00:00`))
     ) {
-        return "Ngày sinh không hợp lệ.";
+        return { field: "dob", message: "Ngày sinh không hợp lệ." };
     }
-    if (dob > todayString) return "Ngày sinh không được lớn hơn ngày hiện tại.";
+    if (dob > todayString) {
+        return { field: "dob", message: "Ngày sinh không được lớn hơn ngày hiện tại." };
+    }
     if (!["NAM", "NU"].includes(value("gender"))) {
-        return "Vui lòng chọn giới tính hợp lệ.";
+        return { field: "gender", message: "Vui lòng chọn giới tính hợp lệ." };
     }
 
     const schoolYear = educationValue("school_year");
@@ -4999,11 +5137,11 @@ function inlineMemberValidationError(person: Row): string {
         year < 2020 ||
         year > latestYear
     ) {
-        return "Năm học không hợp lệ.";
+        return { field: "school_year", message: "Năm học không hợp lệ." };
     }
 
     if (educationValue("academic_block").length > 50) {
-        return "Khối học không được vượt quá 50 ký tự.";
+        return { field: "academic_block", message: "Khối học không được vượt quá 50 ký tự." };
     }
 
     const classFields = [
@@ -5014,11 +5152,11 @@ function inlineMemberValidationError(person: Row): string {
     for (const [field, label] of classFields) {
         const className = educationValue(field);
         if (className.length > (field === "current_class" ? 50 : 20)) {
-            return `${label} vượt quá số ký tự cho phép.`;
+            return { field, message: `${label} vượt quá số ký tự cho phép.` };
         }
         const gradeMatch = className.match(/^\s*(?:lớp\s*)?(\d+)/iu);
         if (gradeMatch && Number(gradeMatch[1]) > 12) {
-            return `${label} không được lớn hơn lớp 12.`;
+            return { field, message: `${label} không được lớn hơn lớp 12.` };
         }
     }
 
@@ -5027,10 +5165,10 @@ function inlineMemberValidationError(person: Row): string {
         graduationLevel &&
         !["MN", "TH", "THCS", "THPT"].includes(graduationLevel)
     ) {
-        return "Trình độ phổ cập không hợp lệ.";
+        return { field: "graduation_level", message: "Trình độ phổ cập không hợp lệ." };
     }
     if (educationValue("vocational_grad_level").length > 50) {
-        return "Trình độ tốt nghiệp nghề không được vượt quá 50 ký tự.";
+        return { field: "vocational_grad_level", message: "Trình độ tốt nghiệp nghề không được vượt quá 50 ký tự." };
     }
 
     for (const [field, label] of [
@@ -5042,7 +5180,7 @@ function inlineMemberValidationError(person: Row): string {
         const text = educationValue(field);
         if (!text) continue;
         if (text.length > 20 || !/^\d{4}(?:-\d{4})?$/.test(text)) {
-            return `${label} phải có dạng YYYY hoặc YYYY-YYYY.`;
+            return { field, message: `${label} phải có dạng YYYY hoặc YYYY-YYYY.` };
         }
         const years = text.split("-").map(Number);
         const nextYearRange = `${now.getFullYear()}-${now.getFullYear() + 1}`;
@@ -5050,7 +5188,7 @@ function inlineMemberValidationError(person: Row): string {
             years.some((item) => item > now.getFullYear()) &&
             text !== nextYearRange
         ) {
-            return `${label} không được lớn hơn năm hiện tại.`;
+            return { field, message: `${label} không được lớn hơn năm hiện tại.` };
         }
     }
 
@@ -5060,25 +5198,25 @@ function inlineMemberValidationError(person: Row): string {
         ["learning_capacity", "Năng lực học tập", 50],
     ] as const) {
         if (educationValue(field).length > maxLength) {
-            return `${label} không được vượt quá ${maxLength} ký tự.`;
+            return { field, message: `${label} không được vượt quá ${maxLength} ký tự.` };
         }
     }
 
     const relapseLevel = educationValue("literacy_relapse_level");
     if (relapseLevel && !["1", "2"].includes(relapseLevel)) {
-        return "Mức độ tái mù chữ phải là 1 hoặc 2.";
+        return { field: "literacy_relapse_level", message: "Mức độ tái mù chữ phải là 1 hoặc 2." };
     }
     if (
         person.relationship_with_head !== "Chủ hộ" &&
         value("relationship_with_head") === "Chủ hộ"
     ) {
-        return "Thành viên không thể có quan hệ là chủ hộ.";
+        return { field: "relationship_with_head", message: "Thành viên không thể có quan hệ là chủ hộ." };
     }
     const slotError = relationshipSlotError(
         person.relationship_with_head,
         person,
     );
-    if (slotError) return slotError;
+    if (slotError) return { field: "relationship_with_head", message: slotError };
     const specialCircumstance = String(
         inlineDisability(person).special_circumstance ?? "",
     );
@@ -5086,16 +5224,105 @@ function inlineMemberValidationError(person: Row): string {
         specialCircumstance &&
         !["Chuyển đến", "Chuyển đi"].includes(specialCircumstance)
     ) {
-        return "Hoàn cảnh đặc biệt không hợp lệ.";
+        return { field: "special_circumstance", message: "Hoàn cảnh đặc biệt không hợp lệ." };
     }
     if (
         String(inlineDisability(person).special_circumstance_detail ?? "")
             .length > 2000
     ) {
-        return "Chi tiết hoàn cảnh đặc biệt không được vượt quá 2000 ký tự.";
+        return { field: "special_circumstance_detail", message: "Chi tiết hoàn cảnh đặc biệt không được vượt quá 2000 ký tự." };
     }
 
-    return "";
+    return null;
+}
+
+const inlineMemberFieldColumns: Record<string, number> = {
+    last_name: 1,
+    first_name: 2,
+    relationship_with_head: 3,
+    dob: 4,
+    gender: 5,
+    ethnicity_code: 6,
+    religion: 7,
+    priority_type: 8,
+    parent_name: 9,
+    phone: 10,
+    note: 11,
+    school_year: 12,
+    current_class: 13,
+    academic_block: 14,
+    school_code: 15,
+    is_complementary: 16,
+    graduation_level: 17,
+    graduation_year: 18,
+    vocational_grad_level: 19,
+    vocational_grad_year: 20,
+    finished_class: 21,
+    finished_year: 22,
+    dropped_class: 23,
+    dropped_year: 24,
+    literacy_current_class: 25,
+    literacy_completed_class: 26,
+    literacy_relapse_level: 27,
+    learning_capacity: 28,
+    mobility_disability: 29,
+    hearing_speech_disability: 30,
+    visual_disability: 31,
+    mental_disability: 32,
+    intellectual_disability: 33,
+    learning_disability: 34,
+    autism: 35,
+    other_disability: 36,
+    has_disability_cert: 37,
+    can_study: 38,
+    special_circumstance: 39,
+    special_circumstance_detail: 40,
+};
+
+function markInlineMemberFieldErrors(
+    index: number,
+    errors: Record<string, string>,
+): void {
+    const row = document.querySelector<HTMLTableRowElement>(
+        `.household-edit-members-table tr[data-member-index="${index}"]`,
+    );
+    if (!row) return;
+
+    for (const [fieldPath, message] of Object.entries(errors)) {
+        const field = fieldPath.split(".").at(-1) ?? fieldPath;
+        const cell = row.cells[inlineMemberFieldColumns[field]];
+        if (!cell) continue;
+        cell.classList.add("household-edit-member-invalid");
+        cell.title = message;
+        cell.querySelectorAll<HTMLElement>("input, select, button").forEach(
+            (control) => control.setAttribute("aria-invalid", "true"),
+        );
+    }
+}
+
+function clearInlineMemberRowErrors(index: number): void {
+    const row = document.querySelector<HTMLElement>(
+        `.household-edit-members-table tr[data-member-index="${index}"]`,
+    );
+    row?.querySelectorAll(".household-edit-member-invalid").forEach((cell) => {
+        cell.classList.remove("household-edit-member-invalid");
+        cell.removeAttribute("title");
+        cell
+            .querySelectorAll<HTMLElement>("[aria-invalid='true']")
+            .forEach((control) => control.removeAttribute("aria-invalid"));
+    });
+}
+
+function clearInlineMemberFieldError(event: Event): void {
+    const control = event.target;
+    if (!(control instanceof HTMLElement)) return;
+    const cell = control.closest("td.household-edit-member-invalid");
+    if (!cell) return;
+    cell.classList.remove("household-edit-member-invalid");
+    cell.removeAttribute("title");
+    cell.querySelectorAll<HTMLElement>("[aria-invalid='true']").forEach(
+        (invalidControl) => invalidControl.removeAttribute("aria-invalid"),
+    );
 }
 
 function inlineDisability(person: Row): Row {
@@ -5190,13 +5417,17 @@ async function saveInlineHouseholdMember(
             : String(householdIdValue);
     if (!householdId || memberBusy.value) return false;
 
-    const validationError = inlineMemberValidationError(person);
-    if (validationError) {
-        error.value = validationError;
+    clearInlineMemberRowErrors(index);
+    const validationIssue = inlineMemberValidationError(person);
+    if (validationIssue) {
+        markInlineMemberFieldErrors(index, {
+            [validationIssue.field]: validationIssue.message,
+        });
+        error.value = validationIssue.message;
         managementResult.value = {
             success: false,
             title: "Không thể lưu nhân khẩu",
-            message: validationError,
+            message: validationIssue.message,
         };
         return false;
     }
@@ -5281,6 +5512,10 @@ async function saveInlineHouseholdMember(
         return true;
     } catch (cause) {
         error.value = errorMessage(cause);
+        const fieldErrors = validationErrors(cause);
+        if (Object.keys(fieldErrors).length > 0) {
+            markInlineMemberFieldErrors(index, fieldErrors);
+        }
         if (showResult)
             managementResult.value = {
                 success: false,
@@ -8776,6 +9011,8 @@ onMounted(async () => {
                         <table
                             v-member-column-resize
                             class="household-edit-members-table"
+                            @input="clearInlineMemberFieldError"
+                            @change="clearInlineMemberFieldError"
                         >
                             <colgroup>
                                 <col class="member-col-stt" />
@@ -8883,6 +9120,7 @@ onMounted(async () => {
                                                 1 ===
                                             householdEditPage
                                         "
+                                        :data-member-index="index"
                                     >
                                         <td>{{ index + 1 }}</td>
                                         <td>
@@ -9222,14 +9460,35 @@ onMounted(async () => {
                                             </select>
                                         </td>
                                         <td>
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .graduation_year
-                                                "
-                                                maxlength="20"
-                                                aria-label="Năm tốt nghiệp văn hóa"
-                                            />
+                                            <div class="inline-school-year-control">
+                                                <input
+                                                    :value="
+                                                        inlineEducationYearStart(
+                                                            person,
+                                                            'graduation_year',
+                                                        )
+                                                    "
+                                                    @input="
+                                                        updateInlineEducationYear(
+                                                            person,
+                                                            'graduation_year',
+                                                            $event,
+                                                        )
+                                                    "
+                                                    maxlength="4"
+                                                    inputmode="numeric"
+                                                    placeholder="YYYY"
+                                                    aria-label="Năm tốt nghiệp văn hóa"
+                                                />
+                                                <span class="inline-year-suffix">
+                                                    -{{
+                                                        inlineEducationYearEndHint(
+                                                            person,
+                                                            "graduation_year",
+                                                        )
+                                                    }}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td>
                                             <input
@@ -9242,14 +9501,35 @@ onMounted(async () => {
                                             />
                                         </td>
                                         <td>
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .vocational_grad_year
-                                                "
-                                                maxlength="20"
-                                                aria-label="Năm tốt nghiệp nghề"
-                                            />
+                                            <div class="inline-school-year-control">
+                                                <input
+                                                    :value="
+                                                        inlineEducationYearStart(
+                                                            person,
+                                                            'vocational_grad_year',
+                                                        )
+                                                    "
+                                                    @input="
+                                                        updateInlineEducationYear(
+                                                            person,
+                                                            'vocational_grad_year',
+                                                            $event,
+                                                        )
+                                                    "
+                                                    maxlength="4"
+                                                    inputmode="numeric"
+                                                    placeholder="YYYY"
+                                                    aria-label="Năm tốt nghiệp nghề"
+                                                />
+                                                <span class="inline-year-suffix">
+                                                    -{{
+                                                        inlineEducationYearEndHint(
+                                                            person,
+                                                            "vocational_grad_year",
+                                                        )
+                                                    }}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td>
                                             <input
@@ -9262,14 +9542,35 @@ onMounted(async () => {
                                             />
                                         </td>
                                         <td>
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .finished_year
-                                                "
-                                                maxlength="20"
-                                                aria-label="Năm dở dang"
-                                            />
+                                            <div class="inline-school-year-control">
+                                                <input
+                                                    :value="
+                                                        inlineEducationYearStart(
+                                                            person,
+                                                            'finished_year',
+                                                        )
+                                                    "
+                                                    @input="
+                                                        updateInlineEducationYear(
+                                                            person,
+                                                            'finished_year',
+                                                            $event,
+                                                        )
+                                                    "
+                                                    maxlength="4"
+                                                    inputmode="numeric"
+                                                    placeholder="YYYY"
+                                                    aria-label="Năm dở dang"
+                                                />
+                                                <span class="inline-year-suffix">
+                                                    -{{
+                                                        inlineEducationYearEndHint(
+                                                            person,
+                                                            "finished_year",
+                                                        )
+                                                    }}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td>
                                             <input
@@ -9282,14 +9583,35 @@ onMounted(async () => {
                                             />
                                         </td>
                                         <td>
-                                            <input
-                                                v-model="
-                                                    inlineEducation(person)
-                                                        .dropped_year
-                                                "
-                                                maxlength="20"
-                                                aria-label="Năm bỏ học"
-                                            />
+                                            <div class="inline-school-year-control">
+                                                <input
+                                                    :value="
+                                                        inlineEducationYearStart(
+                                                            person,
+                                                            'dropped_year',
+                                                        )
+                                                    "
+                                                    @input="
+                                                        updateInlineEducationYear(
+                                                            person,
+                                                            'dropped_year',
+                                                            $event,
+                                                        )
+                                                    "
+                                                    maxlength="4"
+                                                    inputmode="numeric"
+                                                    placeholder="YYYY"
+                                                    aria-label="Năm bỏ học"
+                                                />
+                                                <span class="inline-year-suffix">
+                                                    -{{
+                                                        inlineEducationYearEndHint(
+                                                            person,
+                                                            "dropped_year",
+                                                        )
+                                                    }}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td>
                                             <input

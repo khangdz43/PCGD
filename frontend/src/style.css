@@ -3763,8 +3763,8 @@ h2 {
 }
 
 .household-edit-members-table {
-    width: 3200px;
-    min-width: 3200px;
+    width: max-content;
+    min-width: max-content;
     table-layout: fixed;
     border-collapse: collapse;
     font-size: .76rem;
@@ -3787,7 +3787,7 @@ h2 {
 }
 
 .household-edit-members-table .member-col-date {
-    width: 118px;
+    width: 136px;
 }
 
 .household-edit-members-table .member-col-gender {
@@ -4179,6 +4179,17 @@ h2 {
     font-size: .72rem;
 }
 
+.household-edit-members-table td.household-edit-member-invalid {
+    background: #fff1f2;
+}
+
+.household-edit-members-table td.household-edit-member-invalid input,
+.household-edit-members-table td.household-edit-member-invalid select,
+.household-edit-members-table td.household-edit-member-invalid button {
+    border-color: #ef4444;
+    background: #fff1f2;
+}
+
 .household-edit-members-table input:hover,
 .household-edit-members-table input:focus,
 .household-edit-members-table select:hover,
@@ -4200,6 +4211,16 @@ h2 {
 .household-edit-members-table .inline-school-year-control input {
     flex: 0 1 54px;
     width: 54px;
+}
+
+.household-edit-members-table .inline-school-year-control .inline-year-suffix {
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
+.household-edit-members-table .inline-school-year-control input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
 }
 
 .household-inline-member-actions {
@@ -5775,6 +5796,7 @@ h2 {
 
 .household-edit-members-table .household-date-picker-trigger {
     min-height: 28px;
+    min-width: 128px;
     padding: 3px 5px;
     border-color: transparent;
     border-radius: 5px;

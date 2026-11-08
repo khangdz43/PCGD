@@ -579,7 +579,9 @@ function updateCurrentUserName(profile: { name: string }): void {
                         'trash',
                         'merge',
                         'school-merge',
-                    ].includes(activeModule),
+                    ].includes(activeModule) ||
+                    (activeModule === '' &&
+                        user?.role_name === 'system-admin'),
                 }"
             >
                 <p v-if="error" class="notice app-global-notice" role="alert">

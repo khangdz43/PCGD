@@ -3915,12 +3915,13 @@ h2 {
 }
 
 .trash-management-toolbar-wrapper {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
     gap: 10px;
 }
 
 .trash-management-toolbar {
-    grid-column: 1 / -1;
+    grid-column: 1;
     display: grid;
     grid-template-columns: minmax(180px, 240px) minmax(320px, 520px);
     align-items: end;
@@ -3943,6 +3944,10 @@ h2 {
     border: 1px solid #cbd5e1;
     border-radius: 8px;
     background: #fff;
+}
+
+.trash-management-toolbar select {
+    font-weight: 650;
 }
 
 .trash-search-control input {
@@ -3978,10 +3983,12 @@ h2 {
 }
 
 .trash-management-toolbar-bottom {
+    grid-column: 2;
+    grid-row: 1;
     display: flex;
     min-height: 34px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 12px;
 }
 

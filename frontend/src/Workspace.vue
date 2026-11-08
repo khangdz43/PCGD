@@ -2311,8 +2311,15 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
         const preferenceKey = table.classList.contains(
             "household-view-member-table",
         )
-            ? "pcgd-household-view-member-column-widths-fit-v1"
+            ? "pcgd-household-view-member-column-widths-fit-v5"
             : "pcgd-household-edit-member-column-widths-fit-v1";
+        const isViewTable = table.classList.contains(
+            "household-view-member-table",
+        );
+        const viewDetailColumnIndex =
+            householdViewMemberColumns.findIndex(
+                ({ key }) => key === "special_circumstance_detail",
+            ) + 1;
         const columns =
             table.querySelectorAll<HTMLTableColElement>("colgroup col");
         const loadWidths = (): number[] | null => {
@@ -2396,7 +2403,12 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
                         >("input, select, button"),
                     );
                     const contentWidths = [
-                        context.measureText(cell.innerText.trim()).width,
+                        context.measureText(
+                            (isViewTable
+                                ? cell.textContent
+                                : cell.innerText
+                            )?.trim() ?? "",
+                        ).width,
                         ...controls.map((control) => {
                             if (
                                 control instanceof HTMLInputElement &&
@@ -2440,18 +2452,26 @@ const vMemberColumnResize: Directive<HTMLTableElement> = {
                               Number.parseFloat(style.paddingRight) +
                               10
                             : 48;
-                    width = Math.max(width, cellContentWidth);
+                    width = Math.max(
+                        width,
+                        isViewTable && columnIndex === 0
+                            ? Math.min(cellContentWidth, 56)
+                            : cellContentWidth,
+                    );
                 }
 
-                column.style.width = `${Math.ceil(Math.min(width, 280))}px`;
+                column.style.width = `${Math.ceil(
+                    Math.min(width, isViewTable ? 220 : 280),
+                )}px`;
             });
         };
         const savedWidths = loadWidths();
         fitColumnsToContent();
         savedWidths?.slice(0, columns.length).forEach((width, index) => {
+            if (isViewTable && index === viewDetailColumnIndex) return;
             columns[index].style.width = `${Math.max(
-                width,
-                index === 4 ? 136 : 48,
+                isViewTable && index === 0 ? Math.min(width, 56) : width,
+                index === 0 ? 38 : index === 4 ? 136 : 48,
             )}px`;
         });
         resizeTableToColumns();
@@ -12284,9 +12304,10 @@ onMounted(async () => {
                                     <col class="member-col-medium" />
                                     <col class="member-col-phone" />
                                     <col class="member-col-medium" />
+                                    <col class="member-col-school-year" />
                                     <col
                                         class="member-col-small"
-                                        v-for="column in 29"
+                                        v-for="column in 28"
                                         :key="`view-member-col-${column}`"
                                     />
                                     <col

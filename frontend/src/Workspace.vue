@@ -222,6 +222,22 @@ function formatImportDate(value: unknown): string {
         timeStyle: "short",
     }).format(date);
 }
+
+function formatTrashDeletedAt(value: unknown): string {
+    if (typeof value !== "string" || !value) return "—";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "—";
+
+    return new Intl.DateTimeFormat("vi-VN", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hourCycle: "h23",
+    }).format(date);
+}
 const selectedVillageMergeSources = computed(() =>
     rows.value.filter((village) =>
         selectedSourceCodes.value.includes(String(village.code)),
@@ -396,6 +412,8 @@ const householdDetailPageSize = 15;
 const householdEditPageSize = 15;
 const householdDetail = ref<Row | null>(null);
 const householdDetailReadOnly = ref(false);
+const householdDetailFromTrash = ref(false);
+const trashedHouseholdPersons = ref<Row[]>([]);
 const householdListRow = ref<Row | null>(null);
 const householdDetailPage = ref(1);
 const householdDetailLastPage = ref(1);
@@ -3766,6 +3784,8 @@ async function openHousehold(row: Row): Promise<void> {
     const id = row.id;
     if (id === undefined) return;
     householdDetailReadOnly.value = true;
+    householdDetailFromTrash.value = false;
+    trashedHouseholdPersons.value = [];
     householdLoading.value = true;
     householdListRow.value = row;
     householdDetailPage.value = 1;
@@ -3805,6 +3825,45 @@ async function openHousehold(row: Row): Promise<void> {
     }
 }
 
+async function openTrashedHousehold(row: Row): Promise<void> {
+    if (row.item_type !== "household" || row.id === undefined) return;
+
+    householdDetailReadOnly.value = true;
+    householdDetailFromTrash.value = true;
+    householdLoading.value = true;
+    householdListRow.value = row;
+    householdDetailPage.value = 1;
+    householdDetailLastPage.value = 1;
+    householdDetailTotal.value = 0;
+    householdDetail.value = null;
+    error.value = "";
+
+    try {
+        const response = await api.get<unknown>(`/trash/households/${row.id}`);
+        const household = asRow(apiData<unknown>(response.data));
+        trashedHouseholdPersons.value = asRows(household.persons);
+        householdDetailTotal.value = trashedHouseholdPersons.value.length;
+        householdDetailLastPage.value = Math.max(
+            1,
+            Math.ceil(
+                householdDetailTotal.value / householdDetailPageSize,
+            ),
+        );
+        householdDetail.value = {
+            ...household,
+            persons: trashedHouseholdPersons.value.slice(
+                0,
+                householdDetailPageSize,
+            ),
+        };
+    } catch (cause) {
+        householdDetailFromTrash.value = false;
+        error.value = errorMessage(cause);
+    } finally {
+        householdLoading.value = false;
+    }
+}
+
 async function loadHouseholdDetailPage(
     page: number,
     forceReload = false,
@@ -3823,6 +3882,18 @@ async function loadHouseholdDetailPage(
     householdDetailPageLoading.value = true;
     error.value = "";
     try {
+        if (householdDetailFromTrash.value) {
+            householdDetailPage.value = page;
+            if (householdDetail.value) {
+                const start = (page - 1) * householdDetailPageSize;
+                householdDetail.value.persons =
+                    trashedHouseholdPersons.value.slice(
+                        start,
+                        start + householdDetailPageSize,
+                    );
+            }
+            return;
+        }
         const response = await api.get<unknown>(
             `/households/${householdId}/persons`,
             { params: { page, per_page: householdDetailPageSize } },
@@ -3875,6 +3946,8 @@ function closeHouseholdDetail(): void {
     notice.value = "";
     householdDetail.value = null;
     householdDetailReadOnly.value = false;
+    householdDetailFromTrash.value = false;
+    trashedHouseholdPersons.value = [];
     householdListRow.value = null;
     householdDetailPage.value = 1;
     householdDetailLastPage.value = 1;
@@ -7662,9 +7735,9 @@ onMounted(async () => {
                     <form
                         class="trash-search-control"
                         role="search"
+                        aria-label="Tìm kiếm dữ liệu đã xóa"
                         @submit.prevent="applyTrashFilters"
                     >
-                        <span>Tìm kiếm</span>
                         <input
                             v-model.trim="trashFilterQuery"
                             type="search"
@@ -7685,32 +7758,11 @@ onMounted(async () => {
                         </button>
                     </form>
                 </div>
-                <div class="trash-management-toolbar-bottom">
-                    <div class="trash-management-summary">
-                        <span class="record-count"
-                            >{{ rows.length }} / {{ totalRecords }} mục</span
-                        >
-                        <button
-                            v-if="
-                                trashFilterType !== 'household' ||
-                                trashFilterQuery
-                            "
-                            class="secondary-button management-tool-button"
-                            type="button"
-                            :disabled="busy"
-                            @click="
-                                trashFilterType = 'household';
-                                trashFilterQuery = '';
-                                applyTrashFilters();
-                            "
-                        >
-                            Xóa bộ lọc
-                        </button>
-                    </div>
+                <div
+                    v-if="selectedTrashKeys.length && (canUpdate || canDelete)"
+                    class="trash-management-toolbar-bottom"
+                >
                     <div
-                        v-if="
-                            selectedTrashKeys.length && (canUpdate || canDelete)
-                        "
                         class="trash-bulk-actions"
                     >
                         <span class="trash-selected-count"
@@ -10716,7 +10768,11 @@ onMounted(async () => {
                         <th v-if="trashFilterType === 'person'">Nhân khẩu</th>
                         <th>Ngày xóa</th>
                         <th
-                            v-if="canUpdate || canDelete"
+                            v-if="
+                                canUpdate ||
+                                canDelete ||
+                                permissions.includes('view-trash')
+                            "
                             class="trash-actions-heading"
                         >
                             Thao tác
@@ -10766,9 +10822,32 @@ onMounted(async () => {
                         <td v-if="trashFilterType === 'person'">
                             {{ pathValue(row, "record.person_name") || "—" }}
                         </td>
-                        <td>{{ pathValue(row, "deleted_at") || "—" }}</td>
-                        <td v-if="canUpdate || canDelete">
+                        <td class="trash-deleted-at">
+                            {{ formatTrashDeletedAt(row.deleted_at) }}
+                        </td>
+                        <td
+                            v-if="
+                                canUpdate ||
+                                canDelete ||
+                                permissions.includes('view-trash')
+                            "
+                        >
                             <div class="trash-row-actions">
+                                <button
+                                    v-if="row.item_type === 'household'"
+                                    class="trash-icon-button trash-view-button"
+                                    type="button"
+                                    title="Xem chi tiết phiếu đã xóa"
+                                    aria-label="Xem chi tiết phiếu đã xóa"
+                                    @click="openTrashedHousehold(row)"
+                                >
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path
+                                            d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"
+                                        />
+                                        <circle cx="12" cy="12" r="2.5" />
+                                    </svg>
+                                </button>
                                 <button
                                     v-if="canUpdate"
                                     class="trash-icon-button trash-restore-button"
@@ -11623,25 +11702,26 @@ onMounted(async () => {
             v-if="moduleKey === 'trash'"
             class="user-pagination-footer trash-pagination-footer"
         >
-            <label class="page-size-control">
-                <span>Mỗi trang</span>
-                <select
-                    v-model.number="trashPageSize"
-                    :disabled="busy"
-                    @change="
-                        currentPage = 1;
-                        load();
-                    "
-                >
-                    <option :value="10">10</option>
-                    <option :value="20">20</option>
-                    <option :value="50">50</option>
-                    <option :value="100">100</option>
-                </select>
-            </label>
-            <span class="record-count">
-                {{ rows.length }} / {{ totalRecords }} bản ghi
-            </span>
+            <div class="village-pagination-summary">
+                <label class="page-size-control">
+                    <span>Mỗi trang</span>
+                    <select
+                        v-model.number="trashPageSize"
+                        :disabled="busy"
+                        @change="
+                            currentPage = 1;
+                            load();
+                        "
+                    >
+                        <option :value="10">10</option>
+                        <option :value="20">20</option>
+                        <option :value="50">50</option>
+                    </select>
+                </label>
+                <span class="record-count">
+                    {{ rows.length }} / {{ totalRecords }} bản ghi
+                </span>
+            </div>
             <div
                 class="pagination-actions compact-pagination"
                 aria-label="Phân trang thùng rác"
@@ -11952,7 +12032,11 @@ onMounted(async () => {
             </section>
         </div>
         <div
-            v-if="moduleKey === 'households' && householdDetail"
+            v-if="
+                householdDetail &&
+                (moduleKey === 'households' ||
+                    (moduleKey === 'trash' && householdDetailFromTrash))
+            "
             class="workspace-modal-backdrop household-detail-backdrop"
             role="presentation"
             @keydown.esc="closeHouseholdDetail"
@@ -11966,7 +12050,11 @@ onMounted(async () => {
                 <header class="household-detail-header">
                     <div>
                         <h2 id="household-detail-title">
-                            Chi tiết Phiếu điều tra -
+                            {{
+                                householdDetailFromTrash
+                                    ? "Chi tiết phiếu đã xóa -"
+                                    : "Chi tiết Phiếu điều tra -"
+                            }}
                             {{ householdDetail.household_code }}
                         </h2>
                     </div>
@@ -11997,7 +12085,10 @@ onMounted(async () => {
                             </svg>
                         </button>
                         <button
-                            v-if="permissions.includes('update-households')"
+                            v-if="
+                                !householdDetailFromTrash &&
+                                permissions.includes('update-households')
+                            "
                             class="household-detail-icon-button"
                             type="button"
                             aria-label="Chỉnh sửa phiếu"

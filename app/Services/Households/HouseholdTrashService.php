@@ -9,6 +9,7 @@ use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -264,6 +265,16 @@ class HouseholdTrashService
                     ->withDetails(),
             ])
             ->findOrFail($id);
+    }
+
+    public function personForDetails(User $user, int $id): Person
+    {
+        return $this->trashedPersons($user, [$id])
+            ->withDetails()
+            ->with(['household' => fn (BelongsTo $household) => $household
+                ->withTrashed()
+                ->with(['province', 'commune', 'village'])])
+            ->firstOrFail();
     }
 
     private function trashedPersons(User $user, ?array $ids = null): Builder

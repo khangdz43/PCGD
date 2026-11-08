@@ -414,6 +414,7 @@ const householdDetail = ref<Row | null>(null);
 const householdDetailReadOnly = ref(false);
 const householdDetailFromTrash = ref(false);
 const trashedHouseholdPersons = ref<Row[]>([]);
+const personDetailFromTrash = ref(false);
 const householdListRow = ref<Row | null>(null);
 const householdDetailPage = ref(1);
 const householdDetailLastPage = ref(1);
@@ -3862,6 +3863,27 @@ async function openTrashedHousehold(row: Row): Promise<void> {
     } finally {
         householdLoading.value = false;
     }
+}
+
+async function openTrashedPerson(row: Row): Promise<void> {
+    if (row.item_type !== "person" || row.id === undefined) return;
+
+    memberBusy.value = true;
+    error.value = "";
+    try {
+        const response = await api.get<unknown>(`/trash/persons/${row.id}`);
+        selectedHouseholdPerson.value = asRow(apiData<unknown>(response.data));
+        personDetailFromTrash.value = true;
+    } catch (cause) {
+        error.value = errorMessage(cause);
+    } finally {
+        memberBusy.value = false;
+    }
+}
+
+function closeHouseholdPersonDetail(): void {
+    selectedHouseholdPerson.value = null;
+    personDetailFromTrash.value = false;
 }
 
 async function loadHouseholdDetailPage(
@@ -10834,12 +10856,28 @@ onMounted(async () => {
                         >
                             <div class="trash-row-actions">
                                 <button
-                                    v-if="row.item_type === 'household'"
+                                    v-if="
+                                        ['household', 'person'].includes(
+                                            String(row.item_type),
+                                        )
+                                    "
                                     class="trash-icon-button trash-view-button"
                                     type="button"
-                                    title="Xem chi tiết phiếu đã xóa"
-                                    aria-label="Xem chi tiết phiếu đã xóa"
-                                    @click="openTrashedHousehold(row)"
+                                    :title="
+                                        row.item_type === 'household'
+                                            ? 'Xem chi tiết phiếu đã xóa'
+                                            : 'Xem chi tiết nhân khẩu đã xóa'
+                                    "
+                                    :aria-label="
+                                        row.item_type === 'household'
+                                            ? 'Xem chi tiết phiếu đã xóa'
+                                            : 'Xem chi tiết nhân khẩu đã xóa'
+                                    "
+                                    @click="
+                                        row.item_type === 'household'
+                                            ? openTrashedHousehold(row)
+                                            : openTrashedPerson(row)
+                                    "
                                 >
                                     <svg viewBox="0 0 24 24" aria-hidden="true">
                                         <path
@@ -13312,6 +13350,7 @@ onMounted(async () => {
                                                     :aria-label="`Xem thông tin ${person.first_name ?? 'nhân khẩu'}`"
                                                     title="Xem chi tiết"
                                                     @click="
+                                                        personDetailFromTrash = false;
                                                         selectedHouseholdPerson =
                                                             person
                                                     "
@@ -14522,8 +14561,8 @@ onMounted(async () => {
             v-if="selectedHouseholdPerson"
             class="workspace-modal-backdrop household-person-backdrop"
             role="presentation"
-            @click.self="selectedHouseholdPerson = null"
-            @keydown.esc="selectedHouseholdPerson = null"
+            @click.self="closeHouseholdPersonDetail"
+            @keydown.esc="closeHouseholdPersonDetail"
         >
             <section
                 class="household-person-dialog household-member-editor household-member-readonly-dialog"
@@ -14535,6 +14574,9 @@ onMounted(async () => {
                     <div>
                         <span>THÔNG TIN THEO MẪU PHIẾU</span>
                         <h3 id="household-person-title">
+                            <template v-if="personDetailFromTrash">
+                                Chi tiết nhân khẩu đã xóa:
+                            </template>
                             {{
                                 [
                                     selectedHouseholdPerson.last_name,
@@ -14549,7 +14591,7 @@ onMounted(async () => {
                         class="modal-icon-button"
                         type="button"
                         aria-label="Đóng"
-                        @click="selectedHouseholdPerson = null"
+                        @click="closeHouseholdPersonDetail"
                     >
                         ×
                     </button>
@@ -14855,7 +14897,7 @@ onMounted(async () => {
                     <button
                         class="secondary-button"
                         type="button"
-                        @click="selectedHouseholdPerson = null"
+                        @click="closeHouseholdPersonDetail"
                     >
                         Đóng
                     </button>

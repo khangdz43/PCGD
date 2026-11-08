@@ -399,7 +399,7 @@ class AccessControlTest extends TestCase
         }
     }
 
-    public function test_village_delete_returns_json_for_ajax_and_deletes_the_village(): void
+    public function test_active_village_cannot_be_deleted_and_inactive_village_delete_returns_json(): void
     {
         DB::table('provinces')->insert([
             'code' => 'P1',
@@ -454,6 +454,15 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath('status_code', 422)
             ->assertJsonPath('error.code', 'VALIDATION_FAILED')
+            ->assertJsonPath('error.details.0.field', 'village')
+            ->assertJsonPath('error.details.0.issue', 'Không thể xóa thôn/xóm đang hoạt động. Hãy chuyển sang trạng thái không hoạt động trước.');
+
+        $this->assertDatabaseHas('villages', ['code' => 'V1']);
+        $this->assertDatabaseHas('households', ['id' => $household->id, 'village_code' => 'V1']);
+
+        DB::table('villages')->where('code', 'V1')->update(['intake_paused_at' => now()]);
+        $this->deleteJson('/api/v1/villages/V1')
+            ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'village')
             ->assertJsonPath('error.details.0.issue', 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.');
 

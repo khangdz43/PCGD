@@ -8733,18 +8733,38 @@ onMounted(async () => {
                             <thead>
                                 <tr>
                                     <th>STT</th>
-                                    <th class="is-required">Họ và tên đệm</th>
-                                    <th class="is-required">Tên</th>
-                                    <th class="is-required">Quan hệ</th>
-                                    <th class="is-required">Ngày sinh</th>
-                                    <th class="is-required">Giới tính</th>
-                                    <th class="is-required">Dân tộc</th>
+                                    <th class="is-required">
+                                        Họ và tên đệm
+                                        <span class="required-indicator">*</span>
+                                    </th>
+                                    <th class="is-required">
+                                        Tên <span class="required-indicator">*</span>
+                                    </th>
+                                    <th class="is-required">
+                                        Quan hệ
+                                        <span class="required-indicator">*</span>
+                                    </th>
+                                    <th class="is-required">
+                                        Ngày sinh
+                                        <span class="required-indicator">*</span>
+                                    </th>
+                                    <th class="is-required">
+                                        Giới tính
+                                        <span class="required-indicator">*</span>
+                                    </th>
+                                    <th class="is-required">
+                                        Dân tộc
+                                        <span class="required-indicator">*</span>
+                                    </th>
                                     <th>Tôn giáo</th>
                                     <th>Diện ưu tiên</th>
                                     <th>Cha/mẹ hoặc người thân</th>
                                     <th>Số điện thoại</th>
                                     <th>Ghi chú</th>
-                                    <th class="is-required">Năm học</th>
+                                    <th class="is-required">
+                                        Năm học
+                                        <span class="required-indicator">*</span>
+                                    </th>
                                     <th>Lớp đang học</th>
                                     <th>Khối học</th>
                                     <th>Trường đang học</th>

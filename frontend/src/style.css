@@ -9705,8 +9705,7 @@ button {
 .workspace-field:has(input:required, select:required, textarea:required, [aria-required="true"])>span:first-child::after,
 .login-field:has(input:required, select:required, textarea:required)>span:first-child::after,
 .excel-file-drop:has(input[aria-required="true"])>strong::after,
-.required-field-label::after,
-th.is-required::after {
+.required-field-label::after {
     content: "*";
     margin-left: 3px;
     color: #dc2626;

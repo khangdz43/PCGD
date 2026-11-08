@@ -141,6 +141,12 @@ class VillageService
                 ->firstOrFail();
             $this->assertCanUseCommune($user, $lockedVillage->commune_code, $lockedVillage);
 
+            if ($lockedVillage->operational_status === 'active') {
+                throw ValidationException::withMessages([
+                    'village' => 'Không thể xóa thôn/xóm đang hoạt động. Hãy chuyển sang trạng thái không hoạt động trước.',
+                ]);
+            }
+
             if ($lockedVillage->households()->exists()) {
                 throw ValidationException::withMessages([
                     'village' => 'Không thể xóa thôn/xóm vì đang có hộ điều tra thuộc địa bàn này.',

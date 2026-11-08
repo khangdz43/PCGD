@@ -7980,7 +7980,45 @@ button {
 
 .school-merge-view {
     display: grid;
-    gap: 19px;
+    align-content: start;
+    gap: 12px;
+}
+
+.school-merge-feedback {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 14px;
+    border: 1px solid;
+    border-radius: 9px;
+    font-size: .9rem;
+    line-height: 1.45;
+}
+
+.school-merge-feedback>span {
+    display: grid;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    place-items: center;
+    border-radius: 50%;
+    font-size: .8rem;
+    font-weight: 800;
+}
+
+.school-merge-feedback p {
+    margin: 1px 0 0;
+}
+
+.school-merge-feedback.is-error {
+    border-color: #fecaca;
+    background: #fff5f5;
+    color: #a12335;
+}
+
+.school-merge-feedback.is-error>span {
+    background: #fee2e2;
+    color: #b42335;
 }
 
 .school-merge-view>.section-heading {
@@ -8015,6 +8053,65 @@ button {
     font-size: .87rem;
 }
 
+.school-target-list {
+    display: grid;
+    max-height: min(32vh, 300px);
+    gap: 7px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+    scrollbar-gutter: stable;
+}
+
+.school-target-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 11px 12px;
+    border: 1px solid #e6ebf2;
+    border-radius: 9px;
+    background: #fff;
+    color: #30425d;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.school-target-option:hover,
+.school-target-option.selected {
+    border-color: #9bbcf0;
+    background: #f3f7ff;
+}
+
+.school-target-option:focus-visible {
+    outline: 2px solid #2865c2;
+    outline-offset: 2px;
+}
+
+.school-target-option-copy {
+    display: grid;
+    min-width: 0;
+    gap: 4px;
+}
+
+.school-target-option-copy strong {
+    color: #30425d;
+    font-size: .8rem;
+}
+
+.school-target-option-copy small {
+    color: #7a8799;
+    font-size: .7rem;
+}
+
+.school-target-option-action {
+    flex: 0 0 auto;
+    color: #2865c2;
+    font-size: .72rem;
+    font-weight: 700;
+}
+
 .merge-api-notice {
     padding: 14px 16px;
     border: 1px solid #f0dfb8;
@@ -8037,15 +8134,15 @@ button {
 .school-merge-columns {
     display: grid;
     align-items: start;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 17px;
+    grid-template-columns: minmax(320px, .82fr) minmax(0, 1.18fr);
+    gap: 12px;
 }
 
 .merge-selection-card {
     display: grid;
     align-content: start;
-    gap: 17px;
-    padding: 19px;
+    gap: 12px;
+    padding: 16px;
     border: 1px solid #e6ebf2;
     border-radius: 12px;
     background: #fff;
@@ -8097,9 +8194,9 @@ button {
 
 .school-selection-list {
     display: grid;
-    min-height: 0;
-    max-height: 150px;
-    gap: 6px;
+    min-height: 120px;
+    max-height: min(48vh, 480px);
+    gap: 7px;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding-right: 4px;
@@ -8142,10 +8239,7 @@ button {
 
 .selected-source-list {
     display: flex;
-    height: 72px;
-    max-height: 72px;
     min-height: 0;
-    margin-top: 8px;
     align-content: flex-start;
     align-items: flex-start;
     overflow-y: auto;
@@ -8153,12 +8247,13 @@ button {
     gap: 6px;
     justify-content: flex-start;
     overscroll-behavior: contain;
+    max-height: 96px;
     padding-right: 4px;
     scrollbar-gutter: stable;
 }
 
 .selected-source-list:empty {
-    visibility: hidden;
+    display: none;
 }
 
 .selected-source-list span {
@@ -8197,19 +8292,43 @@ button {
 .merge-constraint-note {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
-    padding: 12px 14px;
-    border: 1px solid #f2dfbd;
-    border-radius: 9px;
-    background: #fffbf4;
-    color: #b17a2b;
+    gap: 12px;
+    padding: 14px 16px;
+    border: 1px solid #f1cf91;
+    border-radius: 10px;
+    background: #fff9ec;
+    color: #8a5710;
+}
+
+.merge-constraint-icon {
+    display: grid;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    place-items: center;
+    border: 1px solid #d99a37;
+    border-radius: 50%;
+    color: #9a5d08;
+    font-size: .88rem;
+    font-weight: 800;
+}
+
+.merge-constraint-note>div {
+    min-width: 0;
+}
+
+.merge-constraint-note strong {
+    display: block;
+    margin-bottom: 3px;
+    color: #7b4b0d;
+    font-size: .92rem;
 }
 
 .merge-constraint-note p {
     margin: 0;
-    color: #806b4e;
-    font-size: .76rem;
-    line-height: 1.55;
+    color: #755c38;
+    font-size: .9rem;
+    line-height: 1.5;
 }
 
 .merge-constraint-note .merge-constraint-warning {
@@ -8246,6 +8365,7 @@ button {
 
 @media (max-width: 760px) {
     .school-selection-list {
+        min-height: 0;
         max-height: 140px;
     }
 

@@ -1722,6 +1722,25 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('villages', ['code' => 'V01']);
     }
 
+    public function test_active_village_cannot_be_deleted_until_it_is_marked_inactive(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::DELETE_VILLAGES]);
+
+        $this->actingAs($user)
+            ->deleteJson('/api/v1/villages/V01')
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'village')
+            ->assertJsonPath('error.details.0.issue', 'Không thể xóa thôn/xóm đang hoạt động. Hãy chuyển sang trạng thái không hoạt động trước.');
+
+        $this->assertDatabaseHas('villages', ['code' => 'V01']);
+
+        DB::table('villages')->where('code', 'V01')->update(['intake_paused_at' => now()]);
+        $this->deleteJson('/api/v1/villages/V01')
+            ->assertOk()
+            ->assertJsonPath('message', 'Đã xóa thôn/bản thành công!');
+        $this->assertDatabaseMissing('villages', ['code' => 'V01']);
+    }
+
     public function test_merge_target_can_be_deleted_with_legacy_sources_while_merge_history_is_preserved(): void
     {
         DB::table('villages')->insert([
@@ -1733,6 +1752,7 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('villages')->where('code', 'V01')->update(['intake_paused_at' => now()]);
         $historyId = DB::table('village_merge_histories')->insertGetId([
             'commune_code' => 'C01',
             'source_codes' => json_encode(['V03']),
@@ -2036,12 +2056,21 @@ class HouseholdCrudFlowTest extends TestCase
         $schoolId = DB::table('schools')->insertGetId([
             'code' => 'SCHOOL-IN-USE',
             'name' => 'Trường đang sử dụng',
+            'is_active' => true,
             'level' => 'TH',
             'province_code' => 'P01',
             'commune_code' => 'C01',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        $this->actingAs($user)
+            ->deleteJson(route('api.schools.destroy', $schoolId))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'school')
+            ->assertJsonPath('error.details.0.issue', 'Không thể xóa trường đang hoạt động. Hãy chuyển trường sang trạng thái không hoạt động trước.');
+        $this->assertDatabaseHas('schools', ['id' => $schoolId]);
+
+        DB::table('schools')->where('id', $schoolId)->update(['is_active' => false]);
         $household = $this->createHousehold();
         $person = $this->createPerson($household);
         $educationId = DB::table('person_educations')->insertGetId([

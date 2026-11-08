@@ -126,13 +126,26 @@ class SchoolService
 
     public function delete(School $school): void
     {
-        if ($school->educations()->exists()) {
-            throw ValidationException::withMessages([
-                'school' => 'Không thể xóa trường học vì đang có hồ sơ nhân khẩu sử dụng trường này.',
-            ]);
-        }
+        DB::transaction(function () use ($school): void {
+            $lockedSchool = School::query()
+                ->whereKey($school->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $school->delete();
+            if ($lockedSchool->is_active) {
+                throw ValidationException::withMessages([
+                    'school' => 'Không thể xóa trường đang hoạt động. Hãy chuyển trường sang trạng thái không hoạt động trước.',
+                ]);
+            }
+
+            if ($lockedSchool->educations()->exists()) {
+                throw ValidationException::withMessages([
+                    'school' => 'Không thể xóa trường học vì đang có hồ sơ nhân khẩu sử dụng trường này.',
+                ]);
+            }
+
+            $lockedSchool->delete();
+        });
     }
 
     private function assertUniqueNameAndLevel(array $data, ?int $exceptId = null): void

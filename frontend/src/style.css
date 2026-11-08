@@ -3915,14 +3915,15 @@ h2 {
 }
 
 .trash-management-toolbar-wrapper {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
     gap: 10px;
 }
 
 .trash-management-toolbar {
-    grid-column: 1 / -1;
+    grid-column: 1;
     display: grid;
-    grid-template-columns: minmax(180px, 240px) minmax(260px, 420px);
+    grid-template-columns: minmax(180px, 240px) minmax(320px, 520px);
     align-items: end;
     gap: 12px;
 }
@@ -3945,6 +3946,10 @@ h2 {
     background: #fff;
 }
 
+.trash-management-toolbar select {
+    font-weight: 650;
+}
+
 .trash-search-control input {
     width: 100%;
     min-width: 0;
@@ -3955,8 +3960,8 @@ h2 {
     align-items: end;
 }
 
-.trash-search-control>span {
-    grid-column: 1 / -1;
+.trash-search-control input::placeholder {
+    font-weight: 400;
 }
 
 .trash-search-button {
@@ -3978,10 +3983,12 @@ h2 {
 }
 
 .trash-management-toolbar-bottom {
+    grid-column: 2;
+    grid-row: 1;
     display: flex;
     min-height: 34px;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 12px;
 }
 
@@ -4009,11 +4016,16 @@ h2 {
 }
 
 .trash-management-panel {
-    overflow: hidden;
+    overflow-x: auto;
     margin-top: 16px;
     border: 1px solid #e3eaf4;
     border-radius: 12px;
     background: #fff;
+}
+
+.trash-management-table {
+    width: 100%;
+    min-width: 760px;
 }
 
 .trash-management-table th,
@@ -4041,18 +4053,18 @@ h2 {
 .trash-type-badge {
     display: inline-flex;
     align-items: center;
-    min-height: 28px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: #eef5ff;
-    color: #2457a7;
+    color: #34445c;
     font-size: 12px;
-    font-weight: 700;
+    font-weight: 750;
 }
 
 .trash-type-person {
-    background: #fff4df;
-    color: #8a5b12;
+    color: #34445c;
+}
+
+.trash-management-table .trash-deleted-at {
+    min-width: 190px;
+    white-space: nowrap;
 }
 
 .trash-row-actions {
@@ -4087,6 +4099,10 @@ h2 {
     color: #2563a8;
 }
 
+.trash-view-button {
+    color: #475569;
+}
+
 .trash-delete-button {
     color: #c0393f;
 }
@@ -4104,6 +4120,10 @@ h2 {
     justify-content: space-between;
     gap: 16px;
     padding-top: 14px;
+}
+
+.trash-pagination-footer .village-pagination-summary {
+    flex-wrap: wrap;
 }
 
 .trash-pagination-footer .compact-pagination {

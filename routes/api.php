@@ -70,6 +70,7 @@ Route::middleware('web')->group(function (): void {
             Route::middleware('can:view-trash')->group(function (): void {
                 Route::get('/trash', [HouseholdTrashController::class, 'index'])->name('trash.index');
                 Route::get('/trash/households/{id}', [HouseholdTrashController::class, 'showHousehold'])->whereNumber('id')->name('trash.households.show');
+                Route::get('/trash/persons/{id}', [HouseholdTrashController::class, 'showPerson'])->whereNumber('id')->name('trash.persons.show');
             });
             Route::post('/trash/batch-operations', [HouseholdTrashController::class, 'bulk'])->name('trash.batch-operations.store');
             Route::middleware('can:update-trash')->group(function (): void {

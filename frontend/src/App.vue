@@ -576,6 +576,7 @@ function updateCurrentUserName(profile: { name: string }): void {
                         'villages',
                         'schools',
                         'households',
+                        'trash',
                     ].includes(activeModule),
                 }"
             >

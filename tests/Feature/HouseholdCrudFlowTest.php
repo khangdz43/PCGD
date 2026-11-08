@@ -311,6 +311,11 @@ class HouseholdCrudFlowTest extends TestCase
         $this->getJson(route('api.trash.index', ['type' => 'person', 'q' => 'Thành viên cần khôi phục']))
             ->assertOk()
             ->assertJsonPath('data.items.0.record.person_name', 'Nguyễn Thành viên cần khôi phục');
+        $this->getJson(route('api.trash.persons.show', $member->id))
+            ->assertOk()
+            ->assertJsonPath('data.first_name', 'Thành viên cần khôi phục')
+            ->assertJsonPath('data.educations.0.current_class', '12A1')
+            ->assertJsonPath('data.household.household_code', 'TRASH-01');
 
         $this->patchJson(route('api.trash.persons.restore', $member->id))
             ->assertOk();

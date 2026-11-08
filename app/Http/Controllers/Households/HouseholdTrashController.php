@@ -92,6 +92,13 @@ class HouseholdTrashController extends Controller
         return response()->json(['data' => $household]);
     }
 
+    public function showPerson(Request $request, int $id): JsonResponse
+    {
+        $person = $this->trash->personForDetails($request->user(), $id);
+
+        return response()->json(['data' => $person]);
+    }
+
     public function bulk(Request $request): JsonResponse
     {
         $data = $request->validate([

@@ -3235,7 +3235,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $villageOneUser->roles()->attach($accountRole);
-        $villageOneUser->villages()->sync(['V1']);
+        $villageOneUser->villages()->sync(['V1', 'V2']);
 
         $villageTwoUser = User::factory()->create([
             'name' => 'Người dùng thôn hai',
@@ -3270,6 +3270,7 @@ class AccessControlTest extends TestCase
             ->assertJsonFragment(['name' => 'Người dùng thôn một'])
             ->assertJsonMissing(['name' => 'Người dùng thôn hai'])
             ->assertJsonMissing(['name' => 'Người dùng tỉnh hai'])
+            ->assertJsonPath('data.allUsers.0.village_names', 'Thôn một, Thôn hai')
             ->assertJsonPath('data.selected_filters.village_code', 'V1');
 
         $this->actingAs($admin)

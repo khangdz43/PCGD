@@ -66,6 +66,7 @@ class UserRoleController extends Controller
             'scope_level' => $user->roleScopeLevel(),
             'province_name' => $user->province?->name,
             'commune_name' => $user->commune?->name,
+            'village_names' => $user->villages->pluck('name')->implode(', '),
             'is_active' => $user->is_active,
             'can_view_details' => $user->can_view_details,
             'can_edit_configuration' => $user->can_edit_configuration,

@@ -11147,16 +11147,19 @@ onMounted(async () => {
                                 <span>{{ pathValue(row, column) }}</span>
                                 <small
                                     v-if="
-                                        row.scope_level === 'commune'
+                                        row.village_names ||
+                                        (row.scope_level === 'commune'
                                             ? row.commune_name
                                             : row.scope_level === 'province' &&
-                                              row.province_name
+                                              row.province_name)
                                     "
                                 >
                                     {{
-                                        row.scope_level === "commune"
-                                            ? row.commune_name
-                                            : row.province_name
+                                        row.village_names
+                                            ? `Thôn: ${row.village_names}`
+                                            : row.scope_level === "commune"
+                                              ? row.commune_name
+                                              : row.province_name
                                     }}
                                 </small>
                             </div>

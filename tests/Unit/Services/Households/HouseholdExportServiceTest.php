@@ -196,10 +196,21 @@ class HouseholdExportServiceTest extends TestCase
             $table->softDeletes();
             $table->timestamps();
         });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
+        DB::table('school_years')->insert([
+            'start_time' => '2025-08-01',
+            'end_time' => '2026-07-31',
+            'status' => false,
+        ]);
         Schema::create('person_educations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
-            $table->string('school_year')->nullable();
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('academic_block')->nullable();
             $table->string('current_class')->nullable();
             $table->string('school_code')->nullable();
@@ -294,6 +305,15 @@ class HouseholdExportServiceTest extends TestCase
         $personId = DB::table('persons')->insertGetId(array_merge([
             'household_id' => $householdId,
         ], $person));
+
+        if (isset($education['school_year'])) {
+            [$startYear, $endYear] = array_map('intval', explode('-', $education['school_year']));
+            $education['school_year_id'] = DB::table('school_years')
+                ->whereYear('start_time', $startYear)
+                ->whereYear('end_time', $endYear)
+                ->value('id');
+            unset($education['school_year']);
+        }
 
         DB::table('person_educations')->insert(array_merge([
             'person_id' => $personId,

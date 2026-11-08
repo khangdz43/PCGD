@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Support\DataAccessScope;
 use App\Services\Geography\VillageService;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -18,39 +19,48 @@ class HouseholdImportSubmissionService
 
     public function submit(User $user, array $data): ImportLog
     {
+        return $this->submitMany($user, $data)->first();
+    }
+
+    public function submitMany(User $user, array $data): Collection
+    {
         DataAccessScope::assertHouseholdLocation($user, $data);
 
-        /** @var UploadedFile $file */
-        $file = $data['file'];
-        $importId = (string) Str::uuid();
-        $importLog = DB::transaction(function () use ($data, $file, $importId, $user): ImportLog {
+        /** @var list<UploadedFile> $files */
+        $files = $data['files'] ?? [$data['file']];
+
+        return DB::transaction(function () use ($data, $files, $user): Collection {
             Commune::query()
                 ->where('code', $data['commune_code'])
                 ->lockForUpdate()
                 ->firstOrFail();
             $this->villages->assertAcceptsHouseholds($data['village_code'], true);
-            $path = $file->store('household-imports/'.$importId, 'local');
-            $importLog = ImportLog::create([
-                'file_name' => $file->getClientOriginalName(),
-                'user_id' => $user->id,
-                'file_path' => $path,
-                'context' => [
-                    'school_year' => $data['school_year'],
-                    'province_code' => $data['province_code'],
-                    'commune_code' => $data['commune_code'],
-                    'village_code' => $data['village_code'],
-                ],
-                'status' => 'PENDING',
-            ]);
+            $importLogs = collect();
+            foreach ($files as $file) {
+                $importId = (string) Str::uuid();
+                $path = $file->store('household-imports/' . $importId, 'local');
+                $importLogs->push(ImportLog::create([
+                    'file_name' => $file->getClientOriginalName(),
+                    'user_id' => $user->id,
+                    'file_path' => $path,
+                    'context' => [
+                        'school_year' => $data['school_year'],
+                        'province_code' => $data['province_code'],
+                        'commune_code' => $data['commune_code'],
+                        'village_code' => $data['village_code'],
+                    ],
+                    'status' => 'PENDING',
+                ]));
+            }
 
-            ProcessHouseholdImport::dispatch($importLog->id)
-                ->onConnection('database')
-                ->onQueue('default')
-                ->afterCommit();
+            foreach ($importLogs as $importLog) {
+                ProcessHouseholdImport::dispatch($importLog->id)
+                    ->onConnection('database')
+                    ->onQueue('default')
+                    ->afterCommit();
+            }
 
-            return $importLog;
+            return $importLogs;
         });
-
-        return $importLog;
     }
 }

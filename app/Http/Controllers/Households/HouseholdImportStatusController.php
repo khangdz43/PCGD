@@ -35,6 +35,7 @@ class HouseholdImportStatusController extends Controller
                 'success_rows',
                 'error_rows',
                 'file_path',
+                'context',
             ]);
         $pendingImportIds = ImportLog::query()
             ->where('status', 'PENDING')
@@ -74,6 +75,9 @@ class HouseholdImportStatusController extends Controller
             'total_rows' => $importLog->total_rows,
             'success_rows' => $importLog->success_rows,
             'error_rows' => $importLog->error_rows,
+            'error_message' => $importLog->status === 'FAILED'
+                ? ($importLog->context['processing_error'] ?? null)
+                : null,
             'has_error_file' => in_array($importLog->status, ['PARTIAL', 'FAILED'], true)
                 && $importLog->error_file_path !== null
                 && Storage::disk('local')->exists($importLog->error_file_path),

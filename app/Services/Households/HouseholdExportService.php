@@ -29,7 +29,7 @@ class HouseholdExportService
             'village',
             'persons.ethnicity',
             'persons.disability',
-            'persons.educations',
+            'persons.educations.schoolYearRecord',
         ]);
         DataAccessScope::households($query, $user);
 
@@ -92,7 +92,9 @@ class HouseholdExportService
 
     private function writeExportRow(Worksheet $sheet, int $row, int $sequence, object $household, ?Person $person): void
     {
-        $education = $person?->educations->sortByDesc('school_year')->first();
+        $education = $person?->educations
+            ->sortByDesc(fn ($item) => $item->schoolYearRecord?->start_time?->toDateString())
+            ->first();
         $disability = $person?->disability;
         $date = $person?->dob ? strtotime((string) $person->dob) : false;
         $values = [

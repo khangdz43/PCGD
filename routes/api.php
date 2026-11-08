@@ -47,8 +47,8 @@ Route::middleware('web')->group(function (): void {
                 Route::get('/households/{household}', [HouseholdController::class, 'show'])->whereNumber('household')->name('households.show');
                 Route::get('/households/{household}/persons', [HouseholdPersonController::class, 'index'])->whereNumber('household')->name('households.persons.index');
                 Route::get('/households/{household}/persons/{personId}', [HouseholdPersonController::class, 'show'])->whereNumber(['household', 'personId'])->name('households.persons.show');
+                Route::get('/households/{household}/persons/schools', [HouseholdPersonController::class, 'schoolOptions'])->whereNumber('household')->name('households.persons.schools');
             });
-
             Route::middleware('can:create-households')->group(function (): void {
                 Route::get('/households/form', [HouseholdManagementController::class, 'create'])->name('households.create');
                 Route::post('/households', [HouseholdManagementController::class, 'store'])->name('households.store');

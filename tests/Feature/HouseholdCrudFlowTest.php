@@ -32,6 +32,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->createSchema();
         $this->seedLocations();
+        $this->seedSchoolYears();
     }
 
     public function test_commune_user_can_create_a_household_and_the_code_is_assigned_by_school_year(): void
@@ -39,6 +40,11 @@ class HouseholdCrudFlowTest extends TestCase
         $user = $this->userWithPermissions([
             AccessPermission::CREATE_HOUSEHOLDS,
         ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.households.create'))
+            ->assertOk()
+            ->assertJsonPath('data.household.household_code', '01');
 
         $this->actingAs($user)
             ->postJson(route('api.households.store'), [
@@ -52,7 +58,8 @@ class HouseholdCrudFlowTest extends TestCase
                 'address' => 'Số 1',
             ])
             ->assertCreated()
-            ->assertJsonPath('data.id', Household::query()->value('id'));
+            ->assertJsonPath('data.id', Household::query()->value('id'))
+            ->assertJsonPath('data.household_code', '01');
 
         $this->assertDatabaseHas('households', [
             'household_code' => '01',
@@ -66,7 +73,10 @@ class HouseholdCrudFlowTest extends TestCase
 
     public function test_household_creation_rejects_a_commune_outside_the_users_area(): void
     {
-        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $user = $this->userWithPermissions([
+            AccessPermission::VIEW_HOUSEHOLDS,
+            AccessPermission::CREATE_HOUSEHOLDS,
+        ]);
 
         $this->actingAs($user)
             ->postJson(route('api.households.store'), [
@@ -100,7 +110,6 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->actingAs($user)
             ->putJson(route('api.households.update', $household), [
-                'household_code' => $household->household_code,
                 'school_year' => $household->school_year,
                 'head_first_name' => 'Bình',
                 'head_last_name' => 'Trần',
@@ -115,11 +124,60 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertDatabaseHas('households', [
             'id' => $household->id,
+            'household_code' => $household->household_code,
             'school_year' => '2025-2026',
             'head_first_name' => 'Bình',
             'head_last_name' => 'Trần',
             'residence_type' => 'TAM_TRU',
         ]);
+    }
+
+    public function test_household_edit_loads_current_education_and_only_necessary_fallback(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::UPDATE_HOUSEHOLDS]);
+        $household = $this->createHousehold(['school_year' => '2026-2027']);
+        $currentPerson = $this->createPerson($household, [
+            'first_name' => 'A',
+            'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $fallbackPerson = $this->createPerson($household, [
+            'first_name' => 'B',
+            'relationship_with_head' => 'Con',
+        ]);
+        DB::table('person_educations')->insert([
+            [
+                'person_id' => $currentPerson->id,
+                'school_year_id' => $this->schoolYearId('2024-2025'),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'person_id' => $currentPerson->id,
+                'school_year_id' => $this->schoolYearId('2026-2027'),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'person_id' => $fallbackPerson->id,
+                'school_year_id' => $this->schoolYearId('2023-2024'),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'person_id' => $fallbackPerson->id,
+                'school_year_id' => $this->schoolYearId('2024-2025'),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.households.edit', $household))
+            ->assertOk()
+            ->assertJsonCount(1, 'data.persons.0.educations')
+            ->assertJsonPath('data.persons.0.educations.0.school_year', '2026-2027')
+            ->assertJsonCount(1, 'data.persons.1.educations')
+            ->assertJsonPath('data.persons.1.educations.0.school_year', '2023-2024');
     }
 
     public function test_user_cannot_open_a_household_outside_their_commune_even_with_view_permission(): void
@@ -207,7 +265,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('persons', ['id' => $head->id, 'deleted_at' => null]);
         DB::table('person_educations')->insert([
             'person_id' => $member->id,
-            'school_year' => '2025-2026',
+            'school_year_id' => $this->schoolYearId('2025-2026'),
             'academic_block' => '12',
             'current_class' => '12A1',
             'school_code' => 'SCHOOL-TRASH',
@@ -398,9 +456,14 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertDatabaseHas('persons', [
             'household_id' => $household->id,
-            'first_name' => 'An',
-            'last_name' => 'Nguyễn',
+            'first_name' => 'Bình',
+            'last_name' => 'Trần',
             'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $this->assertDatabaseHas('households', [
+            'id' => $household->id,
+            'head_first_name' => 'Bình',
+            'head_last_name' => 'Trần',
         ]);
 
         $this->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
@@ -415,6 +478,7 @@ class HouseholdCrudFlowTest extends TestCase
         $household = $this->createHousehold();
         $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
         $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['education']['academic_block'] = '2';
         $payload['education']['current_class'] = '12A1';
 
         $this->actingAs($user)
@@ -424,6 +488,186 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('person_educations', [
             'current_class' => '12A1',
             'academic_block' => '12',
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
+        ]);
+    }
+
+    public function test_general_education_class_fields_reject_grades_above_twelve(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
+
+        foreach (['current_class', 'finished_class', 'dropped_class'] as $field) {
+            $payload = $this->personPayload('Con');
+            $payload['education'][$field] = '13A1';
+
+            $this->actingAs($user)
+                ->postJson(route('api.households.persons.store', $household), $payload)
+                ->assertUnprocessable()
+                ->assertJsonPath('error.details.0.field', "education.{$field}");
+        }
+    }
+
+    public function test_member_phone_accepts_plus_84_but_rejects_text(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con');
+        $payload['phone'] = '09012abc';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'phone');
+
+        $payload['phone'] = '+84912345678';
+        $this->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertCreated();
+
+        $this->assertDatabaseHas('persons', ['phone' => '+84912345678']);
+    }
+
+    public function test_member_update_rejects_non_numeric_phone(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::UPDATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $person = $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Chủ hộ');
+        $payload['phone'] = '09012abc';
+
+        $this->actingAs($user)
+            ->putJson(route('api.households.persons.update', [$household, $person->id]), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'phone');
+    }
+
+    public function test_household_allows_only_one_spouse_and_one_parent_but_multiple_children(): void
+    {
+        $user = $this->userWithPermissions([
+            AccessPermission::CREATE_HOUSEHOLDS,
+            AccessPermission::UPDATE_HOUSEHOLDS,
+        ]);
+        $household = $this->createHousehold();
+        $head = $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $this->actingAs($user);
+
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Vợ'))
+            ->assertCreated();
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Chồng'))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'relationship_with_head');
+
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Cha', '1960-01-01'))
+            ->assertCreated();
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Mẹ', '1962-01-01'))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'relationship_with_head');
+
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Con'))
+            ->assertCreated();
+        $this->postJson(route('api.households.persons.store', $household), $this->personPayload('Con'))
+            ->assertCreated();
+
+        $child = $household->persons()->where('relationship_with_head', 'Con')->firstOrFail();
+        $this->putJson(
+            route('api.households.persons.update', [$household, $child->id]),
+            $this->personPayload('Vợ'),
+        )->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'relationship_with_head');
+
+        $this->assertDatabaseHas('persons', ['id' => $head->id, 'relationship_with_head' => 'Chủ hộ']);
+    }
+
+    public function test_trashed_spouse_cannot_be_restored_when_the_slot_is_taken(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::DELETE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $trashedSpouse = $this->createPerson($household, ['relationship_with_head' => 'Vợ']);
+        $trashedSpouse->delete();
+        $this->createPerson($household, ['relationship_with_head' => 'Chồng']);
+
+        $this->actingAs($user)
+            ->patchJson(route('api.trash.persons.restore', $trashedSpouse->id))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'trash');
+
+        $this->assertSoftDeleted('persons', ['id' => $trashedSpouse->id]);
+    }
+
+    public function test_education_year_fields_reject_non_year_text(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con');
+        $payload['education']['graduation_year'] = 'năm vừa rồi';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.graduation_year');
+    }
+
+    public function test_person_education_validation_uses_vietnamese_field_names(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con');
+        $payload['education']['school_year'] = 'năm không tồn tại';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.school_year')
+            ->assertJsonPath('error.details.0.issue', 'năm học đã chọn không hợp lệ.');
+    }
+
+    public function test_education_year_fields_accept_the_current_year_range_with_next_year(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $currentYear = now()->year;
+        $yearRange = "{$currentYear}-" . ($currentYear + 1);
+
+        foreach ([
+            'graduation_year',
+            'vocational_grad_year',
+            'finished_year',
+            'dropped_year',
+        ] as $field) {
+            $payload = $this->personPayload('Con');
+            $payload['education'][$field] = $yearRange;
+
+            $this->actingAs($user)
+                ->postJson(route('api.households.persons.store', $household), $payload)
+                ->assertCreated();
+
+            $this->assertDatabaseHas('person_educations', [$field => $yearRange]);
+        }
+    }
+
+    public function test_explicit_academic_block_is_preserved_when_saving_a_person(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['dob' => '1980-01-01', 'relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['education']['academic_block'] = '5';
+        $payload['education']['current_class'] = 'Lớp Năm';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertCreated();
+
+        $this->assertDatabaseHas('person_educations', [
+            'current_class' => 'Lớp Năm',
+            'academic_block' => '5',
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
         ]);
     }
 
@@ -563,7 +807,7 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertStatus(409);
     }
 
-    public function test_missing_error_workbook_download_creates_a_quick_xls_report(): void
+    public function test_missing_error_workbook_download_creates_a_quick_xlsx_report(): void
     {
         Storage::fake('local');
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
@@ -579,12 +823,121 @@ class HouseholdCrudFlowTest extends TestCase
             ->errorFilePath($importLog);
 
         self::assertTrue(Storage::disk('local')->exists($errorFilePath));
+        self::assertSame('xlsx', strtolower(pathinfo($errorFilePath, PATHINFO_EXTENSION)));
         self::assertSame($errorFilePath, $importLog->fresh()->error_file_path);
         $workbook = IOFactory::load(Storage::disk('local')->path($errorFilePath));
         self::assertStringContainsString(
             'Không thể tạo file lỗi',
             (string) $workbook->getActiveSheet()->getCell('A1')->getValue(),
         );
+        $workbook->disconnectWorksheets();
+    }
+
+    public function test_error_workbook_download_converts_existing_xls_files_to_xlsx(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $sourcePath = 'household-imports/failed/source.xls';
+        $errorPath = 'household-imports/failed/error-source.xls';
+        Storage::disk('local')->put($sourcePath, 'source workbook');
+        Storage::disk('local')->makeDirectory(dirname($errorPath));
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setCellValue('A1', 'Tiêu đề');
+        $spreadsheet->getActiveSheet()->setSelectedCell('AY1063');
+        IOFactory::createWriter($spreadsheet, 'Xls')
+            ->save(Storage::disk('local')->path($errorPath));
+        $spreadsheet->disconnectWorksheets();
+
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'source.xls',
+            'file_path' => $sourcePath,
+            'error_file_path' => $errorPath,
+            'status' => 'FAILED',
+        ]);
+
+        $normalizedErrorPath = app(HouseholdImportHistoryService::class)
+            ->errorFilePath($importLog);
+
+        self::assertSame('household-imports/failed/error-source.xlsx', $normalizedErrorPath);
+        self::assertSame($normalizedErrorPath, $importLog->fresh()->error_file_path);
+        Storage::disk('local')->assertMissing($errorPath);
+        $workbook = IOFactory::load(Storage::disk('local')->path($normalizedErrorPath));
+        self::assertSame('A1', $workbook->getActiveSheet()->getSelectedCells());
+        self::assertSame('Tiêu đề', $workbook->getActiveSheet()->getCell('A1')->getValue());
+        $workbook->disconnectWorksheets();
+    }
+
+    public function test_error_workbook_download_reuses_existing_xlsx_without_rewriting_it(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $sourcePath = 'household-imports/failed/source.xlsx';
+        $errorPath = 'household-imports/failed/error-source.xlsx';
+        Storage::disk('local')->put($sourcePath, 'source workbook');
+        Storage::disk('local')->makeDirectory(dirname($errorPath));
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setCellValue('A1', 'Kết quả lỗi');
+        $spreadsheet->getActiveSheet()->setSelectedCell('A5');
+        IOFactory::createWriter($spreadsheet, 'Xlsx')
+            ->save(Storage::disk('local')->path($errorPath));
+        $spreadsheet->disconnectWorksheets();
+
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'source.xlsx',
+            'file_path' => $sourcePath,
+            'error_file_path' => $errorPath,
+            'status' => 'FAILED',
+        ]);
+
+        self::assertSame(
+            $errorPath,
+            app(HouseholdImportHistoryService::class)->errorFilePath($importLog),
+        );
+        self::assertTrue(Storage::disk('local')->exists($errorPath));
+        $workbook = IOFactory::load(Storage::disk('local')->path($errorPath));
+        self::assertSame('A5', $workbook->getActiveSheet()->getSelectedCells());
+        self::assertSame('Kết quả lỗi', $workbook->getActiveSheet()->getCell('A1')->getValue());
+        $workbook->disconnectWorksheets();
+    }
+
+    public function test_error_workbook_download_unhides_the_active_sheet_in_legacy_xlsx(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $sourcePath = 'household-imports/failed/source.xls';
+        $errorPath = 'household-imports/failed/error-source.xlsx';
+        Storage::disk('local')->put($sourcePath, 'source workbook');
+        Storage::disk('local')->makeDirectory(dirname($errorPath));
+
+        $spreadsheet = new Spreadsheet;
+        $spreadsheet->getActiveSheet()->setTitle('Danh sách phiếu điều tra');
+        $hiddenSheet = $spreadsheet->createSheet(0);
+        $hiddenSheet->setTitle('XXXX');
+        $hiddenSheet->setSheetState('veryHidden');
+        $hiddenSheet->setCellValue('A5', 'Lỗi cần kiểm tra');
+        $spreadsheet->setActiveSheetIndex(0);
+        IOFactory::createWriter($spreadsheet, 'Xlsx')
+            ->save(Storage::disk('local')->path($errorPath));
+        $spreadsheet->disconnectWorksheets();
+
+        $importLog = $this->createImportLog($user, [
+            'file_name' => 'source.xls',
+            'file_path' => $sourcePath,
+            'error_file_path' => $errorPath,
+            'status' => 'FAILED',
+        ]);
+
+        self::assertSame(
+            $errorPath,
+            app(HouseholdImportHistoryService::class)->errorFilePath($importLog),
+        );
+        $workbook = IOFactory::load(Storage::disk('local')->path($errorPath));
+        self::assertSame('XXXX', $workbook->getActiveSheet()->getTitle());
+        self::assertSame('visible', $workbook->getActiveSheet()->getSheetState());
+        self::assertSame('Lỗi cần kiểm tra', $workbook->getActiveSheet()->getCell('A5')->getValue());
+        self::assertTrue($importLog->fresh()->context['error_file_active_sheet_checked']);
         $workbook->disconnectWorksheets();
     }
 
@@ -703,6 +1056,129 @@ class HouseholdCrudFlowTest extends TestCase
         }
     }
 
+    public function test_import_submission_accepts_multiple_files_and_queues_each_file(): void
+    {
+        Queue::fake();
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $filePath = tempnam(sys_get_temp_dir(), 'pcgd-import-batch-');
+        $xlsxPath = $filePath . '.xlsx';
+        rename($filePath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $spreadsheet->getActiveSheet()->setCellValue('A1', 'fixture');
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $response = $this->actingAs($user)->postJson(route('api.household-imports.store'), [
+                'files' => [
+                    new UploadedFile(
+                        $xlsxPath,
+                        'households-one.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        null,
+                        true,
+                    ),
+                    new UploadedFile(
+                        $xlsxPath,
+                        'households-two.xlsx',
+                        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                        null,
+                        true,
+                    ),
+                ],
+                'school_year' => $this->currentSchoolYear(),
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'village_code' => 'V01',
+            ]);
+
+            $response->assertAccepted()
+                ->assertJsonCount(2, 'data.import_ids')
+                ->assertJsonPath('data.imports.0.file_name', 'households-one.xlsx')
+                ->assertJsonPath('data.imports.1.file_name', 'households-two.xlsx');
+            $this->assertDatabaseCount('import_logs', 2);
+            Queue::assertPushed(ProcessHouseholdImport::class, 2);
+
+            foreach (ImportLog::query()->get() as $importLog) {
+                $this->assertTrue(Storage::disk('local')->exists($importLog->file_path));
+                $this->assertSame('PENDING', $importLog->status);
+            }
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
+    public function test_import_reports_a_clear_message_for_an_excel_file_with_the_wrong_template(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-invalid-import-');
+        $xlsxPath = $temporaryPath . '.xlsx';
+        rename($temporaryPath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Sheet1');
+            $sheet->setCellValue('O2', 'Mã hộ');
+            $sheet->setCellValue('AY2', 'Ghi chú');
+            $sheet->setCellValue('C5', 'Nguyễn');
+            $sheet->setCellValue('D5', 'An');
+            $sheet->setCellValue('O5', 'HK-INVALID');
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $storedPath = 'household-imports/invalid/source.xlsx';
+            Storage::disk('local')->put($storedPath, file_get_contents($xlsxPath));
+            $importLog = $this->createImportLog($user, [
+                'file_name' => 'source.xlsx',
+                'file_path' => $storedPath,
+                'context' => [
+                    'school_year' => $this->currentSchoolYear(),
+                    'province_code' => 'P01',
+                    'commune_code' => 'C01',
+                    'village_code' => 'V01',
+                ],
+            ]);
+
+            $response = app(HouseholdImportProcessingService::class)->process(
+                $importLog,
+                $user,
+                new UploadedFile($xlsxPath, 'source.xlsx', null, null, true),
+            );
+
+            self::assertSame(422, $response->getStatusCode());
+            self::assertSame('FAILED', $importLog->fresh()->status);
+            $this->assertDatabaseCount('households', 0);
+            self::assertStringContainsString(
+                'không đúng biểu mẫu phiếu điều tra',
+                $importLog->fresh()->context['processing_error'],
+            );
+            $errorPath = app(HouseholdImportHistoryService::class)->errorFilePath($importLog->fresh());
+            $errorWorkbook = IOFactory::load(Storage::disk('local')->path($errorPath));
+            self::assertStringContainsString(
+                'không đúng biểu mẫu phiếu điều tra',
+                strtolower((string) $errorWorkbook->getActiveSheet()->getCell('A2')->getValue()),
+            );
+            $errorWorkbook->disconnectWorksheets();
+            $this->actingAs($user)
+                ->getJson(route('api.households.import.status', $importLog))
+                ->assertOk()
+                ->assertJsonPath(
+                    'data.error_message',
+                    $importLog->fresh()->context['processing_error'],
+                );
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
     public function test_import_keeps_valid_rows_and_exports_only_invalid_rows(): void
     {
         Storage::fake('local');
@@ -714,6 +1190,7 @@ class HouseholdCrudFlowTest extends TestCase
         try {
             $spreadsheet = new Spreadsheet;
             $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Danh sách phiếu điều tra');
             $sheet->setCellValue('O2', 'Số phiếu');
             $sheet->setCellValue('AY2', 'Ghi chú');
             foreach ([5 => ['GOOD', 'Kinh'], 6 => ['BAD', '']] as $row => [$code, $ethnicity]) {
@@ -729,6 +1206,12 @@ class HouseholdCrudFlowTest extends TestCase
                 $sheet->setCellValue("P{$row}", 'Thường trú');
                 $sheet->setCellValue("AV{$row}", 'Chủ hộ');
             }
+            $sheet->getStyle('O6')->getNumberFormat()->setFormatCode('00000');
+            $hiddenSheet = $spreadsheet->createSheet(0);
+            $hiddenSheet->setTitle('XXXX');
+            $hiddenSheet->setSheetState('veryHidden');
+            $hiddenSheet->setCellValue('O2', 'Số phiếu');
+            $hiddenSheet->setCellValue('AY2', 'Ghi chú');
             IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
             $spreadsheet->disconnectWorksheets();
 
@@ -757,6 +1240,7 @@ class HouseholdCrudFlowTest extends TestCase
             $this->assertDatabaseHas('import_logs', [
                 'id' => $importLog->id,
                 'status' => 'PARTIAL',
+                'total_rows' => 2,
                 'success_rows' => 1,
                 'error_rows' => 1,
             ]);
@@ -764,10 +1248,96 @@ class HouseholdCrudFlowTest extends TestCase
 
             $errorWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
             $errorSheet = $errorWorkbook->getActiveSheet();
+            self::assertSame('Danh sách phiếu điều tra', $errorSheet->getTitle());
             self::assertSame('BAD', $errorSheet->getCell('O5')->getValue());
             self::assertSame(5, $errorSheet->getHighestDataRow());
+            self::assertSame(
+                '00000',
+                $errorSheet->getStyle('O5')->getNumberFormat()->getFormatCode(),
+            );
             self::assertStringContainsString('dân tộc', strtolower((string) $errorSheet->getCell('A5')->getValue()));
             $errorWorkbook->disconnectWorksheets();
+        } finally {
+            if (is_file($xlsxPath)) {
+                unlink($xlsxPath);
+            }
+        }
+    }
+
+    public function test_import_processes_one_thousand_valid_rows(): void
+    {
+        Storage::fake('local');
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $temporaryPath = tempnam(sys_get_temp_dir(), 'pcgd-large-import-');
+        $xlsxPath = $temporaryPath . '.xlsx';
+        rename($temporaryPath, $xlsxPath);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $sheet = $spreadsheet->getActiveSheet();
+            $sheet->setTitle('Danh sách phiếu điều tra');
+            $sheet->setCellValue('O2', 'Số phiếu');
+            $sheet->setCellValue('AY2', 'Ghi chú');
+            for ($row = 5; $row < 1005; $row++) {
+                $number = $row - 4;
+                $headNumber = $number === 2 ? 1 : $number;
+                $sheet->setCellValue("C{$row}", 'Nguyễn');
+                $sheet->setCellValue("D{$row}", "Tên{$number}");
+                $sheet->setCellValue("E{$row}", 1);
+                $sheet->setCellValue("F{$row}", 1);
+                $sheet->setCellValue("G{$row}", $number === 1 ? 1980 : 2010);
+                $sheet->setCellValue("I{$row}", 'Kinh');
+                $sheet->setCellValue("L{$row}", 'Nguyễn');
+                $sheet->setCellValue("M{$row}", "Tên{$headNumber}");
+                $sheet->setCellValue("O{$row}", sprintf('HH-%05d', $headNumber));
+                $sheet->setCellValue("AV{$row}", $number === 2 ? 'Con' : 'Chủ hộ');
+                if ($number === 2) {
+                    $sheet->setCellValue("S{$row}", 'Lớp 1');
+                    $sheet->setCellValue("AJ{$row}", 'x');
+                }
+            }
+            IOFactory::createWriter($spreadsheet, 'Xlsx')->save($xlsxPath);
+            $spreadsheet->disconnectWorksheets();
+
+            $storedPath = 'household-imports/large/source.xlsx';
+            Storage::disk('local')->put($storedPath, file_get_contents($xlsxPath));
+            $importLog = $this->createImportLog($user, [
+                'file_name' => 'source.xlsx',
+                'file_path' => $storedPath,
+                'context' => [
+                    'school_year' => $this->currentSchoolYear(),
+                    'province_code' => 'P01',
+                    'commune_code' => 'C01',
+                    'village_code' => 'V01',
+                ],
+            ]);
+
+            app(HouseholdImportProcessingService::class)->process(
+                $importLog,
+                $user,
+                new UploadedFile($xlsxPath, 'source.xlsx', null, null, true),
+            );
+
+            $this->assertDatabaseCount('households', 999);
+            $this->assertDatabaseCount('persons', 1000);
+            $personId = DB::table('persons')
+                ->where('first_name', 'Tên2')
+                ->value('id');
+            $this->assertDatabaseHas('person_educations', [
+                'person_id' => $personId,
+                'current_class' => 'Lớp 1',
+            ]);
+            $this->assertDatabaseHas('person_disabilities', [
+                'person_id' => $personId,
+                'mobility_disability' => true,
+            ]);
+            $this->assertDatabaseHas('import_logs', [
+                'id' => $importLog->id,
+                'status' => 'SUCCESS',
+                'total_rows' => 1000,
+                'success_rows' => 1000,
+                'error_rows' => 0,
+            ]);
         } finally {
             if (is_file($xlsxPath)) {
                 unlink($xlsxPath);
@@ -1111,9 +1681,9 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonPath('error.details.0.field', 'source_codes.0');
 
         $this->postJson('/api/v1/village-merges', [
-                'source_codes' => ['V02'],
-                'target_code' => 'V01',
-            ])
+            'source_codes' => ['V02'],
+            'target_code' => 'V01',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'source_codes.0');
 
@@ -1309,14 +1879,14 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
 
         $this->postJson(route('api.schools.store'), [
-                'code' => 'P01_C01M',
-                'name' => 'Trường Một đã sửa',
-                'type' => 'single_level',
-                'level' => 'THCS',
-                'is_active' => true,
-                'province_code' => 'P01',
-                'commune_code' => 'C01',
-            ])
+            'code' => 'P01_C01M',
+            'name' => 'Trường Một đã sửa',
+            'type' => 'single_level',
+            'level' => 'THCS',
+            'is_active' => true,
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'name');
 
@@ -1399,13 +1969,13 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertNotNull($school);
 
         $this->putJson("/api/v1/schools/{$school->id}", [
-                'name' => 'Trường liên cấp THCS',
-                'type' => 'multi_level',
-                'level' => 'TH',
-                'is_active' => true,
-                'province_code' => 'P01',
-                'commune_code' => 'C01',
-            ])
+            'name' => 'Trường liên cấp THCS',
+            'type' => 'multi_level',
+            'level' => 'TH',
+            'is_active' => true,
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'level')
             ->assertJsonPath('error.details.0.issue', 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.');
@@ -1432,7 +2002,7 @@ class HouseholdCrudFlowTest extends TestCase
         $person = $this->createPerson($household);
         $educationId = DB::table('person_educations')->insertGetId([
             'person_id' => $person->id,
-            'school_year' => $this->currentSchoolYear(),
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
             'school_code' => 'SCHOOL-IN-USE',
             'created_at' => now(),
             'updated_at' => now(),
@@ -1461,6 +2031,7 @@ class HouseholdCrudFlowTest extends TestCase
             [
                 'code' => 'S01',
                 'name' => 'Trường trong xã',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P01',
                 'commune_code' => 'C01',
@@ -1470,6 +2041,7 @@ class HouseholdCrudFlowTest extends TestCase
             [
                 'code' => 'S02',
                 'name' => 'Trường ngoài địa bàn',
+                'type' => 'single_level',
                 'level' => 'TH',
                 'province_code' => 'P02',
                 'commune_code' => 'C02',
@@ -1499,6 +2071,99 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonCount(0, 'data');
     }
 
+    public function test_person_school_search_is_scoped_and_available_to_household_creators(): void
+    {
+        DB::table('schools')->insert([
+            [
+                'code' => 'S01',
+                'name' => 'Trường trong xã',
+                'type' => 'single_level',
+                'level' => 'TH',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S02',
+                'name' => 'Trường ngoài địa bàn',
+                'type' => 'single_level',
+                'level' => 'TH',
+                'province_code' => 'P02',
+                'commune_code' => 'C02',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S03',
+                'name' => 'Trường THCS cùng tỉnh',
+                'type' => 'single_level',
+                'level' => 'THCS',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S04',
+                'name' => 'Trường THPT liên cấp cùng tỉnh',
+                'type' => 'multi_level',
+                'level' => 'THPT',
+                'province_code' => 'P01',
+                'commune_code' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'code' => 'S05',
+                'name' => 'Trường THPT đơn cấp cùng tỉnh',
+                'type' => 'single_level',
+                'level' => 'THPT',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+
+        $this->actingAs($user)
+            ->getJson("/api/v1/households/{$household->id}/persons/schools?q=Trường")
+            ->assertOk()
+            ->assertJsonCount(4, 'data.schools')
+            ->assertJsonFragment(['code' => 'S01']);
+
+        $this->getJson("/api/v1/households/{$household->id}/persons/form?is_head=1")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.schools');
+
+        $this->getJson("/api/v1/households/{$household->id}/persons/schools?academic_block=8")
+            ->assertOk()
+            ->assertJsonCount(2, 'data.schools')
+            ->assertJsonFragment(['code' => 'S03'])
+            ->assertJsonFragment(['code' => 'S04'])
+            ->assertJsonMissing(['code' => 'S01'])
+            ->assertJsonMissing(['code' => 'S05'])
+            ->assertJsonMissing(['code' => 'S02']);
+
+        $this->createPerson($household, [
+            'dob' => '1980-01-01',
+            'relationship_with_head' => 'Chủ hộ',
+        ]);
+        $payload = $this->personPayload('Con', '2010-01-01');
+        $payload['school_province_code'] = 'P01';
+        $payload['school_commune_code'] = 'C01';
+        $payload['education']['current_class'] = '8A1';
+        $payload['education']['academic_block'] = '8';
+        $payload['education']['school_code'] = 'S01';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.school_code');
+    }
+
     public function test_import_completion_notifications_are_persistent_and_scoped_to_the_owner(): void
     {
         $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
@@ -1513,6 +2178,7 @@ class HouseholdCrudFlowTest extends TestCase
             'success_rows' => 3,
             'error_rows' => 2,
             'file_path' => 'household-imports/failed/source.xlsx',
+            'context' => ['processing_error' => 'Tác vụ gặp lỗi khi đọc file.'],
         ]);
         $partial = $this->createImportLog($user, [
             'status' => 'PARTIAL',
@@ -1539,6 +2205,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'id' => $failed->id,
                 'status' => 'FAILED',
                 'action_label' => 'Xem',
+                'message' => 'Không thể xử lý file "households.xlsx". Tác vụ gặp lỗi khi đọc file.',
             ])
             ->assertJsonFragment([
                 'id' => $partial->id,
@@ -1560,6 +2227,32 @@ class HouseholdCrudFlowTest extends TestCase
         $this->getJson('/api/v1/household-import-notifications')
             ->assertOk()
             ->assertJsonPath('data.notifications', []);
+    }
+
+    public function test_failed_import_job_sets_a_terminal_status_and_notifies_the_owner(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::IMPORT_HOUSEHOLDS]);
+        $importLog = $this->createImportLog($user, ['status' => 'PROCESSING']);
+
+        (new ProcessHouseholdImport($importLog->id))->failed(new \RuntimeException('Internal queue failure.'));
+
+        $this->assertDatabaseHas('import_logs', [
+            'id' => $importLog->id,
+            'status' => 'FAILED',
+        ]);
+        self::assertSame(
+            'Tác vụ nhập dữ liệu kết thúc ngoài dự kiến. Hãy xem nhật ký hệ thống để biết thêm chi tiết.',
+            $importLog->fresh()->context['processing_error'],
+        );
+
+        $this->actingAs($user)
+            ->getJson('/api/v1/household-import-notifications')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $importLog->id,
+                'status' => 'FAILED',
+                'message' => 'Không thể xử lý file "households.xlsx". Tác vụ nhập dữ liệu kết thúc ngoài dự kiến. Hãy xem nhật ký hệ thống để biết thêm chi tiết.',
+            ]);
     }
 
     private function createSchema(): void
@@ -1717,11 +2410,17 @@ class HouseholdCrudFlowTest extends TestCase
             $table->softDeletes();
             $table->timestamps();
         });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
         Schema::create('person_educations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
             $table->unsignedBigInteger('import_log_id')->nullable();
-            $table->string('school_year');
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('academic_block')->nullable();
             $table->string('current_class')->nullable();
             $table->string('school_code')->nullable();
@@ -1774,6 +2473,27 @@ class HouseholdCrudFlowTest extends TestCase
             ['code' => 'V02', 'name' => 'Thôn Hai', 'commune_code' => 'C02', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('ethnicities')->insert(['code' => 'KINH', 'name' => 'Kinh', 'created_at' => now(), 'updated_at' => now()]);
+    }
+
+    private function seedSchoolYears(): void
+    {
+        foreach (range(2020, 2035) as $year) {
+            DB::table('school_years')->insert([
+                'start_time' => "{$year}-08-01",
+                'end_time' => ($year + 1) . '-07-31',
+                'status' => false,
+            ]);
+        }
+    }
+
+    private function schoolYearId(string $label): int
+    {
+        [$startYear, $endYear] = array_map('intval', explode('-', $label));
+
+        return (int) DB::table('school_years')
+            ->whereYear('start_time', $startYear)
+            ->whereYear('end_time', $endYear)
+            ->value('id');
     }
 
     private function userWithPermissions(array $permissionNames, string $scopeLevel = 'commune'): User

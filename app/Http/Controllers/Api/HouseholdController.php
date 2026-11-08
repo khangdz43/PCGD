@@ -48,11 +48,20 @@ class HouseholdController extends Controller
         return response()->json($results);
     }
 
-    public function show(Household $household, Request $request, HouseholdService $households): JsonResponse
+    public function show(Household $household, Request $request): JsonResponse
     {
         abort_unless(DataAccessScope::canAccessHousehold($request->user(), $household), 404);
-        ['persons' => $persons, 'headPerson' => $headPerson, 'hasAnyHouseholdHead' => $hasAnyHouseholdHead] =
-            $households->details($household);
+        $household->load('province', 'commune', 'village');
+        $headPerson = $household->persons()
+            ->where('relationship_with_head', 'Chủ hộ')
+            ->first([
+                'id',
+                'first_name',
+                'last_name',
+                'dob',
+                'gender',
+                'relationship_with_head',
+            ]);
 
         return response()->json([
             'data' => [
@@ -67,7 +76,7 @@ class HouseholdController extends Controller
                 'address' => $household->address,
                 'residence_type' => $household->residence_type,
                 'residence_status' => $household->residence_status,
-                'has_household_head' => $hasAnyHouseholdHead,
+                'has_household_head' => $headPerson !== null,
                 'head' => $headPerson?->only([
                     'id',
                     'first_name',
@@ -76,61 +85,7 @@ class HouseholdController extends Controller
                     'gender',
                     'relationship_with_head',
                 ]),
-                'persons' => $persons->map(fn ($person): array => [
-                    ...$person->only([
-                        'id',
-                        'first_name',
-                        'last_name',
-                        'gender',
-                        'ethnicity_code',
-                        'religion',
-                        'priority_type',
-                        'relationship_with_head',
-                        'parent_name',
-                        'phone',
-                        'note',
-                    ]),
-                    'name' => trim($person->last_name.' '.$person->first_name),
-                    'dob' => $person->dob?->format('Y-m-d'),
-                    'ethnicity' => $person->ethnicity?->only(['code', 'name']),
-                    'educations' => $person->educations->map(fn ($education): array => [
-                        ...$education->only([
-                            'id',
-                            'school_year',
-                            'academic_block',
-                            'current_class',
-                            'school_code',
-                            'graduation_level',
-                            'is_complementary',
-                            'graduation_year',
-                            'vocational_grad_level',
-                            'vocational_grad_year',
-                            'finished_class',
-                            'finished_year',
-                            'dropped_class',
-                            'dropped_year',
-                            'literacy_current_class',
-                            'literacy_completed_class',
-                            'literacy_relapse_level',
-                            'learning_capacity',
-                        ]),
-                        'school' => $education->school?->only(['code', 'name']),
-                    ])->values(),
-                    'disability' => $person->disability?->only([
-                        'mobility_disability',
-                        'hearing_speech_disability',
-                        'visual_disability',
-                        'mental_disability',
-                        'intellectual_disability',
-                        'learning_disability',
-                        'autism',
-                        'other_disability',
-                        'has_disability_cert',
-                        'can_study',
-                        'special_circumstance',
-                        'special_circumstance_detail',
-                    ]),
-                ])->values(),
+                'persons' => [],
             ],
         ]);
     }

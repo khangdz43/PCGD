@@ -18,6 +18,7 @@ const villageCode = ref('');
 const locationError = ref('');
 const loadingLocations = ref(false);
 const importModalOpen = ref(false);
+const importModalInitialized = ref(false);
 const importModalView = ref<'upload' | 'history'>('upload');
 
 const householdFilters = computed(() => ({
@@ -34,6 +35,7 @@ const showVillageFilter = computed(() => villages.value.length > 1);
 
 function openImportModal(view: 'upload' | 'history'): void {
     importModalView.value = view;
+    importModalInitialized.value = true;
     importModalOpen.value = true;
 }
 
@@ -89,6 +91,10 @@ watch(communeCode, async (value, previous) => {
 });
 
 onMounted(async () => {
+    if (/^\/households\/\d+\/persons(?:\/create|\/\d+\/edit)?\/?$/.test(window.location.pathname)) {
+        return;
+    }
+
     loadingLocations.value = true;
     try {
         if (!provinceLocked.value) {
@@ -133,21 +139,21 @@ onUnmounted(() => {
             @navigate="openImportModal($event === 'import-history' ? 'history' : 'upload')"
         >
             <template #toolbar>
-                <label v-if="showProvinceFilter">
+                <label v-if="showProvinceFilter" class="household-location-filter">
                     <span>Tỉnh / thành phố</span>
                     <select v-model="provinceCode" :disabled="provinceLocked || loadingLocations">
                         <option value="">Tất cả địa bàn</option>
                         <option v-for="province in provinces" :key="province.code" :value="province.code">{{ province.name }}</option>
                     </select>
                 </label>
-                <label v-if="showCommuneFilter">
+                <label v-if="showCommuneFilter" class="household-location-filter">
                     <span>Xã / phường</span>
                     <select v-model="communeCode" :disabled="communeLocked || !provinceCode || loadingLocations">
                         <option value="">Tất cả xã / phường</option>
                         <option v-for="commune in communes" :key="commune.code" :value="commune.code">{{ commune.name }}</option>
                     </select>
                 </label>
-                <label v-if="showVillageFilter">
+                <label v-if="showVillageFilter" class="household-location-filter">
                     <span>Thôn / xóm</span>
                     <select v-model="villageCode" :disabled="!communeCode || loadingLocations">
                         <option value="">Tất cả thôn / xóm</option>
@@ -157,10 +163,10 @@ onUnmounted(() => {
             </template>
         </Workspace>
         <div
-            v-if="importModalOpen"
+            v-if="importModalInitialized"
+            v-show="importModalOpen"
             class="workspace-modal-backdrop investigation-import-backdrop"
             role="presentation"
-            @click.self="closeImportModal"
             @keydown.esc="closeImportModal"
         >
             <section
@@ -174,25 +180,26 @@ onUnmounted(() => {
                 aria-labelledby="investigation-import-title"
                 tabindex="-1"
             >
-                <header
-                    v-if="importModalView === 'upload'"
-                    class="investigation-import-dialog-header"
-                >
+                <header class="investigation-import-dialog-header">
                     <div>
-                        <p class="workspace-eyebrow">PHIẾU ĐIỀU TRA</p>
-                        <h2 id="investigation-import-title">Nhập dữ liệu Excel</h2>
+                        <p class="workspace-eyebrow">
+                            {{
+                                importModalView === 'upload'
+                                    ? 'PHIẾU ĐIỀU TRA'
+                                    : 'LỊCH SỬ NHẬP FILE'
+                            }}
+                        </p>
+                        <h2 id="investigation-import-title">
+                            {{
+                                importModalView === 'upload'
+                                    ? 'Nhập dữ liệu Excel'
+                                    : 'Các tệp đã gửi'
+                            }}
+                        </h2>
                     </div>
                     <button class="modal-icon-button" type="button" aria-label="Đóng" @click="closeImportModal">×</button>
                 </header>
-                <button
-                    v-else
-                    class="modal-icon-button investigation-import-history-close"
-                    type="button"
-                    aria-label="Đóng"
-                    @click="closeImportModal"
-                >×</button>
                 <Workspace
-                    :key="importModalView"
                     module-key="imports"
                     :permissions="permissions"
                     :import-view="importModalView"

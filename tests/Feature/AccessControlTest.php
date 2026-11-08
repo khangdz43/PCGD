@@ -6,6 +6,7 @@ use App\Jobs\ProcessHouseholdImport;
 use App\Models\Household;
 use App\Models\ImportLog;
 use App\Models\Permission;
+use App\Models\Province;
 use App\Models\Role;
 use App\Models\User;
 use App\Services\Admin\AccessControl\RoleManagementService;
@@ -128,9 +129,16 @@ class AccessControlTest extends TestCase
             $table->softDeletes();
             $table->timestamps();
         });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
         Schema::create('person_educations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('school_code')->nullable();
             $table->timestamps();
         });
@@ -618,10 +626,10 @@ class AccessControlTest extends TestCase
         $this->actingAs($user);
 
         $this->patchJson(route('api.account.password'), [
-                'current_password' => 'incorrect-password',
-                'password' => 'new-secure-pass',
-                'password_confirmation' => 'new-secure-pass',
-            ])
+            'current_password' => 'incorrect-password',
+            'password' => 'new-secure-pass',
+            'password_confirmation' => 'new-secure-pass',
+        ])
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'current_password');
         $this->assertTrue(Hash::check('old-secure-password', $user->fresh()->password));
@@ -1939,7 +1947,7 @@ class AccessControlTest extends TestCase
         $accounts = (new UserAccessControlService)->indexData(
             $admin,
             [],
-            \App\Models\Province::query()->get(),
+            Province::query()->get(),
             10,
             false,
         );
@@ -4088,7 +4096,7 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('data.commune_code', 'C1');
     }
 
-    public function test_commune_user_sees_only_assigned_commune_schools_and_cannot_submit_another_commune(): void
+    public function test_commune_user_can_select_schools_in_the_household_province(): void
     {
         Schema::create('ethnicities', function (Blueprint $table): void {
             $table->string('code')->primary();
@@ -4096,14 +4104,17 @@ class AccessControlTest extends TestCase
             $table->timestamps();
         });
         DB::table('provinces')->insert(['code' => 'P1', 'name' => 'Tỉnh một', 'created_at' => now(), 'updated_at' => now()]);
+        DB::table('provinces')->insert(['code' => 'P2', 'name' => 'Tỉnh hai', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('communes')->insert([
             ['code' => 'C1', 'name' => 'Xã được giao', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'C2', 'name' => 'Xã khác', 'province_code' => 'P1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'C3', 'name' => 'Xã tỉnh khác', 'province_code' => 'P2', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('schools')->insert([
             ['code' => 'S1', 'name' => 'Trường được giao', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'S2', 'name' => 'Trường ngoài phạm vi', 'province_code' => 'P1', 'commune_code' => 'C2', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'S3', 'name' => null, 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'S4', 'name' => 'Trường tỉnh khác', 'province_code' => 'P2', 'commune_code' => 'C3', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('ethnicities')->insert(['code' => 'KINH', 'name' => 'Kinh', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('households')->insert([
@@ -4138,8 +4149,18 @@ class AccessControlTest extends TestCase
         $this->actingAs($user)
             ->getJson(route('api.households.persons.create', ['household' => 1, 'is_head' => 1]))
             ->assertOk()
+            ->assertJsonPath('data.schools', []);
+
+        $this->getJson('/api/v1/households/1/persons/schools?q=S1')
+            ->assertOk()
+            ->assertJsonPath('data.schools.0.code', 'S1');
+        $this->getJson('/api/v1/households/1/persons/schools?q=Trường')
+            ->assertOk()
             ->assertJsonFragment(['code' => 'S1'])
-            ->assertJsonFragment(['code' => 'S3', 'name' => null])
+            ->assertJsonFragment(['code' => 'S2']);
+        $this->getJson('/api/v1/households/1/persons/schools?q=S3')
+            ->assertOk()
+            ->assertJsonPath('data.schools.0.code', 'S3')
             ->assertJsonMissing(['code' => 'S2']);
 
         $this->getJson('/api/v1/provinces/P1/schools?commune_code=C1')
@@ -4153,15 +4174,15 @@ class AccessControlTest extends TestCase
             'dob' => '2010-01-01',
             'gender' => 'NAM',
             'ethnicity_code' => 'KINH',
-            'school_province_code' => 'P1',
-            'school_commune_code' => 'C2',
+            'school_province_code' => 'P2',
+            'school_commune_code' => 'C3',
             'education' => [
                 'school_year' => '2025-2026',
-                'school_code' => 'S2',
+                'school_code' => 'S4',
             ],
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('error.details.0.field', 'school_commune_code');
+            ->assertJsonPath('error.details.0.field', 'school_province_code');
 
         $this->assertSame(0, DB::table('persons')->count());
     }
@@ -4310,7 +4331,7 @@ class AccessControlTest extends TestCase
 
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->setCellValue('O2', 'Mã hộ');
+        $sheet->setCellValue('O2', 'Số phiếu');
         $sheet->setCellValue('AY2', 'Ghi chú');
         $sheet->setCellValue('C5', 'Nguyễn');
         $sheet->setCellValue('D5', 'An');
@@ -4373,7 +4394,9 @@ class AccessControlTest extends TestCase
         (new ProcessHouseholdImport($importLog->id))->handle(app(HouseholdImportProcessingService::class));
         $this->assertSame('FAILED', $importLog->fresh()->status);
         $this->assertNotNull($importLog->fresh()->error_file_path);
+        $this->assertSame('xlsx', strtolower(pathinfo($importLog->fresh()->error_file_path, PATHINFO_EXTENSION)));
         $annotatedWorkbook = IOFactory::load(Storage::disk('local')->path($importLog->fresh()->error_file_path));
+        self::assertSame('A1', $annotatedWorkbook->getActiveSheet()->getSelectedCells());
         $errorMessage = $annotatedWorkbook->getSheet(1)->getCell('A5')->getValue();
         $this->assertStringContainsString('không thuộc xã được chọn', $errorMessage);
         $this->assertStringContainsString('Ngày sinh không được ở tương lai.', $errorMessage);
@@ -4397,17 +4420,18 @@ class AccessControlTest extends TestCase
         $this->getJson(route('api.households.import-history'))
             ->assertOk()
             ->assertJsonFragment(['file_name' => 'import.xls'])
+            ->assertJsonFragment(['uploaded_by_name' => $user->name])
             ->assertJsonMissing(['file_name' => 'file-khac.xls']);
         $this->get(route('api.household-imports.file', $importLog))
             ->assertOk()
             ->assertHeader('content-disposition');
         $this->get(route('api.household-imports.error-file', $importLog))
             ->assertOk()
-            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
+            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xlsx');
         $importLog->update(['error_file_path' => null]);
         $this->get(route('api.household-imports.error-file', $importLog))
             ->assertOk()
-            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xls');
+            ->assertHeader('content-disposition', 'attachment; filename=import-loi.xlsx');
         $this->assertNotNull($importLog->fresh()->error_file_path);
         $this->deleteJson(route('api.household-imports.destroy', $importLog))
             ->assertOk()
@@ -5192,8 +5216,8 @@ class AccessControlTest extends TestCase
         ]);
         $communeRole->permissions()->attach([
             Permission::create([
-            'name' => AccessPermission::CREATE_HOUSEHOLDS,
-            'guard_name' => 'web',
+                'name' => AccessPermission::CREATE_HOUSEHOLDS,
+                'guard_name' => 'web',
             ])->id,
             Permission::create([
                 'name' => AccessPermission::MANAGE_VILLAGES,
@@ -5389,6 +5413,24 @@ class AccessControlTest extends TestCase
 
     public function test_household_access_is_limited_to_assigned_commune(): void
     {
+        Schema::table('persons', function (Blueprint $table): void {
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+            $table->string('gender')->nullable();
+            $table->string('ethnicity_code')->nullable();
+            $table->string('relationship_with_head')->nullable();
+        });
+        Schema::create('ethnicities', function (Blueprint $table): void {
+            $table->string('code')->primary();
+            $table->string('name');
+            $table->timestamps();
+        });
+        Schema::create('person_disabilities', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('person_id');
+            $table->timestamps();
+        });
+
         DB::table('provinces')->insert([
             ['code' => 'P1', 'name' => 'Tỉnh một', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'P2', 'name' => 'Tỉnh hai', 'created_at' => now(), 'updated_at' => now()],
@@ -5401,6 +5443,17 @@ class AccessControlTest extends TestCase
             ['household_code' => '01', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'head_first_name' => 'Trong vùng', 'created_at' => now(), 'updated_at' => now()],
             ['household_code' => '02', 'school_year' => '2026-2027', 'province_code' => 'P2', 'commune_code' => 'C2', 'head_first_name' => 'Ngoài vùng', 'created_at' => now(), 'updated_at' => now()],
         ]);
+        DB::table('persons')->insert(array_map(
+            fn (int $index): array => [
+                'household_id' => 1,
+                'first_name' => 'Tên '.$index,
+                'last_name' => 'Họ',
+                'relationship_with_head' => $index === 1 ? 'Chủ hộ' : 'Con',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            range(1, 17),
+        ));
 
         $role = Role::create(['name' => 'commune-viewer', 'scope_level' => 'commune', 'guard_name' => 'web']);
         $permission = Permission::create([
@@ -5430,6 +5483,14 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.household_code', '01')
             ->assertJsonCount(0, 'data.persons');
+        $this->getJson(route('api.households.persons.index', 1).'?page=1&per_page=15')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 17)
+            ->assertJsonCount(15, 'data')
+            ->assertJsonPath('data.0.relationship_with_head', 'Chủ hộ');
+        $this->getJson(route('api.households.persons.index', 1).'?page=2&per_page=15')
+            ->assertOk()
+            ->assertJsonCount(2, 'data');
         $this->actingAs($user)->getJson(route('api.households.show', 2))->assertNotFound();
     }
 
@@ -5836,75 +5897,75 @@ class AccessControlTest extends TestCase
     public function test_village_management_permission_grants_all_commune_villages_without_selection(): void
     {
         DB::table('provinces')->insert([
-        'code' => 'P1',
-        'name' => 'Tỉnh một',
-        'created_at' => now(),
-        'updated_at' => now(),
+            'code' => 'P1',
+            'name' => 'Tỉnh một',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         DB::table('communes')->insert([
-        'code' => 'C1',
-        'name' => 'Xã một',
-        'province_code' => 'P1',
-        'created_at' => now(),
-        'updated_at' => now(),
+            'code' => 'C1',
+            'name' => 'Xã một',
+            'province_code' => 'P1',
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
         DB::table('villages')->insert([
-        ['code' => 'V1', 'name' => 'Thôn một', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
-        ['code' => 'V2', 'name' => 'Thôn hai', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'V1', 'name' => 'Thôn một', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'V2', 'name' => 'Thôn hai', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         $permissions = collect([
-        AccessPermission::MANAGE_USER_ACCOUNTS,
-        AccessPermission::MANAGE_VILLAGES,
+            AccessPermission::MANAGE_USER_ACCOUNTS,
+            AccessPermission::MANAGE_VILLAGES,
         ])->mapWithKeys(fn (string $name): array => [
-        $name => Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']),
+            $name => Permission::firstOrCreate(['name' => $name, 'guard_name' => 'web']),
         ]);
         $managerRole = Role::create([
-        'name' => 'Quản trị thôn kiểm thử',
-        'scope_level' => 'commune',
-        'guard_name' => 'web',
+            'name' => 'Quản trị thôn kiểm thử',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
         ]);
         $managerRole->permissions()->sync($permissions->pluck('id')->all());
         $manager = User::factory()->create([
-        'scope_level' => 'commune',
-        'province_code' => 'P1',
-        'commune_code' => 'C1',
-        'is_active' => true,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'is_active' => true,
         ]);
         $manager->roles()->attach($managerRole);
         $manager->villages()->sync(['V1']);
 
         $staffRole = Role::create([
-        'name' => 'Nhóm quản lý toàn bộ thôn xã',
-        'scope_level' => 'commune',
-        'guard_name' => 'web',
-        'created_by' => $manager->id,
-        'province_code' => 'P1',
-        'commune_code' => 'C1',
+            'name' => 'Nhóm quản lý toàn bộ thôn xã',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+            'created_by' => $manager->id,
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
         ]);
         $staffRole->permissions()->attach($permissions[AccessPermission::MANAGE_VILLAGES]);
 
         $this->actingAs($manager, 'web')
-        ->getJson('/api/v1/users/create')
-        ->assertOk()
-        ->assertJsonFragment([
-            'id' => $staffRole->id,
-            'manages_all_villages' => true,
-            'uses_village_scope' => false,
-        ]);
+            ->getJson('/api/v1/users/create')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $staffRole->id,
+                'manages_all_villages' => true,
+                'uses_village_scope' => false,
+            ]);
         self::assertSame([], $manager->managedVillageCodes());
 
         $this->postJson('/api/v1/users', [
-        'name' => 'Cán bộ quản lý toàn bộ thôn',
-        'username' => 'villageman1',
-        'citizen_id' => '123456789012',
-        'password' => 'StrongPass123!',
-        'password_confirmation' => 'StrongPass123!',
-        'role_id' => $staffRole->id,
-        'scope_level' => 'commune',
-        'province_code' => 'P1',
-        'commune_code' => 'C1',
-        'village_codes' => ['V1'],
+            'name' => 'Cán bộ quản lý toàn bộ thôn',
+            'username' => 'villageman1',
+            'citizen_id' => '123456789012',
+            'password' => 'StrongPass123!',
+            'password_confirmation' => 'StrongPass123!',
+            'role_id' => $staffRole->id,
+            'scope_level' => 'commune',
+            'province_code' => 'P1',
+            'commune_code' => 'C1',
+            'village_codes' => ['V1'],
         ])->assertCreated()
             ->assertJsonPath('data.user.username', 'villageman1')
             ->assertJsonPath('data.user.role_name', 'Nhóm quản lý toàn bộ thôn xã')
@@ -5920,8 +5981,8 @@ class AccessControlTest extends TestCase
         self::assertTrue(DataAccessScope::canAccessHousehold($staff, $householdInAnotherVillage));
 
         $this->actingAs($staff, 'web')
-        ->getJson('/api/v1/villages/form')
-        ->assertOk();
+            ->getJson('/api/v1/villages/form')
+            ->assertOk();
 
         $accountViewerRole = Role::create([
             'name' => 'Nhóm chỉ xem tài khoản',
@@ -5937,12 +5998,12 @@ class AccessControlTest extends TestCase
         ]));
 
         $this->actingAs($manager, 'web')
-        ->getJson('/api/v1/users/create')
-        ->assertOk()
-        ->assertJsonFragment([
-            'id' => $accountViewerRole->id,
-            'uses_village_scope' => false,
-        ]);
+            ->getJson('/api/v1/users/create')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $accountViewerRole->id,
+                'uses_village_scope' => false,
+            ]);
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản toàn xã',

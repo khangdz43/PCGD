@@ -20,9 +20,14 @@ class HouseholdImportHistoryController extends Controller
         ]);
         $imports = ImportLog::query()
             ->where('user_id', $request->user()->id)
+            ->with('user:id,name')
             ->latest('created_at')
             ->paginate($filters['per_page'] ?? 20)
             ->withQueryString();
+        $imports->getCollection()->each(function (ImportLog $import): void {
+            $import->setAttribute('uploaded_by_name', $import->user?->name);
+            $import->unsetRelation('user');
+        });
         $pendingImportIds = ImportLog::query()
             ->where('status', 'PENDING')
             ->oldest('created_at')
@@ -66,8 +71,9 @@ class HouseholdImportHistoryController extends Controller
 
         $errorFilePath = $historyService->errorFilePath($importLog);
 
-        $extension = pathinfo($importLog->file_name, PATHINFO_EXTENSION);
-        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME) . '-loi' . ($extension !== '' ? '.' . $extension : '');
+        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME)
+            . '-loi.'
+            . strtolower(pathinfo($errorFilePath, PATHINFO_EXTENSION));
 
         return response()->download(
             Storage::disk('local')->path($errorFilePath),

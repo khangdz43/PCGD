@@ -43,21 +43,11 @@
 }
 
 .investigation-import-dialog-history {
-    max-height: none;
-    gap: 0;
-    overflow: visible;
-    padding: 12px;
-}
-
-.investigation-import-history-close {
-    position: absolute;
-    z-index: 2;
-    top: 24px;
-    right: 24px;
-}
-
-.investigation-import-dialog-history .excel-import-history {
-    padding-top: 58px;
+    width: min(1080px, 100%);
+    max-height: min(92vh, 840px);
+    gap: 16px;
+    overflow: auto;
+    padding: 22px;
 }
 
 .investigation-import-dialog-header {
@@ -292,7 +282,7 @@ h2 {
     flex-wrap: wrap;
     gap: 8px;
     margin: 0;
-    padding: 0;
+    padding: 0 0 84px;
     list-style: none;
 }
 
@@ -755,6 +745,40 @@ h2 {
     font-size: .76rem;
 }
 
+.household-detail-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e7edf5;
+    border-top: 0;
+    border-radius: 0 0 10px 10px;
+    color: #64748b;
+    font-size: .8rem;
+}
+
+.household-detail-pagination>div {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.household-detail-pagination button {
+    min-height: 32px;
+    padding: 5px 10px;
+    border: 1px solid #dbe3ee;
+    border-radius: 7px;
+    background: #fff;
+    color: #334155;
+    font: inherit;
+}
+
+.household-detail-pagination button:disabled {
+    cursor: not-allowed;
+    opacity: .5;
+}
+
 .household-view-member-table td {
     height: 36px;
     overflow: hidden;
@@ -1164,6 +1188,34 @@ h2 {
     box-shadow: 0 24px 70px rgb(20 40 80 / 24%);
 }
 
+.workspace.household-route-initializing {
+    min-height: calc(100dvh - 106px);
+    margin-top: 0;
+}
+
+.household-route-loading {
+    position: absolute;
+    z-index: 20;
+    inset: -56px 0 0;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: #fff;
+    color: #526178;
+    font-size: .88rem;
+    font-weight: 600;
+}
+
+.household-route-loading>span:last-child {
+    padding: 8px 13px;
+    border: 1px solid #e1e8f0;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 5px 18px rgb(15 23 42 / 10%);
+}
+
 .household-member-dialog-header {
     display: flex;
     align-items: flex-start;
@@ -1218,7 +1270,7 @@ h2 {
     position: absolute;
     z-index: 5;
     top: -40px;
-    right: clamp(-34px, -2.4vw, -18px);
+    right: 0;
     left: clamp(-34px, -2.4vw, -18px);
     display: block;
     height: calc(100dvh - 82px);
@@ -1232,7 +1284,7 @@ h2 {
     width: 100%;
     min-height: 100%;
     max-height: none;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     align-content: start;
     overflow: visible;
     margin: 0;
@@ -1246,6 +1298,12 @@ h2 {
 .household-create-page-form.household-configuration-form .workspace-field input,
 .household-create-page-form.household-configuration-form .workspace-field select {
     width: 100%;
+}
+
+.household-create-page-form.household-configuration-form .household-validation-slot {
+    min-height: 14px;
+    font-size: .72rem;
+    line-height: 1.25;
 }
 
 .household-create-page-form.household-configuration-form .household-form-actions {
@@ -1378,9 +1436,9 @@ h2 {
 }
 
 .village-merge-configuration-form>.workspace-form-heading,
-.village-merge-configuration-form > .notice,
-.village-merge-configuration-form > .village-merge-columns,
-.village-merge-configuration-form > .pagination-actions {
+.village-merge-configuration-form>.notice,
+.village-merge-configuration-form>.village-merge-columns,
+.village-merge-configuration-form>.pagination-actions {
     grid-column: 1 / -1;
 }
 
@@ -1408,7 +1466,7 @@ h2 {
     min-width: 0;
 }
 
-.village-merge-card .merge-step > div {
+.village-merge-card .merge-step>div {
     min-width: 0;
 }
 
@@ -1536,7 +1594,7 @@ h2 {
     padding-bottom: 2px;
 }
 
-.village-merge-configuration-form > .workspace-field {
+.village-merge-configuration-form>.workspace-field {
     max-width: none;
 }
 
@@ -1739,18 +1797,18 @@ h2 {
     font-size: .86rem;
 }
 
-.village-merge-configuration-form > .pagination-actions {
+.village-merge-configuration-form>.pagination-actions {
     gap: 10px;
     margin-top: 2px;
     padding-top: 2px;
 }
 
-.village-merge-configuration-form > .village-merge-form-actions {
+.village-merge-configuration-form>.village-merge-form-actions {
     justify-content: flex-end;
     margin-top: -6px;
 }
 
-.village-merge-configuration-form > .pagination-actions button {
+.village-merge-configuration-form>.pagination-actions button {
     min-height: 42px;
     padding: 9px 16px;
     border-radius: 10px;
@@ -1792,7 +1850,7 @@ h2 {
     stroke-width: 1.8;
 }
 
-.village-merge-configuration-form > .pagination-actions {
+.village-merge-configuration-form>.pagination-actions {
     margin-top: 0;
     padding-top: 2px;
 }
@@ -1943,7 +2001,7 @@ h2 {
 
 .household-member-dialog .workspace-field>span,
 .household-member-dialog .household-member-checkbox {
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.25;
 }
 
@@ -1953,15 +2011,30 @@ h2 {
     min-height: 26px;
     height: 26px;
     padding: 2px 6px;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .household-member-dialog .workspace-field textarea {
     height: 32px;
 }
 
+.household-member-dialog .workspace-field input.household-member-locked-field {
+    background: #f1f5f9;
+    color: #64748b;
+    cursor: not-allowed;
+}
+
 .household-member-dialog .household-member-form-section h4 {
     font-size: 12px;
+}
+
+.household-member-dialog .household-member-disability-section .household-member-checkbox,
+.household-member-dialog .household-member-disability-section .workspace-field>span {
+    font-size: 14px;
+}
+
+.household-member-dialog .household-member-disability-section .workspace-field select {
+    font-size: 14px;
 }
 
 .household-head-education-step .household-member-form-section {
@@ -1991,12 +2064,14 @@ h2 {
 }
 
 .household-member-dialog.household-head-education-step.household-member-create-page {
-    display: flex;
+    display: grid;
     width: 100%;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    align-content: start;
     height: auto;
     max-height: none;
     min-height: calc(100dvh - 82px);
-    flex-direction: column;
     gap: 12px;
     padding: 24px;
     border: 0;
@@ -2007,25 +2082,259 @@ h2 {
 }
 
 .household-member-create-page .household-member-create-columns {
-    display: grid;
-    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.35fr);
-    align-items: start;
-    gap: 12px;
+    display: contents;
 }
 
 .household-member-create-page .household-member-create-column {
-    display: grid;
-    min-width: 0;
-    align-content: start;
-    gap: 10px;
+    display: contents;
 }
 
-.household-member-create-page
-    .household-member-create-column
-    > .household-member-form-section {
-    grid-column: auto;
+.household-member-create-page .household-member-group-title,
+.household-member-create-page .household-member-form-section {
+    grid-column: 1 / -1;
     grid-row: auto;
+}
+
+.household-member-create-page .household-member-create-column>.household-member-form-section {
+    width: 100%;
+}
+
+.household-member-create-page .household-member-group-title {
+    display: grid;
+    width: 100%;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    gap: 2px 10px;
+    margin: 18px 0 0;
+    padding: 0;
+    color: #173454;
+    font-size: 1.08rem;
+    font-weight: 750;
+    line-height: 1.35;
+}
+
+.household-member-create-page .household-member-group-title:not([data-step]) {
+    display: block;
+    margin-top: 16px;
+    color: #38536f;
+    font-size: .95rem;
+}
+
+.household-member-create-page .household-member-group-title:not([data-step])::before {
+    content: none;
+}
+
+.household-member-create-page .household-member-group-title::before {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    grid-row: 1 / 3;
+    place-items: center;
+    border: 1px solid #d6e5f7;
+    border-radius: 9px;
+    background: #edf5ff;
+    color: #2863a5;
+    content: attr(data-step);
+    font-size: .73rem;
+    font-weight: 800;
+}
+
+.household-member-create-page .household-member-group-title small {
+    color: #728198;
+    font-size: .78rem;
+    font-weight: 450;
+    line-height: 1.45;
+}
+
+.household-member-create-page .household-member-person-title {
+    order: 1;
+}
+
+.household-member-create-page .household-member-person-section {
+    order: 2;
+}
+
+.household-member-create-page .household-member-contact-title {
+    order: 11;
+}
+
+.household-member-create-page .household-member-contact-section {
+    order: 12;
+}
+
+.household-member-create-page .household-member-education-title {
+    order: 3;
+}
+
+.household-member-create-page .household-member-form-section.household-member-education-section {
+    order: 4;
+    grid-template-columns: 170px 170px 170px 320px;
+}
+
+.household-member-create-page .household-member-subsection-title {
+    grid-column: 1 / -1;
+    margin: 2px 0 0;
+    padding: 0 0 7px;
+    border-bottom: 1px solid #e3eaf3;
+    color: #38536f;
+    font-size: .84rem;
+    font-weight: 700;
+}
+
+.household-member-create-page .household-member-subsection-title:not(:first-child) {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid #e3eaf3;
+}
+
+.household-member-create-page .household-member-disability-title {
+    order: 7;
+}
+
+.household-member-create-page .household-member-disability-section {
+    order: 8;
+}
+
+.household-member-create-page .household-member-literacy-title {
+    order: 5;
+}
+
+.household-member-create-page .household-member-literacy-section {
+    order: 6;
+}
+
+.household-member-create-page .household-member-circumstance-title {
+    order: 9;
+}
+
+.household-member-create-page .household-member-circumstance-section {
+    order: 10;
+}
+
+.household-member-create-page .household-member-form-section {
+    width: 100%;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 14px 20px;
+    padding: 18px;
+    border-color: #e2e9f2;
+    border-radius: 14px;
+    background: #fbfcfe;
+    box-shadow: 0 2px 8px rgb(27 55 88 / 4%);
+}
+
+.household-member-create-page .household-member-form-section>.workspace-field {
+    min-width: 0;
+}
+
+.household-member-create-page .household-member-form-section>.household-member-wide-field {
+    max-width: 760px;
+}
+
+.household-member-create-page .household-member-form-section.household-member-person-section {
+    grid-template-columns: 260px 260px 220px 180px;
+}
+
+.household-member-create-page .household-member-form-section.household-member-literacy-section {
+    grid-template-columns: 190px 190px 240px;
+}
+
+.household-member-create-page .household-member-form-section.household-member-disability-section {
+    grid-template-columns: 300px 300px;
+}
+
+.household-member-create-page .household-member-disability-section .household-member-checkbox-grid {
+    max-width: 620px;
+}
+
+.household-member-create-page .household-member-form-section.household-member-circumstance-section {
+    grid-template-columns: 240px minmax(0, 760px);
+}
+
+.household-member-create-page .household-member-education-section>.workspace-field {
+    max-width: none;
+}
+
+.household-member-create-page .household-member-education-pair {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: 210px minmax(0, 280px);
+    align-items: start;
+    gap: 14px 24px;
+}
+
+.household-member-create-page .household-member-education-completion-row {
+    display: flex;
+    align-items: end;
+    gap: 14px;
+}
+
+.household-member-create-page .household-member-education-pair .workspace-field {
+    align-content: start;
+    max-width: 190px;
+}
+
+.household-member-create-page .household-member-education-completion-row>.workspace-field {
+    flex: 0 0 150px;
+}
+
+.household-member-create-page .household-member-complementary-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     align-self: start;
+    padding-top: 22px;
+    color: #35445c;
+    font-size: .82rem;
+    white-space: nowrap;
+}
+
+.household-member-create-page .household-member-complementary-checkbox input {
+    width: 16px;
+    min-height: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #2563eb;
+}
+
+@media (max-width: 960px) {
+    .household-member-create-page .household-member-form-section.household-member-education-section {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+.household-member-create-page .household-member-form-section>.household-member-compact-field {
+    max-width: 190px;
+}
+
+.household-member-create-page .household-member-form-section>.household-member-mini-field {
+    max-width: 110px;
+}
+
+.household-member-create-page .household-member-form-section .workspace-field input,
+.household-member-create-page .household-member-form-section .workspace-field select,
+.household-member-create-page .household-member-form-section .workspace-field textarea {
+    border-color: #d6dfeb;
+    border-radius: 10px;
+    background-color: #fff;
+    transition: border-color .18s ease, box-shadow .18s ease, background-color .18s ease;
+}
+
+.household-member-create-page .household-member-form-section .workspace-field input:focus,
+.household-member-create-page .household-member-form-section .workspace-field select:focus,
+.household-member-create-page .household-member-form-section .workspace-field textarea:focus {
+    border-color: #6b9cf0;
+    outline: none;
+    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
+}
+
+.household-member-create-page .household-member-form-section .workspace-field textarea {
+    border: 1px solid #d6dfeb;
+    min-height: 76px;
+    height: auto;
+    padding: 9px 11px;
+    line-height: 1.5;
+    resize: vertical;
 }
 
 .household-head-education-step .household-member-form-actions {
@@ -2038,11 +2347,39 @@ h2 {
 }
 
 .household-member-create-page .household-member-form-actions {
-    position: static;
-    bottom: auto;
-    margin: auto -24px 0;
-    padding: 12px 24px;
-    border-top: 1px solid #e5ebf3;
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: var(--household-form-sidebar-width, 236px);
+    z-index: 5;
+    align-self: auto;
+    width: auto;
+    max-width: none;
+    margin: 0;
+    justify-content: flex-end;
+    padding: 12px clamp(16px, 2.4vw, 34px);
+    border-top: 0;
+    background: transparent;
+    box-shadow: none;
+    grid-row: auto;
+    pointer-events: none;
+}
+
+.household-member-create-page .household-member-form-actions>* {
+    pointer-events: auto;
+}
+
+.household-member-editor.household-member-create-page .household-member-form-actions {
+    width: auto;
+    margin: 0;
+}
+
+.household-member-create-page .household-member-dialog-header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    margin: -24px -24px 0;
+    padding: 16px 24px 12px;
     background: rgb(255 255 255 / 96%);
 }
 
@@ -2086,6 +2423,33 @@ h2 {
 
 .household-member-editor-backdrop .field-error {
     display: none;
+}
+
+.household-member-editor-backdrop .workspace-field .household-member-required-error {
+    display: block;
+    min-height: 18px;
+    overflow: visible;
+    margin: 0;
+    color: #b42318;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    white-space: normal;
+}
+
+.household-member-editor .household-member-form-actions {
+    width: 100%;
+    margin-left: auto;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.household-member-editor .household-member-form-actions .primary-button,
+.household-member-editor .household-member-form-actions .secondary-button {
+    min-width: 0;
+    min-height: 32px;
+    padding: 6px 12px;
+    font-size: .78rem;
 }
 
 .household-member-form-section textarea {
@@ -2304,12 +2668,29 @@ h2 {
         grid-row: auto;
     }
 
-    .household-member-create-page .household-member-education-section {
+    .household-member-create-page .household-member-form-section.household-member-education-section {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .household-member-create-page .household-member-form-section:not(.household-member-education-section) {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
 
 @media (max-width: 760px) {
+    .household-member-create-page .household-member-form-section {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 12px;
+        padding: 14px;
+    }
+
+    .household-member-create-page .household-member-form-section.household-member-literacy-section,
+    .household-member-create-page .household-member-form-section.household-member-disability-section,
+    .household-member-create-page .household-member-form-section.household-member-circumstance-section,
+    .household-member-create-page .household-member-form-section.household-member-person-section {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .village-merge-configuration-form {
         grid-template-columns: minmax(0, 1fr);
         width: 100%;
@@ -2341,7 +2722,7 @@ h2 {
         font-size: .75rem;
     }
 
-    .village-merge-configuration-form > .pagination-actions {
+    .village-merge-configuration-form>.pagination-actions {
         flex-wrap: wrap;
     }
 
@@ -2359,10 +2740,14 @@ h2 {
         padding: 16px;
     }
 
+    .household-member-create-page .household-member-dialog-header {
+        margin: -16px -16px 0;
+        padding: 12px 16px 10px;
+    }
+
     .household-member-create-page .household-member-form-actions {
-        margin-right: -16px;
-        margin-left: -16px;
-        padding: 12px 16px;
+        width: 100%;
+        padding: 10px 12px;
     }
 
     .household-create-members-page {
@@ -2389,12 +2774,22 @@ h2 {
         width: 100%;
     }
 
-    .household-member-create-page .household-member-education-section {
+    .household-member-create-page .household-member-form-section.household-member-education-section {
         grid-template-columns: minmax(0, 1fr);
+    }
+
+    .household-member-create-page .household-member-education-pair {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .household-member-create-page .household-member-form-section>.household-member-compact-field,
+    .household-member-create-page .household-member-form-section>.household-member-mini-field {
+        max-width: none;
     }
 }
 
 @media (max-width: 640px) {
+
     .workspace-modal-backdrop.household-create-page-backdrop,
     .workspace-modal-backdrop.household-member-create-page-backdrop,
     .household-create-members-page {
@@ -3028,10 +3423,7 @@ h2 {
     min-height: calc(100dvh - 82px);
 }
 
-.workspace.household-creation-active
-    > *:not(.household-create-page-backdrop):not(.household-member-editor-backdrop):not(
-        .household-create-members-page
-    ) {
+.workspace.household-creation-active>*:not(.household-create-page-backdrop):not(.household-member-editor-backdrop):not(.household-create-members-page) {
     display: none !important;
 }
 
@@ -3175,11 +3567,11 @@ h2 {
     box-shadow: 0 24px 70px rgb(15 23 42 / 28%);
 }
 
-.workspace-modal-card > .workspace-form-heading {
+.workspace-modal-card>.workspace-form-heading {
     padding: 8px 0;
 }
 
-.workspace-modal-card > .workspace-form-close {
+.workspace-modal-card>.workspace-form-close {
     position: sticky;
     z-index: 5;
     top: 0;
@@ -3234,7 +3626,11 @@ h2 {
 }
 
 .household-configuration-form .household-form-section-heading {
+    display: flex;
     grid-column: 1 / -1;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
     margin: 2px 0 -1px;
     padding: 5px 10px;
     border: 1px solid #e5ebf3;
@@ -3242,6 +3638,25 @@ h2 {
     background: #f4f7fb;
     color: #35445c;
     font-size: .88rem;
+}
+
+.household-form-section-code {
+    color: #526178;
+    font-size: .82rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.household-number-label {
+    color: #526178;
+    font-size: .85rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.household-member-dialog-header .household-number-label {
+    margin-left: auto;
+    align-self: center;
 }
 
 .household-configuration-form .household-form-section-heading:not(:first-of-type) {
@@ -3317,6 +3732,13 @@ h2 {
     margin: 3px 0 0;
 }
 
+.household-edit-members-heading .household-view-member-count {
+    color: #718198;
+    font-size: .76rem;
+    font-weight: 400;
+    letter-spacing: normal;
+}
+
 .household-edit-members-table-wrap {
     height: 172px;
     max-height: 172px;
@@ -3341,8 +3763,8 @@ h2 {
 }
 
 .household-edit-members-table {
-    width: 3200px;
-    min-width: 3200px;
+    width: max-content;
+    min-width: max-content;
     table-layout: fixed;
     border-collapse: collapse;
     font-size: .76rem;
@@ -3365,7 +3787,7 @@ h2 {
 }
 
 .household-edit-members-table .member-col-date {
-    width: 118px;
+    width: 136px;
 }
 
 .household-edit-members-table .member-col-gender {
@@ -3378,6 +3800,10 @@ h2 {
 
 .household-edit-members-table .member-col-phone {
     width: 88px;
+}
+
+.household-edit-members-table .member-col-school-year {
+    width: 96px;
 }
 
 .household-edit-members-table .member-col-small {
@@ -3433,10 +3859,7 @@ h2 {
 .household-edit-members-table th:nth-child(3),
 .household-edit-members-table td:nth-child(3) {
     position: sticky;
-    left: calc(
-        var(--member-sticky-first-width, 38px) +
-        var(--member-sticky-second-width, 105px)
-    );
+    left: calc(var(--member-sticky-first-width, 38px) + var(--member-sticky-second-width, 105px));
     z-index: 11;
     background: #fff;
     box-shadow: 2px 0 5px rgb(37 58 88 / 7%);
@@ -3741,7 +4164,8 @@ h2 {
 }
 
 .household-edit-members-table input,
-.household-edit-members-table select {
+.household-edit-members-table select,
+.household-edit-members-table .household-date-picker-trigger {
     width: 100%;
     min-width: 0;
     max-width: 100%;
@@ -3755,13 +4179,48 @@ h2 {
     font-size: .72rem;
 }
 
+.household-edit-members-table td.household-edit-member-invalid {
+    background: #fff1f2;
+}
+
+.household-edit-members-table td.household-edit-member-invalid input,
+.household-edit-members-table td.household-edit-member-invalid select,
+.household-edit-members-table td.household-edit-member-invalid button {
+    border-color: #ef4444;
+    background: #fff1f2;
+}
+
 .household-edit-members-table input:hover,
 .household-edit-members-table input:focus,
 .household-edit-members-table select:hover,
-.household-edit-members-table select:focus {
+.household-edit-members-table select:focus,
+.household-edit-members-table .household-date-picker-trigger:hover,
+.household-edit-members-table .household-date-picker-trigger:focus-visible {
     border-color: #aebed3;
     outline: none;
     background: #fff;
+}
+
+.inline-school-year-control {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.household-edit-members-table .inline-school-year-control input {
+    flex: 0 1 54px;
+    width: 54px;
+}
+
+.household-edit-members-table .inline-school-year-control .inline-year-suffix {
+    color: #64748b;
+    font-variant-numeric: tabular-nums;
+}
+
+.household-edit-members-table .inline-school-year-control input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
 }
 
 .household-inline-member-actions {
@@ -3832,6 +4291,7 @@ h2 {
 }
 
 @media (max-width: 1200px) {
+
     .household-configuration-form.workspace-modal-card,
     .household-create-page-form.household-configuration-form {
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -3839,6 +4299,7 @@ h2 {
 }
 
 @media (max-width: 900px) {
+
     .household-configuration-form.workspace-modal-card,
     .household-create-page-form.household-configuration-form {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3941,7 +4402,7 @@ h2 {
 
 .user-location-filters {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.5fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     width: 100%;
     min-width: 0;
     align-items: end;
@@ -4160,7 +4621,7 @@ h2 {
 }
 
 .user-management-toolbar {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
 }
 
@@ -4205,6 +4666,9 @@ h2 {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
 }
 
 .user-management-toolbar-bottom>.management-tool-button {
@@ -4480,7 +4944,7 @@ h2 {
     padding-bottom: 0;
 }
 
-.role-configuration-form > .workspace-field:not(.role-permissions-field) {
+.role-configuration-form>.workspace-field:not(.role-permissions-field) {
     align-self: start;
 }
 
@@ -4750,7 +5214,8 @@ h2 {
     padding: 0;
 }
 
-@media (max-width: 800px), (max-height: 700px) {
+@media (max-width: 800px),
+(max-height: 700px) {
     .role-configuration-form {
         overflow: auto;
     }
@@ -5140,6 +5605,8 @@ h2 {
 
     .user-management-toolbar-bottom {
         width: 100%;
+        grid-column: 1;
+        grid-row: auto;
     }
 }
 
@@ -5290,7 +5757,8 @@ h2 {
 }
 
 .workspace-field input,
-.workspace-field select {
+.workspace-field select,
+.workspace-field .household-date-picker-trigger {
     min-height: 40px;
     width: 100%;
     padding: 7px 10px;
@@ -5300,6 +5768,176 @@ h2 {
     color: #172033;
     font: inherit;
     font-weight: 400;
+}
+
+.household-date-picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 7px 10px;
+    border: 1px solid #d6dfeb;
+    border-radius: 8px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+    font-weight: 400;
+    text-align: left;
+    cursor: pointer;
+}
+
+.household-date-picker-trigger span {
+    flex: none;
+    color: #64748b;
+}
+
+.household-edit-members-table .household-date-picker-trigger {
+    min-height: 28px;
+    min-width: 128px;
+    padding: 3px 5px;
+    border-color: transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: #34445c;
+    font-size: .72rem;
+}
+
+.household-date-picker-trigger[aria-invalid="true"] {
+    border-color: #dc2626;
+}
+
+.household-date-picker-backdrop {
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    background: transparent;
+}
+
+.household-date-picker {
+    position: fixed;
+    z-index: 1;
+    width: 300px;
+    padding: 12px;
+    border: 1px solid #dbe3ee;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 16px 40px rgb(15 23 42 / 20%);
+    color: #26364d;
+}
+
+.household-date-picker-heading {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 76px 32px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.household-date-picker-heading select,
+.household-date-picker-month-button,
+.household-date-picker-close,
+.household-date-picker-today {
+    min-height: 32px;
+    border: 1px solid #dbe3ee;
+    border-radius: 7px;
+    background: #fff;
+    color: #26364d;
+    font: inherit;
+}
+
+.household-date-picker-heading select {
+    min-width: 0;
+    padding: 4px 5px;
+}
+
+.household-date-picker-month-button {
+    font-size: 1.15rem;
+    cursor: pointer;
+}
+
+.household-date-picker-month-button:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+.household-date-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+}
+
+.household-date-picker-weekday,
+.household-date-picker-empty,
+.household-date-picker-day {
+    display: grid;
+    min-height: 32px;
+    place-items: center;
+}
+
+.household-date-picker-weekday {
+    color: #64748b;
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.household-date-picker-day {
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #26364d;
+    font: inherit;
+    cursor: pointer;
+}
+
+.household-date-picker-day:hover:not(:disabled) {
+    background: #eff6ff;
+}
+
+.household-date-picker-day.is-selected {
+    background: #2563eb;
+    color: #fff;
+}
+
+.household-date-picker-day:disabled {
+    color: #c1c9d4;
+    cursor: default;
+}
+
+.household-date-picker-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.household-date-picker-close,
+.household-date-picker-today {
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.household-date-picker-today {
+    color: #2563eb;
+}
+
+.household-date-picker-today:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.education-year-control {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.workspace-field .education-year-control input {
+    flex: 0 1 110px;
+    width: 110px;
+    min-width: 0;
 }
 
 .password-input-control {
@@ -5749,6 +6387,14 @@ h2 {
     font-size: .78rem;
 }
 
+.workspace-table.household-management-table th.table-numeric-heading {
+    text-align: right;
+}
+
+.workspace-table.household-management-table td.household-members-cell {
+    text-align: right;
+}
+
 .workspace-table.household-management-table .village-row-number {
     width: 58px;
     color: #64748b;
@@ -5783,8 +6429,8 @@ h2 {
     justify-content: flex-end;
 }
 
-.household-management-toolbar-bottom {
-    margin: 0 0 12px;
+.household-toolbar-actions {
+    align-items: center;
 }
 
 .household-list-actions {
@@ -5814,7 +6460,6 @@ h2 {
 
 .household-pagination-footer {
     justify-content: space-between;
-    padding-top: 2px;
 }
 
 .household-pagination-footer .pagination-actions {
@@ -5836,11 +6481,6 @@ h2 {
 
     .household-unified-filter {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .household-clear-filter {
-        grid-column: 1 / -1;
-        justify-self: start;
     }
 
     .household-unified-filter .village-unified-search {
@@ -5887,14 +6527,7 @@ h2 {
         grid-template-columns: minmax(0, 1fr);
     }
 
-    .household-clear-filter {
-        grid-column: auto;
-    }
 
-    .household-management-toolbar-bottom {
-        align-items: flex-start;
-        flex-direction: column;
-    }
 
     .household-list-actions {
         width: 100%;
@@ -6127,10 +6760,16 @@ button {
     display: flex;
     min-height: 100vh;
     background: #f4f7fb;
+    --household-form-sidebar-width: 236px;
+}
+
+.app-layout:has(.sidebar-collapsed) {
+    --household-form-sidebar-width: 76px;
 }
 
 .sidebar {
     position: sticky;
+    z-index: 20;
     top: 0;
     display: flex;
     width: 236px;
@@ -6205,7 +6844,7 @@ button {
 .sidebar-collapse {
     display: grid;
     position: absolute;
-    z-index: 2;
+    z-index: 10;
     top: calc(100% - 17px);
     right: -16px;
     width: 32px;
@@ -6568,7 +7207,7 @@ button {
     flex: 1 1 0;
     box-sizing: border-box;
     margin: 0 auto;
-padding: 10px clamp(18px, 2.4vw, 34px);
+    padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 @media (min-width: 801px) {
@@ -6583,115 +7222,56 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     margin: 0 0 20px;
 }
 
-.import-toast-stack {
-    position: fixed;
-    z-index: 1200;
-    top: 20px;
-    right: 24px;
-    display: grid;
-    width: min(440px, calc(100vw - 32px));
-    gap: 10px;
-    pointer-events: none;
+.import-result-backdrop {
+    z-index: 1300;
 }
 
-.import-toast {
-    display: grid;
-    grid-template-columns: 34px minmax(0, 1fr) 28px;
-    align-items: start;
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid #dce5ef;
-    border-radius: 14px;
-    background: #fff;
-    box-shadow: 0 14px 40px rgb(25 42 70 / 18%);
-    color: #263b59;
-    pointer-events: auto;
-    animation: import-toast-enter .22s ease-out;
+.import-result-pending-icon {
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px #dbeafe, 0 0 0 6px #f7faff;
+    color: #2563eb;
 }
 
-.import-toast-icon {
-    display: grid;
-    width: 34px;
-    height: 34px;
-    place-items: center;
-    border-radius: 50%;
-    background: #edf4ff;
-    color: #3973c5;
-    font-weight: 800;
-}
-
-.import-toast-content {
-    display: grid;
-    gap: 4px;
-    padding-top: 2px;
-}
-
-.import-toast-content strong {
-    font-size: .88rem;
-}
-
-.import-toast-content p {
-    margin: 0;
-    color: #687991;
-    font-size: .78rem;
-    line-height: 1.5;
-    overflow-wrap: anywhere;
-}
-
-.import-toast-history {
-    justify-self: start;
-    margin-top: 4px;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: #3973c5;
-    font: inherit;
-    font-size: .75rem;
-    font-weight: 700;
-    cursor: pointer;
-}
-
-.import-toast>button {
-    width: 28px;
-    height: 28px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: #8190a5;
-    font-size: 1.25rem;
-    cursor: pointer;
-}
-
-.import-toast>button:hover {
-    background: #f0f3f8;
-    color: #354963;
-}
-
-.import-toast-success .import-toast-icon {
-    background: #e7f6ed;
-    color: #21845a;
-}
-
-.import-toast-partial .import-toast-icon {
-    background: #fff4dc;
+.import-result-partial .account-creation-result-icon {
+    background: #fff8e8;
+    box-shadow: inset 0 0 0 1px #f5d58b, 0 0 0 6px #fffcf4;
     color: #a87310;
 }
 
-.import-toast-failed .import-toast-icon {
-    background: #fdebed;
-    color: #b42335;
+.import-result-partial .account-creation-result-eyebrow,
+.import-result-partial h3 {
+    color: #8a5b08;
 }
 
-@keyframes import-toast-enter {
-    from {
-        opacity: 0;
-        transform: translateY(-8px);
-    }
+.import-result-success .account-creation-result-eyebrow {
+    color: #19824a;
+}
 
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.import-result-success h3 {
+    color: #172b22;
+}
+
+.import-result-success>p:not(.account-creation-result-eyebrow) {
+    color: #586b60;
+    font-size: .92rem;
+}
+
+.import-result-queued .account-creation-result-eyebrow {
+    color: #2563eb;
+}
+
+.import-result-queued h3 {
+    color: #1e3a5f;
+}
+
+.import-result-failed h3 {
+    color: #a12622;
+}
+
+.import-result-failed>p:not(.account-creation-result-eyebrow) {
+    color: #6f4845;
+    font-size: .92rem;
+    overflow-wrap: anywhere;
 }
 
 .app-footer {
@@ -7989,23 +8569,27 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .household-unified-filter {
-    grid-template-columns:
-        minmax(180px, 240px)
-        minmax(280px, 360px)
-        minmax(155px, 190px)
-        auto;
-    justify-content: start;
+    display: flex;
+    align-items: end;
+    gap: 8px;
+}
+
+.household-unified-filter>.household-location-filter {
+    flex: 0 1 190px;
+}
+
+.household-unified-filter>.household-school-year-filter {
+    flex: 0 0 145px;
+}
+
+.household-unified-filter>.village-unified-search {
+    flex: 0 1 340px;
 }
 
 .household-unified-filter .village-unified-search {
     min-width: 0;
-    max-width: 360px;
+    max-width: none;
     grid-column: auto;
-}
-
-.household-unified-filter .household-clear-filter {
-    min-height: 34px;
-    align-self: end;
 }
 
 .household-filter-submit {
@@ -8024,6 +8608,35 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     color: #34445c;
     font: inherit;
     font-size: .76rem;
+}
+
+@media (max-width: 900px) {
+    .household-unified-filter {
+        flex-wrap: wrap;
+    }
+
+    .household-unified-filter>.household-location-filter,
+    .household-unified-filter>.household-school-year-filter {
+        flex: 1 1 calc(50% - 8px);
+    }
+
+    .household-unified-filter>.village-unified-search {
+        flex: 1 1 100%;
+    }
+}
+
+@media (max-width: 560px) {
+    .household-unified-filter {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .household-unified-filter>.household-location-filter,
+    .household-unified-filter>.household-school-year-filter,
+    .household-unified-filter>.village-unified-search {
+        grid-column: auto;
+        flex: initial;
+    }
 }
 
 .user-location-filter-row {
@@ -8241,15 +8854,13 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     }
 }
 
-.excel-import-heading,
-.excel-history-heading {
+.excel-import-heading {
     display: flex;
     align-items: center;
     gap: 12px;
 }
 
-.excel-import-heading h3,
-.excel-history-heading h3 {
+.excel-import-heading h3 {
     margin: 2px 0;
     font-size: 1rem;
 }
@@ -8311,6 +8922,59 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-file-drop small {
     color: #8190a5;
+}
+
+.excel-file-error {
+    display: block;
+    margin-top: 8px;
+}
+
+.excel-selected-files {
+    display: grid;
+    gap: 6px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.excel-selected-files li {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 8px 6px 12px;
+    border: 1px solid #dce4ef;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.excel-selected-files span {
+    min-width: 0;
+    overflow: hidden;
+    color: #304763;
+    font-size: .78rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.excel-selected-files button {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #718198;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.excel-selected-files button:hover {
+    background: #fff0ef;
+    color: #b42318;
 }
 
 .excel-import-actions {
@@ -8398,48 +9062,12 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-import-history {
-    padding: 26px;
-    border-radius: 18px;
+    padding: 18px;
+    border-radius: 14px;
 }
 
-.excel-history-heading {
-    position: relative;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 0 0 20px;
-    border-bottom: 1px solid #edf1f6;
-}
-
-.excel-history-heading>div {
-    min-width: 0;
-}
-
-.excel-history-heading h3 {
-    margin-top: 5px;
-    color: #243957;
-    font-size: 1.2rem;
-    letter-spacing: -.02em;
-}
-
-.excel-history-description {
-    margin: 5px 0 0;
-    color: #7a899e;
-    font-size: .77rem;
-}
-
-.excel-history-count {
-    flex: 0 0 auto;
-    padding: 8px 13px;
-    border: 1px solid #dce9fb;
-    border-radius: 12px;
-    background: #f3f7ff;
-    color: #3973c5;
-    font-size: .74rem;
-    font-weight: 700;
-}
-
-.excel-history-count strong {
-    font-size: .92rem;
+.investigation-import-dialog-history .excel-import-history {
+    padding: 18px;
 }
 
 .excel-history-empty {
@@ -8451,14 +9079,14 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-table {
     width: 100%;
-    margin-top: 16px;
+    margin-top: 10px;
     border-collapse: separate;
     border-spacing: 0;
     table-layout: fixed;
 }
 
 .excel-history-table th {
-    padding: 11px 12px;
+    padding: 9px 10px;
     border-bottom: 1px solid #e8edf4;
     background: #f7f9fc;
     color: #718198;
@@ -8468,16 +9096,20 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-history-table th:first-child {
-    width: 36%;
+    width: 28%;
     border-radius: 9px 0 0;
 }
 
 .excel-history-table th:nth-child(2) {
-    width: 24%;
+    width: 18%;
 }
 
 .excel-history-table th:nth-child(3) {
-    width: 22%;
+    width: 15%;
+}
+
+.excel-history-table th:nth-child(4) {
+    width: 21%;
 }
 
 .excel-history-table th:last-child {
@@ -8487,7 +9119,7 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-history-table td {
-    padding: 13px 12px;
+    padding: 10px;
     border-bottom: 1px solid #edf1f6;
     color: #53647b;
     font-size: .75rem;
@@ -8524,11 +9156,15 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-history-file-cell strong {
+    display: block;
+    min-width: 0;
+    flex: 1;
     overflow: hidden;
     color: #2d4260;
     font-size: .77rem;
     line-height: 1.45;
-    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .excel-history-meta-cell,
@@ -8594,19 +9230,34 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-action {
     display: inline-flex;
-    width: 34px;
-    height: 34px;
+    min-height: 32px;
     align-items: center;
     justify-content: center;
+    gap: 5px;
+    padding: 0 8px;
     border: 1px solid #dce5f0;
     border-radius: 9px;
     background: #fff;
     color: #425572;
-    font-size: .9rem;
-    font-weight: 800;
+    font-size: .65rem;
+    font-weight: 700;
     text-decoration: none;
     cursor: pointer;
     transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.excel-history-action svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.6;
+}
+
+.excel-history-action span {
+    white-space: nowrap;
 }
 
 .excel-history-action:hover {
@@ -8633,12 +9284,12 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-history-pagination {
     display: flex;
-    min-height: 62px;
+    min-height: 40px;
     align-items: center;
     justify-content: flex-end;
-    gap: 12px;
+    gap: 8px;
     margin-top: 0;
-    padding: 10px 0 0;
+    padding: 8px 0 0;
     border-top: 1px solid #edf1f6;
 }
 
@@ -8685,7 +9336,9 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-location-grid .workspace-field {
+    align-content: start;
     gap: 7px;
+    grid-template-rows: auto 44px minmax(20px, auto);
 }
 
 .excel-location-grid .workspace-field>span {
@@ -8696,10 +9349,17 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 .excel-location-grid input,
 .excel-location-grid select {
+    height: 44px;
     min-height: 44px;
     border-color: #dce4ef;
     border-radius: 10px;
     background-color: #fbfcfe;
+}
+
+.excel-location-grid .field-error {
+    align-self: start;
+    font-size: .76rem;
+    line-height: 20px;
 }
 
 .excel-file-drop {
@@ -8713,7 +9373,8 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 .excel-file-drop:hover,
-.excel-file-drop:focus-within {
+.excel-file-drop:focus-within,
+.excel-file-drop.is-drag-active {
     transform: translateY(-1px);
     border-color: #4b83ca;
     background: #f0f6ff;
@@ -8863,16 +9524,8 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 @media (max-width: 620px) {
     .investigation-import-dialog-history {
-        padding: 8px;
-    }
-
-    .investigation-import-history-close {
-        top: 16px;
-        right: 16px;
-    }
-
-    .investigation-import-dialog-history .excel-import-history {
-        padding-top: 52px;
+        gap: 12px;
+        padding: 14px;
     }
 
     .excel-location-grid {
@@ -8943,14 +9596,6 @@ padding: 10px clamp(18px, 2.4vw, 34px);
         justify-content: flex-end;
     }
 
-    .excel-history-heading {
-        align-items: flex-start;
-    }
-
-    .excel-history-count {
-        padding: 6px 9px;
-    }
-
     .excel-history-pagination {
         flex-wrap: wrap;
         justify-content: center;
@@ -8962,12 +9607,6 @@ padding: 10px clamp(18px, 2.4vw, 34px);
         flex-basis: 100%;
         margin: 0;
         text-align: center;
-    }
-
-    .import-toast-stack {
-        top: 10px;
-        right: 10px;
-        width: calc(100vw - 20px);
     }
 
     .excel-import-actions {
@@ -8993,6 +9632,14 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 @media (max-width: 1050px) {
+    .app-layout {
+        --household-form-sidebar-width: 220px;
+    }
+
+    .app-layout:has(.sidebar-collapsed) {
+        --household-form-sidebar-width: 76px;
+    }
+
     .sidebar {
         width: 220px;
         flex-basis: 220px;
@@ -9006,7 +9653,7 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 
 @media (max-width: 800px) {
     .sidebar {
-        z-index: 5;
+        z-index: 20;
         width: 220px;
         flex-basis: 220px;
         padding-inline: 11px;
@@ -9044,6 +9691,10 @@ padding: 10px clamp(18px, 2.4vw, 34px);
 }
 
 @media (max-width: 640px) {
+    .app-layout:has(.sidebar-collapsed) {
+        --household-form-sidebar-width: 58px;
+    }
+
     .sidebar {
         width: 220px;
         flex-basis: 220px;
@@ -9234,11 +9885,10 @@ padding: 10px clamp(18px, 2.4vw, 34px);
     }
 }
 
-.workspace-field:has(input:required, select:required, textarea:required)>span:first-child::after,
+.workspace-field:has(input:required, select:required, textarea:required, [aria-required="true"])>span:first-child::after,
 .login-field:has(input:required, select:required, textarea:required)>span:first-child::after,
-.excel-file-drop:has(input:required)>strong::after,
-.required-field-label::after,
-th.is-required::after {
+.excel-file-drop:has(input[aria-required="true"])>strong::after,
+.required-field-label::after {
     content: "*";
     margin-left: 3px;
     color: #dc2626;
@@ -9250,6 +9900,7 @@ th.is-required::after {
 }
 
 @media (max-width: 800px) {
+
     .app-layout,
     .app-main,
     .app-content,
@@ -9262,23 +9913,22 @@ th.is-required::after {
         min-width: 0;
     }
 
-    .app-content > *,
-    .workspace > *,
-    .dashboard-view > *,
-    .investigation-view > * {
+    .app-content>*,
+    .workspace>*,
+    .dashboard-view>*,
+    .investigation-view>* {
         max-width: 100%;
     }
 
     .section-heading,
-    .workspace > .section-heading,
+    .workspace>.section-heading,
     .workspace-title,
     .workspace-form-heading,
     .account-profile-heading,
-    .excel-history-heading,
     .investigation-import-dialog-header,
     .dashboard-section-heading,
     .merge-step,
-    .school-merge-view > .section-heading {
+    .school-merge-view>.section-heading {
         min-width: 0;
         flex-wrap: wrap;
     }
@@ -9286,7 +9936,7 @@ th.is-required::after {
     .workspace-title h2,
     .section-heading h2,
     .dashboard-section-heading h3,
-    .merge-step > div,
+    .merge-step>div,
     .school-option span {
         min-width: 0;
         overflow-wrap: anywhere;
@@ -9352,15 +10002,14 @@ th.is-required::after {
         flex-basis: 40px;
     }
 
-    .workspace-title > div {
+    .workspace-title>div {
         min-width: 0;
         flex: 1 1 180px;
     }
 
     .management-toolbar-actions,
     .role-management-toolbar-bottom,
-    .user-management-toolbar-bottom,
-    .household-management-toolbar-bottom {
+    .user-management-toolbar-bottom {
         min-width: 0;
         flex-wrap: wrap;
     }
@@ -9373,7 +10022,7 @@ th.is-required::after {
         flex-wrap: wrap;
     }
 
-    .pagination-controls > button {
+    .pagination-controls>button {
         flex: 1 1 auto;
     }
 
@@ -9382,7 +10031,7 @@ th.is-required::after {
         padding: 14px;
     }
 
-    .school-merge-view .merge-step > div {
+    .school-merge-view .merge-step>div {
         flex: 1 1 150px;
     }
 
@@ -9395,11 +10044,6 @@ th.is-required::after {
     .household-person-dialog {
         max-height: calc(100dvh - 16px);
         padding: 14px;
-    }
-
-    .investigation-import-history-close {
-        top: 12px;
-        right: 12px;
     }
 
     .app-footer {

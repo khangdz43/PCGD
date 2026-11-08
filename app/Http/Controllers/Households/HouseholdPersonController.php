@@ -7,6 +7,8 @@ use App\Models\Household;
 use App\Models\Person;
 use App\Models\PersonEducation;
 use App\Models\Role;
+use App\Models\School;
+use App\Models\SchoolYear;
 use App\Services\Households\HouseholdPersonService;
 use App\Support\DataAccessScope;
 use Illuminate\Http\Request;
@@ -25,6 +27,9 @@ class HouseholdPersonController extends Controller
         ]);
         $persons = $household->persons()
             ->withDetails()
+            ->orderByRaw('CASE WHEN relationship_with_head = ? THEN 0 ELSE 1 END', ['Chủ hộ'])
+            ->orderBy('last_name')
+            ->orderBy('first_name')
             ->orderBy('id')
             ->paginate($filters['per_page'] ?? 15)
             ->withQueryString();
@@ -62,6 +67,72 @@ class HouseholdPersonController extends Controller
         ]);
     }
 
+    public function schoolOptions(Request $request, Household $household)
+    {
+        $this->assertHouseholdAccess($request, $household);
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'min:2', 'max:100'],
+            'academic_block' => ['nullable', 'integer', 'between:1,12'],
+        ]);
+        $query = School::query()
+            ->where('is_active', true)
+            ->where('province_code', $household->province_code);
+
+        if (filled($filters['academic_block'] ?? null)) {
+            $grade = (int) $filters['academic_block'];
+            $schoolLevels = $this->eligibleSchoolLevelsForGrade($grade);
+            $query->where(function ($builder) use ($schoolLevels): void {
+                $builder->where('level', $schoolLevels['level']);
+                if ($schoolLevels['multi_level'] !== []) {
+                    $builder->orWhere(function ($multiLevelQuery) use ($schoolLevels): void {
+                        $multiLevelQuery
+                            ->where('type', 'multi_level')
+                            ->whereIn('level', $schoolLevels['multi_level']);
+                    });
+                }
+            });
+        }
+
+        if (filled($filters['q'] ?? null)) {
+            $search = trim((string) $filters['q']);
+            $query->where(function ($builder) use ($search): void {
+                $builder->where('name', 'like', "%{$search}%")
+                    ->orWhere('code', 'like', "%{$search}%");
+            });
+        } elseif (! filled($filters['academic_block'] ?? null)) {
+            return response()->json(['schools' => []]);
+        }
+
+        $schools = $query
+            ->orderBy('name')
+            ->get(['code', 'name', 'level', 'province_code', 'commune_code']);
+
+        return response()->json(['schools' => $schools]);
+    }
+
+    private function schoolLevelForGrade(int $grade): string
+    {
+        return match (true) {
+            $grade <= 5 => 'TH',
+            $grade <= 9 => 'THCS',
+            default => 'THPT',
+        };
+    }
+
+    private function eligibleSchoolLevelsForGrade(int $grade): array
+    {
+        $level = $this->schoolLevelForGrade($grade);
+
+        return [
+            'level' => $level,
+            'multi_level' => match ($level) {
+                'TH' => ['THCS', 'THPT'],
+                'THCS' => ['THPT'],
+                default => [],
+            },
+        ];
+    }
+
     public function store(Request $request, Household $household)
     {
         $this->assertHouseholdAccess($request, $household);
@@ -78,7 +149,10 @@ class HouseholdPersonController extends Controller
             return response()->json(['message' => 'Hộ này đã có hồ sơ chủ hộ.'], 422);
         }
 
-        $data = $request->validate($this->rules($request, $isHouseholdHead));
+        $data = $request->validate(
+            $this->rules($request, $isHouseholdHead, household: $household),
+            $this->validationMessages(),
+        );
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return response()->json([
@@ -129,7 +203,10 @@ class HouseholdPersonController extends Controller
         // tìm năm học mới nhất vì trong bảng education sẽ có nhiều năm (varchar )
         $education = $this->people->latestEducation($person);
         // validate
-        $data = $request->validate($this->rules($request, $isHouseholdHead, $person, $education));
+        $data = $request->validate(
+            $this->rules($request, $isHouseholdHead, $person, $education, $household),
+            $this->validationMessages(),
+        );
         $relationshipAgeError = $this->people->relationshipAgeError($data['relationship_with_head'] ?? null, $data['dob'], $headPerson);
         if ($relationshipAgeError !== null) {
             return response()->json([
@@ -212,19 +289,25 @@ class HouseholdPersonController extends Controller
         ]);
     }
 
-    private function rules(Request $request, bool $isHouseholdHead = false, ?Person $person = null, ?PersonEducation $education = null): array
-    {
+    private function rules(
+        Request $request,
+        bool $isHouseholdHead = false,
+        ?Person $person = null,
+        ?PersonEducation $education = null,
+        ?Household $household = null,
+    ): array {
         $user = $request->user();
+        $personNameRule = "regex:/^[\\p{L}\\p{M}]+(?:[ '-][\\p{L}\\p{M}]+)*$/u";
         $rules = [
-            'first_name' => 'required|string|max:100',
-            'last_name' => 'required|string|max:50',
-            'dob' => 'required|date|before_or_equal:today',
+            'first_name' => ['required', 'string', 'max:100', $personNameRule],
+            'last_name' => ['required', 'string', 'max:50', $personNameRule],
+            'dob' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
             'gender' => 'required|in:NAM,NU',
             'ethnicity_code' => 'required|exists:ethnicities,code',
             'religion' => 'nullable|string|max:50',
             'priority_type' => 'nullable|string|max:100',
-            'parent_name' => 'nullable|string|max:150',
-            'phone' => 'nullable|string|max:20',
+            'parent_name' => ['nullable', 'string', 'max:150', $personNameRule],
+            'phone' => ['nullable', 'string', 'max:20', 'regex:/^\\+?[0-9]+$/'],
             'note' => 'nullable|string|max:2000',
         ];
 
@@ -235,48 +318,86 @@ class HouseholdPersonController extends Controller
         // chỉ cho phép những cái có
         $schoolYearRules = ['required', Rule::in($this->people->schoolYears())];
         if ($person?->exists) {
-            // 1 person chỉ được có 1 education trong 1 năm
-            $uniqueSchoolYear = Rule::unique('person_educations', 'school_year')->where('person_id', $person->id);
-            if ($education?->exists) {
-                // cái trên chỉ chấp nhận unique mà người dùng k sửa thì sẽ k sao
-                $uniqueSchoolYear->ignore($education->id);
-            }
-            // thêm đối tượng rule vào mảng
-            $schoolYearRules[] = $uniqueSchoolYear;
+            $schoolYearRules[] = function ($attribute, $value, $fail) use ($person, $education): void {
+                $schoolYearId = SchoolYear::findByLabel((string) $value)?->id;
+                if ($schoolYearId === null) {
+                    return;
+                }
+
+                $query = $person->educations()->where('school_year_id', $schoolYearId);
+                if ($education?->exists) {
+                    $query->whereKeyNot($education->id);
+                }
+                if ($query->exists()) {
+                    $fail('Nhân khẩu đã có thông tin học tập trong năm học này.');
+                }
+            };
         }
 
         $notFutureYear = function ($attribute, $value, $fail) {
             preg_match_all('/(?<!\d)\d{4}(?!\d)/', (string) $value, $matches);
             foreach ($matches[0] as $year) {
                 if ((int) $year > now()->year) {
-                    $fail('Năm không được lớn hơn '.now()->year.'.');
+                    $fail('Năm không được lớn hơn ' . now()->year . '.');
 
                     return;
                 }
+            }
+        };
+        $notFutureEducationYear = function ($attribute, $value, $fail) use ($notFutureYear) {
+            $currentYear = now()->year;
+            if (
+                preg_match('/^(\d{4})-(\d{4})$/', (string) $value, $matches) === 1
+                && (int) $matches[1] === $currentYear
+                && (int) $matches[2] === $currentYear + 1
+            ) {
+                return;
+            }
+
+            $notFutureYear($attribute, $value, $fail);
+        };
+        $classWithinGradeRange = function ($attribute, $value, $fail): void {
+            if (
+                preg_match('/^\s*(?:lớp\s*)?(\d+)/iu', (string) $value, $matches) === 1
+                && (int) $matches[1] > 12
+            ) {
+                $fail('Khối lớp không được lớn hơn lớp 12.');
             }
         };
 
         $schoolProvinceRules = ['nullable', 'exists:provinces,code'];
         $schoolCommuneRules = ['nullable', Rule::exists('communes', 'code')
             ->where('province_code', $request->input('school_province_code'))];
+        if ($household?->province_code !== null) {
+            $schoolProvinceRules[] = Rule::in([$household->province_code]);
+        }
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             if ($user->province_code !== null) {
                 $schoolProvinceRules[] = Rule::in([$user->province_code]);
             }
-
-            if ($user->roleScopeLevel() === 'commune') {
-                $schoolCommuneRules[] = Rule::in([$user->commune_code]);
-            }
         }
 
         $schoolExistsRule = Rule::exists('schools', 'code')
-            ->where('province_code', $request->input('school_province_code'))
-            ->where('commune_code', $request->input('school_commune_code'));
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)
-            && $user->roleScopeLevel() === 'commune') {
-            $schoolExistsRule
-                ->where('province_code', $user->province_code)
-                ->where('commune_code', $user->commune_code);
+            ->where('province_code', $household?->province_code);
+        $academicBlock = $this->gradeFromClassName(
+            $request->input('education.current_class'),
+        ) ?? filter_var(
+            $request->input('education.academic_block'),
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 1, 'max_range' => 12]],
+        );
+        if ($academicBlock !== false) {
+            $schoolLevels = $this->eligibleSchoolLevelsForGrade((int) $academicBlock);
+            $schoolExistsRule->where(function ($query) use ($schoolLevels): void {
+                $query->where('level', $schoolLevels['level']);
+                if ($schoolLevels['multi_level'] !== []) {
+                    $query->orWhere(function ($multiLevelQuery) use ($schoolLevels): void {
+                        $multiLevelQuery
+                            ->where('type', 'multi_level')
+                            ->whereIn('level', $schoolLevels['multi_level']);
+                    });
+                }
+            });
         }
 
         $rules += [
@@ -284,20 +405,20 @@ class HouseholdPersonController extends Controller
             'school_commune_code' => $schoolCommuneRules,
             'education.school_year' => $schoolYearRules,
             'education.academic_block' => 'nullable|string|max:50',
-            'education.current_class' => 'nullable|string|max:50',
+            'education.current_class' => ['nullable', 'string', 'max:50', $classWithinGradeRange],
             'education.school_code' => [
                 'nullable',
                 $schoolExistsRule,
             ],
             'education.graduation_level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
             'education.is_complementary' => 'nullable|boolean',
-            'education.graduation_year' => ['nullable', 'string', 'max:20', $notFutureYear],
+            'education.graduation_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
             'education.vocational_grad_level' => 'nullable|string|max:50',
-            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', $notFutureYear],
-            'education.finished_class' => 'nullable|string|max:20',
-            'education.finished_year' => ['nullable', 'string', 'max:20', $notFutureYear],
-            'education.dropped_class' => 'nullable|string|max:20',
-            'education.dropped_year' => ['nullable', 'string', 'max:20', $notFutureYear],
+            'education.vocational_grad_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
+            'education.finished_class' => ['nullable', 'string', 'max:20', $classWithinGradeRange],
+            'education.finished_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
+            'education.dropped_class' => ['nullable', 'string', 'max:20', $classWithinGradeRange],
+            'education.dropped_year' => ['nullable', 'string', 'max:20', 'regex:/^\\d{4}(?:-\\d{4})?$/', $notFutureEducationYear],
             'education.literacy_current_class' => 'nullable|string|max:20',
             'education.literacy_completed_class' => 'nullable|string|max:20',
             'education.literacy_relapse_level' => 'nullable|integer|between:1,2',
@@ -315,6 +436,32 @@ class HouseholdPersonController extends Controller
         ];
 
         return $rules;
+    }
+
+    private function validationMessages(): array
+    {
+        return [
+            'first_name.regex' => 'Tên chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.',
+            'last_name.regex' => 'Họ và tên đệm chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.',
+            'parent_name.regex' => 'Họ tên cha hoặc mẹ chỉ được chứa chữ cái, khoảng trắng, dấu nháy hoặc dấu gạch nối.',
+            'dob.date_format' => 'Ngày sinh không đúng định dạng.',
+            'phone.regex' => 'Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +, ví dụ +84912345678.',
+            'education.graduation_year.regex' => 'Năm tốt nghiệp phải có dạng YYYY hoặc YYYY-YYYY.',
+            'education.vocational_grad_year.regex' => 'Năm tốt nghiệp nghề phải có dạng YYYY hoặc YYYY-YYYY.',
+            'education.finished_year.regex' => 'Năm hoàn thành lớp phải có dạng YYYY hoặc YYYY-YYYY.',
+            'education.dropped_year.regex' => 'Năm bỏ học phải có dạng YYYY hoặc YYYY-YYYY.',
+        ];
+    }
+
+    private function gradeFromClassName(mixed $className): ?int
+    {
+        if (! preg_match('/^\s*(?:lớp\s*)?(\d{1,2})(?=\D|$)/iu', (string) $className, $match)) {
+            return null;
+        }
+
+        $grade = (int) $match[1];
+
+        return $grade >= 1 && $grade <= 12 ? $grade : null;
     }
 
     private function assertHouseholdAccess(Request $request, Household $household): void

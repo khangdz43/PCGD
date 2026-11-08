@@ -140,6 +140,10 @@ class HouseholdTrashService
         $person = $this->trashedPersons($user)->findOrFail($id);
         DB::transaction(function () use ($person): void {
             $this->lockOpenVillagesForHouseholds([$person->household_id]);
+            Household::withTrashed()
+                ->whereKey($person->household_id)
+                ->lockForUpdate()
+                ->firstOrFail();
             $this->assertCanRestorePerson($person);
             $person->deleted_by = null;
             $person->save();
@@ -163,18 +167,26 @@ class HouseholdTrashService
         abort_unless($households->count() === count($householdIds), 404);
         abort_unless($persons->count() === count($personIds), 404);
 
-        foreach ($persons as $person) {
-            $this->assertCanRestorePerson(
-                $person,
-                $households->modelKeys()
-            );
-        }
-
         return DB::transaction(function () use ($households, $persons): int {
             $this->lockOpenVillagesForHouseholds([
                 ...$households->modelKeys(),
                 ...$persons->pluck('household_id')->all(),
             ]);
+            Household::withTrashed()
+                ->whereIn('id', [
+                    ...$households->modelKeys(),
+                    ...$persons->pluck('household_id')->all(),
+                ])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            foreach ($persons as $person) {
+                $this->assertCanRestorePerson(
+                    $person,
+                    $households->modelKeys(),
+                    $persons->modelKeys(),
+                );
+            }
             foreach ($households as $household) {
                 $household->deleted_by = null;
                 $household->save();
@@ -274,7 +286,11 @@ class HouseholdTrashService
             ->get();
     }
 
-    private function assertCanRestorePerson(Person $person, array $restoringHouseholdIds = []): void
+    private function assertCanRestorePerson(
+        Person $person,
+        array $restoringHouseholdIds = [],
+        array $restoringPersonIds = [],
+    ): void
     {
         $household = Household::withTrashed()->findOrFail($person->household_id);
         if ($household->trashed() && ! in_array($household->id, $restoringHouseholdIds, true)) {
@@ -292,6 +308,36 @@ class HouseholdTrashService
         ) {
             throw ValidationException::withMessages([
                 'trash' => 'Hộ đã có chủ hộ khác. Hãy xử lý chủ hộ hiện tại trước khi khôi phục.',
+            ]);
+        }
+
+        $relationshipSlot = match ($person->relationship_with_head) {
+            'Vợ', 'Chồng' => ['Vợ', 'Chồng'],
+            'Cha', 'Mẹ' => ['Cha', 'Mẹ'],
+            default => null,
+        };
+        if ($relationshipSlot === null) {
+            return;
+        }
+
+        $activeConflict = Person::withoutGlobalScope('active_household')
+            ->where('household_id', $person->household_id)
+            ->whereIn('relationship_with_head', $relationshipSlot)
+            ->whereKeyNot($person->getKey())
+            ->exists();
+        $restoringConflict = $restoringPersonIds !== []
+            && Person::withoutGlobalScope('active_household')
+                ->onlyTrashed()
+                ->whereIn('id', $restoringPersonIds)
+                ->where('household_id', $person->household_id)
+                ->whereIn('relationship_with_head', $relationshipSlot)
+                ->whereKeyNot($person->getKey())
+                ->exists();
+
+        if ($activeConflict || $restoringConflict) {
+            $label = $relationshipSlot[0] === 'Vợ' ? 'vợ hoặc chồng' : 'cha hoặc mẹ';
+            throw ValidationException::withMessages([
+                'trash' => ["Phiếu đã có {$label}; hãy xử lý thành viên hiện tại trước khi khôi phục."],
             ]);
         }
     }

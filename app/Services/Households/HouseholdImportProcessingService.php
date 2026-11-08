@@ -306,7 +306,31 @@ class HouseholdImportProcessingService
                         $errors->add($record['row'], "Phiếu '{$householdCode}' có nhiều chủ hộ. Vui lòng kiểm tra các dòng được đánh dấu.");
                     }
                 }
-            } elseif ($headCount === 1) {
+            }
+
+            foreach ([
+                [['Vợ', 'Chồng'], 'vợ hoặc chồng'],
+                [['Cha', 'Mẹ'], 'cha hoặc mẹ'],
+            ] as [$relationshipSet, $label]) {
+                $matchingRecords = array_values(array_filter(
+                    $records,
+                    fn (array $record): bool => in_array(
+                        $this->normalize((string) $record['relationship_with_head']),
+                        array_map(fn (string $relationship): string => $this->normalize($relationship), $relationshipSet),
+                        true,
+                    ),
+                ));
+                if (count($matchingRecords) > 1) {
+                    foreach ($matchingRecords as $record) {
+                        $errors->add(
+                            $record['row'],
+                            "Phiếu '{$householdCode}' chỉ được có một người là {$label}.",
+                        );
+                    }
+                }
+            }
+
+            if ($headCount === 1) {
                 foreach ($records as $record) {
                     if ($record['row'] === $headRecord['row'] || $record['dob']['date'] === null) {
                         continue;

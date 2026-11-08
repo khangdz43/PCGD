@@ -16,6 +16,7 @@ use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class HouseholdPersonService
 {
@@ -141,7 +142,12 @@ class HouseholdPersonService
         [$personData, $educationData, $disabilityData] = $this->splitFormData($data);
 
         return DB::transaction(function () use ($household, $personData, $educationData, $disabilityData): Person {
+            $this->lockHouseholdForPersonChanges($household);
             $this->lockOpenVillages([$household->village_code]);
+            $this->assertRelationshipSlotAvailable(
+                $household,
+                (string) ($personData['relationship_with_head'] ?? ''),
+            );
             $person = $household->persons()->create($personData);
             if ($person->relationship_with_head === 'Chủ hộ') {
                 $household->update([
@@ -167,6 +173,7 @@ class HouseholdPersonService
         if ($isHouseholdHead) {
             $personData['relationship_with_head'] = 'Chủ hộ';
             DB::transaction(function () use ($person, $household, $personData, $education, $educationData, $disabilityData): void {
+                $this->lockHouseholdForPersonChanges($household);
                 $this->lockOpenVillages([$household->village_code]);
                 $person->update($personData);
                 $household->update([
@@ -180,7 +187,12 @@ class HouseholdPersonService
         }
 
         DB::transaction(function () use ($person, $household, $education, $personData, $educationData, $disabilityData): void {
+            $this->lockHouseholdForPersonChanges($household);
             $this->lockOpenVillages([$household->village_code]);
+            $newRelationship = (string) ($personData['relationship_with_head'] ?? '');
+            if ($this->relationshipSlot($newRelationship) !== $this->relationshipSlot((string) $person->relationship_with_head)) {
+                $this->assertRelationshipSlotAvailable($household, $newRelationship, $person);
+            }
             $person->update($personData);
             $this->saveEducationAndDisability($person, $education, $educationData, $disabilityData);
         });
@@ -259,6 +271,46 @@ class HouseholdPersonService
 
         foreach ($villageCodes as $villageCode) {
             $this->villageService()->assertAcceptsHouseholds($villageCode, true);
+        }
+    }
+
+    private function lockHouseholdForPersonChanges(Household $household): void
+    {
+        $household->newQuery()
+            ->whereKey($household->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    private function relationshipSlot(string $relationship): ?array
+    {
+        return match ($relationship) {
+            'Vợ', 'Chồng' => ['Vợ', 'Chồng'],
+            'Cha', 'Mẹ' => ['Cha', 'Mẹ'],
+            default => null,
+        };
+    }
+
+    private function assertRelationshipSlotAvailable(
+        Household $household,
+        string $relationship,
+        ?Person $person = null,
+    ): void {
+        $slot = $this->relationshipSlot($relationship);
+        if ($slot === null) {
+            return;
+        }
+
+        $query = $household->persons()->whereIn('relationship_with_head', $slot);
+        if ($person !== null) {
+            $query->whereKeyNot($person->getKey());
+        }
+
+        if ($query->exists()) {
+            $label = $slot[0] === 'Vợ' ? 'vợ hoặc chồng' : 'cha hoặc mẹ';
+            throw ValidationException::withMessages([
+                'relationship_with_head' => ["Phiếu đã có {$label}; mỗi phiếu chỉ được có một người thuộc nhóm này."],
+            ]);
         }
     }
 

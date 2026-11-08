@@ -543,6 +543,21 @@ class HouseholdCrudFlowTest extends TestCase
             ->assertJsonPath('error.details.0.field', 'education.graduation_year');
     }
 
+    public function test_person_education_validation_uses_vietnamese_field_names(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);
+        $household = $this->createHousehold();
+        $this->createPerson($household, ['relationship_with_head' => 'Chủ hộ']);
+        $payload = $this->personPayload('Con');
+        $payload['education']['school_year'] = 'năm không tồn tại';
+
+        $this->actingAs($user)
+            ->postJson(route('api.households.persons.store', $household), $payload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'education.school_year')
+            ->assertJsonPath('error.details.0.issue', 'năm học đã chọn không hợp lệ.');
+    }
+
     public function test_education_year_fields_accept_the_current_year_range_with_next_year(): void
     {
         $user = $this->userWithPermissions([AccessPermission::CREATE_HOUSEHOLDS]);

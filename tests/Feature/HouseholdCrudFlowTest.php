@@ -9,6 +9,7 @@ use App\Models\Permission;
 use App\Models\Person;
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Village;
 use App\Services\Households\HouseholdImportErrorCollector;
 use App\Services\Households\HouseholdImportHistoryService;
 use App\Services\Households\HouseholdImportProcessingService;
@@ -1629,13 +1630,14 @@ class HouseholdCrudFlowTest extends TestCase
             'target_code' => 'V01',
         ])
             ->assertOk()
-            ->assertJsonPath('message', 'Đã gộp 1 thôn nguồn vào thôn đích và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
+            ->assertJsonPath('message', 'Đã gộp 1 thôn nguồn vào thôn đích, xóa thôn nguồn và chuyển 2 hộ cùng toàn bộ nhân khẩu.');
 
         $this->assertDatabaseHas('villages', ['code' => 'V01']);
-        $this->assertDatabaseHas('villages', [
-            'code' => 'V03',
-            'merged_into_code' => 'V01',
-        ]);
+        $this->assertDatabaseMissing('villages', ['code' => 'V03']);
+        $mergeHistory = DB::table('village_merge_histories')->first();
+        self::assertNotNull($mergeHistory);
+        self::assertSame(['V03'], json_decode($mergeHistory->source_codes, true));
+        self::assertSame('V01', $mergeHistory->target_code);
         $this->assertDatabaseHas('households', [
             'id' => $activeHousehold->id,
             'village_code' => 'V01',
@@ -1708,6 +1710,7 @@ class HouseholdCrudFlowTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        self::assertSame('paused', Village::query()->findOrFail('V03')->operational_status);
         $user = $this->userWithPermissions([AccessPermission::DELETE_VILLAGES]);
 
         $this->actingAs($user)

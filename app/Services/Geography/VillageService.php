@@ -226,11 +226,7 @@ class VillageService
             DB::table('user_villages')->whereIn('village_code', $sourceCodes)->delete();
             Village::query()
                 ->whereIn('code', $sourceCodes)
-                ->update([
-                    'merged_into_code' => $target->code,
-                    'merged_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                ->delete();
 
             return $householdCount;
         });

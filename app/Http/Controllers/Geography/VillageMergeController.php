@@ -32,7 +32,7 @@ class VillageMergeController extends Controller
 
         return response()->json([
             'message' => sprintf(
-                'Đã gộp %d thôn nguồn vào thôn đích và chuyển %s hộ cùng toàn bộ nhân khẩu.',
+                'Đã gộp %d thôn nguồn vào thôn đích, xóa thôn nguồn và chuyển %s hộ cùng toàn bộ nhân khẩu.',
                 count($data['source_codes']),
                 number_format($householdCount, 0, ',', '.')
             ),

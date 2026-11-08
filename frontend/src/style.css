@@ -8021,17 +8021,6 @@ button {
     color: #b42335;
 }
 
-.school-merge-feedback.is-success {
-    border-color: #b6e3c6;
-    background: #f0faf3;
-    color: #207345;
-}
-
-.school-merge-feedback.is-success>span {
-    background: #d7f2df;
-    color: #207345;
-}
-
 .school-merge-view>.section-heading {
     margin: 0;
 }

@@ -330,10 +330,6 @@ onUnmounted(() => {
             <span aria-hidden="true">!</span>
             <p>{{ error }}</p>
         </div>
-        <div v-if="successMessage" class="school-merge-feedback is-success" role="status">
-            <span aria-hidden="true">✓</span>
-            <p>{{ successMessage }}</p>
-        </div>
 
         <div class="merge-constraint-note" role="note">
             <span class="merge-constraint-icon" aria-hidden="true">!</span>
@@ -491,6 +487,33 @@ onUnmounted(() => {
                     <button class="secondary-button" type="button" :disabled="saving" @click="confirmMerge = false">Hủy</button>
                     <button class="primary-button" type="button" :disabled="saving" @click="submitMerge">
                         {{ saving ? 'Đang gộp…' : 'Xác nhận gộp' }}
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <div
+            v-if="successMessage"
+            class="workspace-modal-backdrop account-creation-result-backdrop"
+            role="presentation"
+            @click.self="successMessage = ''"
+            @keydown.esc="successMessage = ''"
+        >
+            <section
+                class="confirm-dialog account-creation-result-dialog account-creation-success-dialog"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="school-merge-result-title"
+                aria-describedby="school-merge-result-message"
+                tabindex="-1"
+            >
+                <span class="confirm-dialog-icon account-creation-result-icon account-creation-success-icon" aria-hidden="true">✓</span>
+                <p class="account-creation-result-eyebrow">HOÀN TẤT</p>
+                <h3 id="school-merge-result-title">Gộp trường thành công</h3>
+                <p id="school-merge-result-message">{{ successMessage }}</p>
+                <div class="confirm-dialog-actions">
+                    <button class="primary-button management-tool-button" type="button" autofocus @click="successMessage = ''">
+                        Đóng
                     </button>
                 </div>
             </section>

@@ -11405,8 +11405,13 @@ onMounted(async () => {
                                         v-if="canDelete"
                                         class="role-icon-button role-delete-button"
                                         type="button"
+                                        :disabled="row.operational_status === 'active'"
                                         :aria-label="`Xóa thôn / xóm ${row.name}`"
-                                        title="Xóa"
+                                        :title="
+                                            row.operational_status === 'active'
+                                                ? 'Không thể xóa thôn đang hoạt động. Hãy chuyển sang không hoạt động trước.'
+                                                : 'Xóa'
+                                        "
                                         @click="remove(row)"
                                     >
                                         <svg
@@ -11445,8 +11450,13 @@ onMounted(async () => {
                                         v-if="canDelete"
                                         class="role-icon-button role-delete-button"
                                         type="button"
+                                        :disabled="Boolean(row.is_active)"
                                         :aria-label="`Xóa trường ${row.name}`"
-                                        title="Xóa"
+                                        :title="
+                                            row.is_active
+                                                ? 'Không thể xóa trường đang hoạt động. Hãy chuyển sang không hoạt động trước.'
+                                                : 'Xóa'
+                                        "
                                         @click="remove(row)"
                                     >
                                         <svg

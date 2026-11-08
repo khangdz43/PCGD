@@ -1413,7 +1413,7 @@ h2 {
 .village-merge-configuration-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
-    width: min(100%, 1120px);
+    width: min(100%, 1480px);
     margin: -20px auto 24px;
     padding: 20px;
     border-color: #e2e8f0;
@@ -1458,7 +1458,7 @@ h2 {
 
 .merge-selection-card.village-merge-source-card {
     display: flex;
-    height: clamp(460px, calc(100dvh - 248px), 520px);
+    height: clamp(440px, calc(100dvh - 260px), 520px);
     flex-direction: column;
 }
 
@@ -1502,9 +1502,8 @@ h2 {
 
 .village-merge-source-list {
     display: grid;
-    max-height: 250px;
-    min-height: 0;
-    flex: 1 1 250px;
+    min-height: 180px;
+    flex: 1 1 0;
     grid-template-columns: minmax(0, 1fr);
     align-content: start;
     gap: 7px;
@@ -1515,7 +1514,7 @@ h2 {
 
 .village-merge-source-footer {
     display: grid;
-    min-height: 104px;
+    min-height: 0;
     flex: 0 0 auto;
     align-content: start;
     gap: 8px;
@@ -1568,6 +1567,28 @@ h2 {
     color: #71819a;
     font-size: .82rem;
     line-height: 1.6;
+}
+
+.village-merge-guide {
+    display: grid;
+    gap: 12px;
+    margin: 2px 0 0;
+    padding: 16px 16px 16px 38px;
+    border: 1px solid #e3eaf4;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #526178;
+    font-size: .84rem;
+    line-height: 1.5;
+}
+
+.village-merge-guide li::marker {
+    color: #2563eb;
+    font-weight: 750;
+}
+
+.village-merge-guide strong {
+    color: #24324a;
 }
 
 .village-merge-configuration-form .workspace-form-heading h3 {

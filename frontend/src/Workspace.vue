@@ -8655,6 +8655,16 @@ onMounted(async () => {
                             Thôn đích phải đang nhận phiếu. Toàn bộ phiếu từ
                             thôn nguồn sẽ được chuyển sang địa bàn này.
                         </p>
+                        <ol class="village-merge-guide">
+                            <li>Chọn một hoặc nhiều thôn nguồn cần gộp.</li>
+                            <li>
+                                Tạm dừng nhận phiếu ở tất cả thôn nguồn đã chọn.
+                            </li>
+                            <li>
+                                Nhấn <strong>Gộp thôn</strong> để chuyển phiếu
+                                sang thôn đích.
+                            </li>
+                        </ol>
                     </section>
                     <section
                         class="merge-selection-card village-merge-card village-merge-source-card"

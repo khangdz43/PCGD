@@ -4164,7 +4164,8 @@ h2 {
 }
 
 .household-edit-members-table input,
-.household-edit-members-table select {
+.household-edit-members-table select,
+.household-edit-members-table .household-date-picker-trigger {
     width: 100%;
     min-width: 0;
     max-width: 100%;
@@ -4181,7 +4182,9 @@ h2 {
 .household-edit-members-table input:hover,
 .household-edit-members-table input:focus,
 .household-edit-members-table select:hover,
-.household-edit-members-table select:focus {
+.household-edit-members-table select:focus,
+.household-edit-members-table .household-date-picker-trigger:hover,
+.household-edit-members-table .household-date-picker-trigger:focus-visible {
     border-color: #aebed3;
     outline: none;
     background: #fff;
@@ -5733,7 +5736,8 @@ h2 {
 }
 
 .workspace-field input,
-.workspace-field select {
+.workspace-field select,
+.workspace-field .household-date-picker-trigger {
     min-height: 40px;
     width: 100%;
     padding: 7px 10px;
@@ -5743,6 +5747,163 @@ h2 {
     color: #172033;
     font: inherit;
     font-weight: 400;
+}
+
+.household-date-picker-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 40px;
+    padding: 7px 10px;
+    border: 1px solid #d6dfeb;
+    border-radius: 8px;
+    background: #fff;
+    color: #172033;
+    font: inherit;
+    font-weight: 400;
+    text-align: left;
+    cursor: pointer;
+}
+
+.household-date-picker-trigger span {
+    flex: none;
+    color: #64748b;
+}
+
+.household-edit-members-table .household-date-picker-trigger {
+    min-height: 28px;
+    padding: 3px 5px;
+    border-color: transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: #34445c;
+    font-size: .72rem;
+}
+
+.household-date-picker-trigger[aria-invalid="true"] {
+    border-color: #dc2626;
+}
+
+.household-date-picker-backdrop {
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    background: transparent;
+}
+
+.household-date-picker {
+    position: fixed;
+    z-index: 1;
+    width: 300px;
+    padding: 12px;
+    border: 1px solid #dbe3ee;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 16px 40px rgb(15 23 42 / 20%);
+    color: #26364d;
+}
+
+.household-date-picker-heading {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) 76px 32px;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.household-date-picker-heading select,
+.household-date-picker-month-button,
+.household-date-picker-close,
+.household-date-picker-today {
+    min-height: 32px;
+    border: 1px solid #dbe3ee;
+    border-radius: 7px;
+    background: #fff;
+    color: #26364d;
+    font: inherit;
+}
+
+.household-date-picker-heading select {
+    min-width: 0;
+    padding: 4px 5px;
+}
+
+.household-date-picker-month-button {
+    font-size: 1.15rem;
+    cursor: pointer;
+}
+
+.household-date-picker-month-button:disabled {
+    opacity: .4;
+    cursor: default;
+}
+
+.household-date-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 3px;
+}
+
+.household-date-picker-weekday,
+.household-date-picker-empty,
+.household-date-picker-day {
+    display: grid;
+    min-height: 32px;
+    place-items: center;
+}
+
+.household-date-picker-weekday {
+    color: #64748b;
+    font-size: .75rem;
+    font-weight: 700;
+}
+
+.household-date-picker-day {
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: #26364d;
+    font: inherit;
+    cursor: pointer;
+}
+
+.household-date-picker-day:hover:not(:disabled) {
+    background: #eff6ff;
+}
+
+.household-date-picker-day.is-selected {
+    background: #2563eb;
+    color: #fff;
+}
+
+.household-date-picker-day:disabled {
+    color: #c1c9d4;
+    cursor: default;
+}
+
+.household-date-picker-footer {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.household-date-picker-close,
+.household-date-picker-today {
+    padding: 4px 10px;
+    cursor: pointer;
+}
+
+.household-date-picker-today {
+    color: #2563eb;
+}
+
+.household-date-picker-today:disabled {
+    opacity: .45;
+    cursor: default;
 }
 
 .education-year-control {

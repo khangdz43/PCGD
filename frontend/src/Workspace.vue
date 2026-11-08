@@ -448,7 +448,7 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
             field === "education.school_year"
                 ? educationForm.value.school_year
                 : field === "dob"
-                  ? memberForm.value.dob_display
+                  ? memberForm.value.dob
                 : memberForm.value[field];
         if (!String(value ?? "").trim()) errors[field] = message;
     }
@@ -472,16 +472,18 @@ const memberClientValidationErrors = computed<Record<string, string>>(() => {
             "Số điện thoại chỉ gồm chữ số và có thể bắt đầu bằng dấu +, ví dụ +84912345678.";
     }
 
-    const dateOfBirth = parseDateInput(memberForm.value.dob_display);
-    if (memberForm.value.dob_display && !dateOfBirth) {
-        errors.dob = "Ngày sinh phải theo định dạng ngày/tháng/năm (dd/mm/yyyy).";
-    }
-
+    const dateOfBirth = String(memberForm.value.dob ?? "");
     const today = new Date();
     const todayString = `${today.getFullYear()}-${String(
         today.getMonth() + 1,
     ).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    if (dateOfBirth && dateOfBirth > todayString) {
+    if (
+        dateOfBirth &&
+        (!/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth) ||
+            Number.isNaN(Date.parse(`${dateOfBirth}T00:00:00`)))
+    ) {
+        errors.dob = "Ngày sinh không hợp lệ.";
+    } else if (dateOfBirth && dateOfBirth > todayString) {
         errors.dob = "Ngày sinh không được lớn hơn ngày hiện tại.";
     }
 
@@ -574,6 +576,44 @@ const memberSchoolYearOptions = Array.from(
         return `${year}-${year + 1}`;
     },
 );
+type HouseholdDatePickerTarget =
+    | { kind: "member" }
+    | { kind: "inline"; person: Row };
+type HouseholdDatePickerState = {
+    target: HouseholdDatePickerTarget;
+    year: number;
+    month: number;
+    left: number;
+    top: number;
+};
+const householdDatePicker = ref<HouseholdDatePickerState | null>(null);
+const householdDatePickerWeekdays = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+const householdDatePickerMonths = Array.from({ length: 12 }, (_, month) =>
+    new Intl.DateTimeFormat("vi-VN", {
+        month: "long",
+        timeZone: "UTC",
+    }).format(new Date(Date.UTC(2020, month, 1))),
+);
+const householdDatePickerYears = computed(() =>
+    Array.from(
+        { length: new Date().getFullYear() - 1899 },
+        (_, index) => new Date().getFullYear() - index,
+    ),
+);
+const householdDatePickerDays = computed(() => {
+    const picker = householdDatePicker.value;
+    if (!picker) return [];
+
+    const firstWeekday =
+        (new Date(Date.UTC(picker.year, picker.month, 1)).getUTCDay() + 6) % 7;
+    const daysInMonth = new Date(
+        Date.UTC(picker.year, picker.month + 1, 0),
+    ).getUTCDate();
+    return [
+        ...Array.from({ length: firstWeekday }, () => null),
+        ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+    ];
+});
 const memberRelationships = [
     "Vợ",
     "Chồng",
@@ -2091,32 +2131,86 @@ function displayDate(value: unknown): string {
     return date.length === 3 ? `${date[2]}/${date[1]}/${date[0]}` : value;
 }
 
-function dateInputValue(value: unknown): string {
-    const date = String(value ?? "").trim();
-    const isoDate = date.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
-    return /^\d{2}\/\d{2}\/\d{4}$/.test(date) ? date : "";
+function datePickerDisplayValue(value: unknown): string {
+    const date = String(value ?? "").slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
+    const [year, month, day] = date.split("-");
+    return `${day}/${month}/${year}`;
 }
 
-function parseDateInput(value: unknown): string | null {
-    const match = String(value ?? "")
-        .trim()
-        .match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-    if (!match) return null;
+function openHouseholdDatePicker(
+    event: MouseEvent,
+    target: HouseholdDatePickerTarget,
+): void {
+    const trigger = event.currentTarget;
+    if (!(trigger instanceof HTMLElement)) return;
 
-    const day = Number(match[1]);
-    const month = Number(match[2]);
-    const year = Number(match[3]);
-    const date = new Date(Date.UTC(year, month - 1, day));
-    if (
-        date.getUTCFullYear() !== year ||
-        date.getUTCMonth() !== month - 1 ||
-        date.getUTCDate() !== day
-    ) {
-        return null;
+    const value =
+        target.kind === "member"
+            ? String(memberForm.value.dob ?? "")
+            : String(target.person.dob ?? "");
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const now = new Date();
+    const year = match ? Number(match[1]) : now.getFullYear();
+    const month = match ? Number(match[2]) - 1 : now.getMonth();
+    const bounds = trigger.getBoundingClientRect();
+    const width = 300;
+    const height = 350;
+
+    householdDatePicker.value = {
+        target,
+        year,
+        month,
+        left: Math.max(8, Math.min(bounds.left, window.innerWidth - width - 8)),
+        top: Math.max(
+            8,
+            Math.min(bounds.bottom + 4, window.innerHeight - height - 8),
+        ),
+    };
+}
+
+function closeHouseholdDatePicker(): void {
+    householdDatePicker.value = null;
+}
+
+function householdDatePickerValue(): string {
+    const picker = householdDatePicker.value;
+    if (!picker) return "";
+    return picker.target.kind === "member"
+        ? String(memberForm.value.dob ?? "")
+        : String(picker.target.person.dob ?? "");
+}
+
+function isHouseholdDatePickerDayFuture(day: number): boolean {
+    const picker = householdDatePicker.value;
+    if (!picker) return true;
+
+    const candidate = `${picker.year}-${String(picker.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    return candidate > today;
+}
+
+function shiftHouseholdDatePickerMonth(amount: number): void {
+    const picker = householdDatePicker.value;
+    if (!picker) return;
+
+    const date = new Date(Date.UTC(picker.year, picker.month + amount, 1));
+    picker.year = date.getUTCFullYear();
+    picker.month = date.getUTCMonth();
+}
+
+function selectHouseholdDate(day: number): void {
+    const picker = householdDatePicker.value;
+    if (!picker) return;
+
+    const date = `${picker.year}-${String(picker.month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (picker.target.kind === "member") {
+        memberForm.value.dob = date;
+    } else {
+        picker.target.person.dob = date;
     }
-
-    return `${match[3]}-${match[2]}-${match[1]}`;
+    closeHouseholdDatePicker();
 }
 
 function relationshipSlotError(
@@ -4187,7 +4281,6 @@ async function beginMember(
             first_name: "",
             last_name: "",
             dob: "",
-            dob_display: "",
             gender: "NAM",
             ethnicity_code: "",
             relationship_with_head: isHead ? "Chủ hộ" : "",
@@ -4228,7 +4321,6 @@ async function beginMember(
         first_name: "",
         last_name: "",
         dob: "",
-        dob_display: "",
         gender: "NAM",
         ethnicity_code: "",
         relationship_with_head: isHead ? "Chủ hộ" : "",
@@ -4303,7 +4395,6 @@ async function beginMember(
             )
                 memberForm.value[key] = String(value);
         }
-        memberForm.value.dob_display = dateInputValue(person.dob);
         if (memberId.value === null && memberIsHead.value) {
             memberForm.value.relationship_with_head = "Chủ hộ";
         }
@@ -4367,22 +4458,6 @@ async function beginMember(
     }
 }
 
-function updateMemberDateInput(event: Event): void {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement)) return;
-
-    memberForm.value.dob_display = input.value;
-    memberForm.value.dob = parseDateInput(input.value) ?? "";
-}
-
-function updateInlineMemberDateInput(person: Row, event: Event): void {
-    const input = event.target;
-    if (!(input instanceof HTMLInputElement)) return;
-
-    person.dob_display = input.value;
-    person.dob = parseDateInput(input.value) ?? "";
-}
-
 function sanitizeMemberPhone(event: Event): void {
     const input = event.target;
     if (!(input instanceof HTMLInputElement)) return;
@@ -4421,14 +4496,8 @@ async function saveMember(): Promise<void> {
     const selectedSchool = personSchools.value.find(
         (school) => String(school.code) === educationForm.value.school_code,
     );
-    const memberFields = Object.fromEntries(
-        Object.entries(memberForm.value).filter(
-            ([field]) => field !== "dob_display",
-        ),
-    );
     const body: Row = {
-        ...memberFields,
-        dob: parseDateInput(memberForm.value.dob_display) ?? "",
+        ...memberForm.value,
         is_head: memberIsHead.value,
         education: {
             ...educationForm.value,
@@ -4562,7 +4631,6 @@ function normalizeInlineHouseholdPersons(persons: Row[]): Row[] {
         return {
             ...person,
             dob: normalizeInlineDate(person.dob),
-            dob_display: dateInputValue(person.dob),
             religion: person.religion ?? "",
             priority_type: person.priority_type ?? "",
             relationship_with_head: person.relationship_with_head ?? "",
@@ -4653,7 +4721,6 @@ function ensureLegacyHouseholdHead(
             first_name: firstName,
             relationship_with_head: "Chủ hộ",
             dob: "",
-            dob_display: "",
             gender: "",
             ethnicity_code: "",
             religion: "",
@@ -4697,7 +4764,6 @@ function inlineHouseholdPersonSnapshot(person: Row): string {
         first_name: person.first_name ?? "",
         last_name: person.last_name ?? "",
         dob: person.dob ?? "",
-        dob_display: person.dob_display ?? dateInputValue(person.dob),
         gender: person.gender ?? "",
         ethnicity_code: person.ethnicity_code ?? "",
         relationship_with_head: person.relationship_with_head ?? "",
@@ -4862,7 +4928,7 @@ function inlineMemberValidationError(person: Row): string {
         ["Họ và tên đệm", person.last_name],
         ["Tên", person.first_name],
         ["Quan hệ", person.relationship_with_head],
-        ["Ngày sinh", person.dob_display],
+        ["Ngày sinh", person.dob],
         ["Giới tính", person.gender],
         ["Dân tộc", person.ethnicity_code],
         ["Năm học", education.school_year],
@@ -4907,11 +4973,14 @@ function inlineMemberValidationError(person: Row): string {
         return "Quan hệ với chủ hộ không được vượt quá 100 ký tự.";
     }
 
-    const dob = parseDateInput(person.dob_display);
+    const dob = value("dob");
     const today = new Date();
     const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-    if (!dob) {
-        return "Ngày sinh phải theo định dạng ngày/tháng/năm (dd/mm/yyyy).";
+    if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(dob) ||
+        Number.isNaN(Date.parse(`${dob}T00:00:00`))
+    ) {
+        return "Ngày sinh không hợp lệ.";
     }
     if (dob > todayString) return "Ngày sinh không được lớn hơn ngày hiện tại.";
     if (!["NAM", "NU"].includes(value("gender"))) {
@@ -5043,7 +5112,6 @@ async function addInlineHouseholdMember(): Promise<void> {
         first_name: "",
         relationship_with_head: "Con",
         dob: "",
-        dob_display: "",
         gender: "NAM",
         ethnicity_code: "",
         religion: "",
@@ -5172,7 +5240,7 @@ async function saveInlineHouseholdMember(
         const body = {
             first_name: String(person.first_name ?? ""),
             last_name: String(person.last_name ?? ""),
-            dob: parseDateInput(person.dob_display) ?? "",
+            dob: String(person.dob ?? ""),
             gender: String(person.gender ?? ""),
             ethnicity_code: ethnicityCode,
             relationship_with_head: String(person.relationship_with_head ?? ""),
@@ -8857,21 +8925,28 @@ onMounted(async () => {
                                             </select>
                                         </td>
                                         <td>
-                                            <input
-                                                v-model="person.dob_display"
-                                                @input="
-                                                    updateInlineMemberDateInput(
-                                                        person,
+                                            <button
+                                                class="household-date-picker-trigger"
+                                                type="button"
+                                                :name="`members[${index}][dob]`"
+                                                aria-label="Chọn ngày sinh"
+                                                @click="
+                                                    openHouseholdDatePicker(
                                                         $event,
+                                                        {
+                                                            kind: 'inline',
+                                                            person,
+                                                        },
                                                     )
                                                 "
-                                                :name="`members[${index}][dob]`"
-                                                type="text"
-                                                inputmode="numeric"
-                                                placeholder="dd/mm/yyyy"
-                                                maxlength="10"
-                                                aria-label="Ngày sinh"
-                                            />
+                                            >
+                                                {{
+                                                    datePickerDisplayValue(
+                                                        person.dob,
+                                                    ) || "dd/mm/yyyy"
+                                                }}
+                                                <span aria-hidden="true">▦</span>
+                                            </button>
                                         </td>
                                         <td>
                                             <select
@@ -13060,21 +13135,29 @@ onMounted(async () => {
                             </label>
                             <label class="workspace-field">
                                 <span>Ngày sinh</span>
-                                <input
-                                    v-model="memberForm.dob_display"
-                                    @input="updateMemberDateInput"
-                                    type="text"
-                                    inputmode="numeric"
-                                    placeholder="dd/mm/yyyy"
-                                    maxlength="10"
-                                    required
+                                <button
+                                    class="household-date-picker-trigger"
+                                    type="button"
+                                    aria-label="Chọn ngày sinh"
+                                    aria-required="true"
                                     :aria-invalid="
                                         Boolean(
                                             memberClientValidationErrors.dob ||
                                             memberFormErrors.dob,
                                         )
                                     "
-                                />
+                                    @click="
+                                        openHouseholdDatePicker($event, {
+                                            kind: 'member',
+                                        })
+                                    "
+                                >
+                                    {{
+                                        datePickerDisplayValue(memberForm.dob) ||
+                                        "dd/mm/yyyy"
+                                    }}
+                                    <span aria-hidden="true">▦</span>
+                                </button>
                                 <small
                                     class="field-error household-member-required-error"
                                     role="alert"
@@ -14976,6 +15059,125 @@ onMounted(async () => {
                     Đóng
                 </button>
             </div>
+        </section>
+    </div>
+    <div
+        v-if="householdDatePicker"
+        class="household-date-picker-backdrop"
+        @click.self="closeHouseholdDatePicker"
+        @keydown.esc="closeHouseholdDatePicker"
+    >
+        <section
+            class="household-date-picker"
+            :style="{
+                left: `${householdDatePicker.left}px`,
+                top: `${householdDatePicker.top}px`,
+            }"
+            role="dialog"
+            aria-label="Chọn ngày sinh"
+        >
+            <header class="household-date-picker-heading">
+                <button
+                    class="household-date-picker-month-button"
+                    type="button"
+                    aria-label="Tháng trước"
+                    :disabled="
+                        householdDatePicker.year === 1900 &&
+                        householdDatePicker.month === 0
+                    "
+                    @click="shiftHouseholdDatePickerMonth(-1)"
+                >
+                    ‹
+                </button>
+                <select
+                    v-model.number="householdDatePicker.month"
+                    aria-label="Tháng"
+                >
+                    <option
+                        v-for="(month, index) in householdDatePickerMonths"
+                        :key="month"
+                        :value="index"
+                    >
+                        {{ month }}
+                    </option>
+                </select>
+                <select
+                    v-model.number="householdDatePicker.year"
+                    aria-label="Năm"
+                >
+                    <option
+                        v-for="year in householdDatePickerYears"
+                        :key="year"
+                        :value="year"
+                    >
+                        {{ year }}
+                    </option>
+                </select>
+                <button
+                    class="household-date-picker-month-button"
+                    type="button"
+                    aria-label="Tháng sau"
+                    :disabled="
+                        householdDatePicker.year === new Date().getFullYear() &&
+                        householdDatePicker.month === new Date().getMonth()
+                    "
+                    @click="shiftHouseholdDatePickerMonth(1)"
+                >
+                    ›
+                </button>
+            </header>
+            <div class="household-date-picker-grid">
+                <span
+                    v-for="weekday in householdDatePickerWeekdays"
+                    :key="weekday"
+                    class="household-date-picker-weekday"
+                >
+                    {{ weekday }}
+                </span>
+                <template
+                    v-for="(day, index) in householdDatePickerDays"
+                    :key="`date-day-${index}`"
+                >
+                    <span
+                        v-if="day === null"
+                        class="household-date-picker-empty"
+                    />
+                    <button
+                        v-else
+                        class="household-date-picker-day"
+                        :class="{
+                            'is-selected':
+                                householdDatePickerValue() ===
+                                `${householdDatePicker.year}-${String(householdDatePicker.month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+                        }"
+                        type="button"
+                        :disabled="isHouseholdDatePickerDayFuture(day)"
+                        @click="selectHouseholdDate(day)"
+                    >
+                        {{ day }}
+                    </button>
+                </template>
+            </div>
+            <footer class="household-date-picker-footer">
+                <button
+                    class="household-date-picker-today"
+                    type="button"
+                    @click="selectHouseholdDate(new Date().getDate())"
+                    :disabled="
+                        householdDatePicker.year !== new Date().getFullYear() ||
+                        householdDatePicker.month !== new Date().getMonth()
+                    "
+                >
+                    Hôm nay
+                </button>
+                <button
+                    class="household-date-picker-close"
+                    type="button"
+                    @click="closeHouseholdDatePicker"
+                >
+                    Đóng
+                </button>
+            </footer>
         </section>
     </div>
 </template>

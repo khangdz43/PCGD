@@ -1588,6 +1588,47 @@ class HouseholdCrudFlowTest extends TestCase
             ->postJson('/api/v1/school-merges', [])
             ->assertForbidden();
     }
+// test admin có được merge thôn trường k
+    public function test_global_system_admin_session_omits_school_and_merge_permissions(): void
+    {
+        $user = User::factory()->create([
+            'scope_level' => 'global',
+            'is_active' => true,
+        ]);
+        $systemAdminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $systemAdminRole->permissions()->sync([
+            Permission::firstOrCreate([
+                'name' => AccessPermission::MANAGE_SCHOOLS,
+                'guard_name' => 'web',
+            ])->id,
+            Permission::firstOrCreate([
+                'name' => AccessPermission::MANAGE_VILLAGES,
+                'guard_name' => 'web',
+            ])->id,
+        ]);
+        $user->roles()->attach($systemAdminRole);
+
+        $permissions = $this->actingAs($user)
+            ->getJson('/api/v1/session')
+            ->assertOk()
+            ->json('data.user.permissions');
+
+        $this->assertContains(AccessPermission::MANAGE_VILLAGES, $permissions);
+        foreach ([
+            AccessPermission::MANAGE_SCHOOLS,
+            AccessPermission::VIEW_SCHOOLS,
+            AccessPermission::CREATE_SCHOOLS,
+            AccessPermission::UPDATE_SCHOOLS,
+            AccessPermission::DELETE_SCHOOLS,
+            ...AccessPermission::mergePermissions(),
+        ] as $permission) {
+            $this->assertNotContains($permission, $permissions);
+        }
+    }
 
     public function test_commune_manager_can_merge_villages_and_preserve_households_and_assigned_village_access(): void
     {

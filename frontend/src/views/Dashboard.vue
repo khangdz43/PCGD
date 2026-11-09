@@ -28,6 +28,22 @@ type SystemOverview = {
     };
     provinces: { code: string; name: string; households: number }[];
 };
+type TerritorialOverview = {
+    scope_level: 'province' | 'commune';
+    scope_area: string;
+    school_year: string;
+    school_years: string[];
+    totals: {
+        communes: number;
+        villages: number;
+        schools: number;
+        active_users: number;
+        households: number;
+        persons: number;
+    };
+    education_summary: SystemOverview['education_summary'];
+    units: { code: string; name: string; households: number }[];
+};
 type OrganizationUnit = {
     code: string;
     name: string;
@@ -45,12 +61,21 @@ type OrganizationUnitResponse = {
     account_count?: number;
 };
 
-const isCentralAdmin = computed(() => props.user.role_name === 'system-admin');
+const isCentralAdmin = computed(() =>
+    props.user.role_name
+        ?.split(',')
+        .some(roleName => roleName.trim() === 'system-admin') ?? false,
+);
+const isTerritorialAdmin = computed(() =>
+    !isCentralAdmin.value &&
+    ['province', 'commune'].includes(props.user.scope_level ?? ''),
+);
 const canViewOrganizationTree = computed(() =>
     isCentralAdmin.value &&
     props.user.permissions?.includes('view-organization-accounts'),
 );
 const systemOverview = ref<SystemOverview | null>(null);
+const territorialOverview = ref<TerritorialOverview | null>(null);
 const organizationUnits = ref<OrganizationUnit[]>([]);
 const organizationTreeLoading = ref(false);
 const organizationTreeError = ref('');
@@ -90,6 +115,28 @@ async function loadOverview(schoolYear?: string): Promise<void> {
         if (requestId !== overviewRequestId) return;
         const overview = apiData<SystemOverview>(response.data);
         systemOverview.value = overview;
+        selectedSchoolYear.value = overview.school_year;
+    } catch (cause) {
+        if (requestId === overviewRequestId)
+            overviewError.value = errorMessage(cause);
+    } finally {
+        if (requestId === overviewRequestId) overviewBusy.value = false;
+    }
+}
+
+async function loadTerritorialOverview(schoolYear?: string): Promise<void> {
+    if (!isTerritorialAdmin.value) return;
+
+    const requestId = ++overviewRequestId;
+    overviewBusy.value = true;
+    overviewError.value = '';
+    try {
+        const response = await api.get<unknown>('/dashboard/overview', {
+            params: schoolYear ? { school_year: schoolYear } : undefined,
+        });
+        if (requestId !== overviewRequestId) return;
+        const overview = apiData<TerritorialOverview>(response.data);
+        territorialOverview.value = overview;
         selectedSchoolYear.value = overview.school_year;
     } catch (cause) {
         if (requestId === overviewRequestId)
@@ -165,6 +212,7 @@ async function toggleOrganizationUnit(unit: OrganizationUnit): Promise<void> {
 
 onMounted(() => {
     if (isCentralAdmin.value) void loadOverview();
+    else if (isTerritorialAdmin.value) void loadTerritorialOverview();
     if (canViewOrganizationTree.value) void loadOrganizationUnits();
 });
 </script>
@@ -402,6 +450,130 @@ onMounted(() => {
                     </article>
                 </section>
 
+            </template>
+        </template>
+
+        <template v-else-if="isTerritorialAdmin">
+            <section class="territorial-dashboard-hero">
+                <div>
+                    <span class="welcome-eyebrow">
+                        TỔNG QUAN {{ user.scope_level === 'province' ? 'CẤP TỈNH' : 'CẤP XÃ' }}
+                    </span>
+                    <h2>{{ territorialOverview?.scope_area ?? user.name }}</h2>
+                    <p>Theo dõi phiếu điều tra, nhân khẩu và mạng lưới giáo dục trong địa bàn được phân công.</p>
+                </div>
+                <div class="central-year-badge">
+                    <span>NĂM HỌC</span>
+                    <select
+                        v-model="selectedSchoolYear"
+                        aria-label="Chọn năm học tổng quan"
+                        :disabled="overviewBusy || !territorialOverview"
+                        @change="loadTerritorialOverview(selectedSchoolYear)"
+                    >
+                        <option
+                            v-for="schoolYear in territorialOverview?.school_years ?? []"
+                            :key="schoolYear"
+                            :value="schoolYear"
+                        >
+                            {{ schoolYear }}
+                        </option>
+                    </select>
+                </div>
+            </section>
+
+            <p v-if="overviewError" class="notice" role="alert">{{ overviewError }}</p>
+            <div v-if="overviewBusy" class="central-overview-loading" role="status">Đang tải số liệu địa bàn…</div>
+            <template v-else-if="territorialOverview">
+                <section class="central-metric-grid territorial-metric-grid" aria-label="Số liệu trong địa bàn">
+                    <article v-if="territorialOverview.scope_level === 'province'" class="central-metric-card metric-geography">
+                        <span class="central-metric-label">Xã / phường</span>
+                        <strong>{{ territorialOverview.totals.communes.toLocaleString('vi-VN') }}</strong>
+                        <small>Trong tỉnh / thành phố</small>
+                    </article>
+                    <article class="central-metric-card metric-communes">
+                        <span class="central-metric-label">Thôn / xóm</span>
+                        <strong>{{ territorialOverview.totals.villages.toLocaleString('vi-VN') }}</strong>
+                        <small>Địa bàn đang quản lý</small>
+                    </article>
+                    <article class="central-metric-card metric-schools">
+                        <span class="central-metric-label">Trường học</span>
+                        <strong>{{ territorialOverview.totals.schools.toLocaleString('vi-VN') }}</strong>
+                        <small>Danh mục trong địa bàn</small>
+                    </article>
+                    <article class="central-metric-card metric-users">
+                        <span class="central-metric-label">Tài khoản hoạt động</span>
+                        <strong>{{ territorialOverview.totals.active_users.toLocaleString('vi-VN') }}</strong>
+                        <small>Được phân công trong địa bàn</small>
+                    </article>
+                    <article class="central-metric-card metric-households">
+                        <span class="central-metric-label">Phiếu điều tra</span>
+                        <strong>{{ territorialOverview.totals.households.toLocaleString('vi-VN') }}</strong>
+                        <small>Năm học {{ territorialOverview.school_year }}</small>
+                    </article>
+                    <article class="central-metric-card metric-people">
+                        <span class="central-metric-label">Nhân khẩu</span>
+                        <strong>{{ territorialOverview.totals.persons.toLocaleString('vi-VN') }}</strong>
+                        <small>Trong năm học {{ territorialOverview.school_year }}</small>
+                    </article>
+                </section>
+
+                <section class="territorial-dashboard-lower">
+                    <article class="central-ranking-card">
+                        <div class="dashboard-section-heading">
+                            <div>
+                                <span class="section-eyebrow">NĂM HỌC {{ territorialOverview.school_year }}</span>
+                                <h3>{{ territorialOverview.scope_level === 'province' ? 'Phiếu điều tra theo xã / phường' : 'Phiếu điều tra theo thôn / xóm' }}</h3>
+                            </div>
+                            <span class="dashboard-count">Tối đa 10 đơn vị</span>
+                        </div>
+                        <div v-if="territorialOverview.units.length" class="central-ranking-list">
+                            <div
+                                v-for="(unit, index) in territorialOverview.units"
+                                :key="unit.code"
+                                class="central-ranking-row"
+                            >
+                                <span class="central-ranking-index">{{ index + 1 }}</span>
+                                <span class="central-ranking-name">{{ unit.name }}</span>
+                                <strong>{{ unit.households.toLocaleString('vi-VN') }}</strong>
+                            </div>
+                        </div>
+                        <p v-else class="muted">Chưa có đơn vị hoặc phiếu điều tra trong địa bàn.</p>
+                    </article>
+
+                    <article class="central-education-summary">
+                        <div class="dashboard-section-heading">
+                            <div>
+                                <span class="section-eyebrow">PHỔ CẬP GIÁO DỤC &amp; XÓA MÙ CHỮ</span>
+                                <h3>Tình hình theo nhóm tuổi</h3>
+                            </div>
+                        </div>
+                        <div class="territorial-cohort-list">
+                            <div>
+                                <span>Mầm non · 5 tuổi</span>
+                                <strong>{{ territorialOverview.education_summary.preschool_age_5.population.toLocaleString('vi-VN') }}</strong>
+                                <small>Đang học {{ territorialOverview.education_summary.preschool_age_5.studying.toLocaleString('vi-VN') }}</small>
+                            </div>
+                            <div>
+                                <span>Tiểu học · 6–14 tuổi</span>
+                                <strong>{{ territorialOverview.education_summary.primary_age_6_to_14.population.toLocaleString('vi-VN') }}</strong>
+                                <small>Đang học {{ territorialOverview.education_summary.primary_age_6_to_14.studying.toLocaleString('vi-VN') }}</small>
+                            </div>
+                            <div>
+                                <span>THCS · 11–18 tuổi</span>
+                                <strong>{{ territorialOverview.education_summary.lower_secondary_age_11_to_18.population.toLocaleString('vi-VN') }}</strong>
+                                <small>Đang học {{ territorialOverview.education_summary.lower_secondary_age_11_to_18.studying.toLocaleString('vi-VN') }}</small>
+                            </div>
+                            <div>
+                                <span>Xóa mù chữ · 15–60 tuổi</span>
+                                <strong>{{ territorialOverview.education_summary.literacy_age_15_to_60.population.toLocaleString('vi-VN') }}</strong>
+                                <small>Đang học {{ territorialOverview.education_summary.literacy_age_15_to_60.studying.toLocaleString('vi-VN') }}</small>
+                            </div>
+                        </div>
+                        <p class="central-data-disclaimer">
+                            Số liệu được giới hạn theo địa bàn của tài khoản; đây là số người có ngày sinh trong nhóm tuổi, không phải tỷ lệ công nhận đạt chuẩn.
+                        </p>
+                    </article>
+                </section>
             </template>
         </template>
 

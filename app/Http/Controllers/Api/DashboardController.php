@@ -16,7 +16,21 @@ class DashboardController extends Controller
     public function overview(Request $request, SystemOverviewService $overview): JsonResponse
     {
         $user = $request->user();
-        abort_unless($user instanceof User && $user->hasRole(Role::SYSTEM_ADMIN), 403);
+        abort_unless($user instanceof User, 403);
+
+        if ($user->hasRole(Role::SYSTEM_ADMIN)) {
+            $filters = $request->validate([
+                'school_year' => [
+                    'nullable',
+                    'string',
+                    Rule::in($overview->schoolYears()),
+                ],
+            ]);
+
+            return ApiResponse::success($overview->summary($filters['school_year'] ?? null));
+        }
+
+        abort_unless($user->canViewDashboard(), 403);
 
         $filters = $request->validate([
             'school_year' => [
@@ -26,6 +40,14 @@ class DashboardController extends Controller
             ],
         ]);
 
-        return ApiResponse::success($overview->summary($filters['school_year'] ?? null));
+        abort_unless(
+            ($user->roleScopeLevel() === 'province' && $user->province_code !== null)
+            || ($user->roleScopeLevel() === 'commune'
+                && $user->province_code !== null
+                && $user->commune_code !== null),
+            403,
+        );
+
+        return ApiResponse::success($overview->scopedSummary($user, $filters['school_year'] ?? null));
     }
 }

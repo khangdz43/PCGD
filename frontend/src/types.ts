@@ -6,6 +6,7 @@ export interface User {
     scope_level_label?: string;
     scope_area?: string;
     role_name?: string;
+    can_view_dashboard?: boolean;
     school_year?: string;
     province_code: string | null;
     commune_code: string | null;

@@ -110,10 +110,27 @@ function syncModuleUrl(module: ModuleKey): void {
 }
 
 function restoreModuleFromUrl(): void {
-    activeModule.value = moduleFromUrl();
+    const requestedModule = moduleFromUrl();
+    activeModule.value = requestedModule === "" && !canViewDashboard.value
+        ? firstAvailableModule()
+        : requestedModule;
 }
 
 const permissions = computed(() => user.value?.permissions ?? []);
+const canViewDashboard = computed(() => user.value?.can_view_dashboard === true);
+
+function firstAvailableModule(): ModuleKey {
+    const availablePermissions = permissions.value;
+    if (availablePermissions.includes("view-households")) return "households";
+    if (availablePermissions.includes("view-villages")) return "villages";
+    if (availablePermissions.includes("view-schools")) return "schools";
+    if (availablePermissions.includes("view-users")) return "users";
+    if (availablePermissions.includes("view-roles")) return "roles";
+    if (availablePermissions.includes("view-trash")) return "trash";
+    if (availablePermissions.includes("view-imports")) return "import-history";
+    if (availablePermissions.includes("create-imports")) return "import-file";
+    return "account";
+}
 
 function stopImportNotificationPolling(): void {
     if (importNotificationTimer !== null) {
@@ -459,6 +476,10 @@ watch(
     [activeModule, permissions, sessionChecked],
     ([module, availablePermissions, checked]) => {
         if (!checked) return;
+        if (user.value && !canViewDashboard.value && module === "") {
+            activeModule.value = firstAvailableModule();
+            return;
+        }
 
         const requiredPermission =
             module === "merge"
@@ -556,6 +577,7 @@ function updateCurrentUserName(profile: { name: string }): void {
             :active-module="activeModule"
             :permissions="permissions"
             :scope-level="user?.scope_level ?? null"
+            :can-view-dashboard="canViewDashboard"
             @select="activeModule = $event"
         />
         <div class="app-main">
@@ -580,8 +602,7 @@ function updateCurrentUserName(profile: { name: string }): void {
                         'merge',
                         'school-merge',
                     ].includes(activeModule) ||
-                    (activeModule === '' &&
-                        user?.role_name === 'system-admin'),
+                    (activeModule === '' && canViewDashboard),
                 }"
             >
                 <p v-if="error" class="notice app-global-notice" role="alert">
@@ -661,7 +682,7 @@ function updateCurrentUserName(profile: { name: string }): void {
                     </section>
                 </div>
                 <Dashboard
-                    v-if="activeModule === ''"
+                    v-if="activeModule === '' && canViewDashboard"
                     :user="user"
                     @navigate="activeModule = $event"
                 />

@@ -19,6 +19,7 @@ const props = defineProps<{
     activeModule: ModuleKey;
     permissions: string[];
     scopeLevel: string | null;
+    canViewDashboard: boolean;
 }>();
 const emit = defineEmits<{ select: [module: ModuleKey] }>();
 
@@ -95,6 +96,7 @@ function toggleGroup(id: string): void {
 
         <nav id="primary-navigation" class="sidebar-nav" aria-label="Điều hướng chính">
             <button
+                v-if="canViewDashboard"
                 class="sidebar-link"
                 :class="{ 'is-active': activeModule === '' }"
                 type="button"

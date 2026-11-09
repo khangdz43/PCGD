@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Models\Role;
 use App\Models\User;
+use App\Models\Permission;
+use App\Support\AccessPermission;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -180,7 +182,7 @@ class AuthenticationFlowTest extends TestCase
         $this->assertGuest('web');
     }
 
-    public function test_system_admin_can_get_national_dashboard_overview_and_other_users_cannot(): void
+    public function test_system_and_territorial_admins_get_dashboard_overviews_for_their_scope(): void
     {
         Schema::create('provinces', function (Blueprint $table): void {
             $table->string('code')->primary();
@@ -188,11 +190,14 @@ class AuthenticationFlowTest extends TestCase
         });
         Schema::create('communes', function (Blueprint $table): void {
             $table->string('code')->primary();
+            $table->string('name')->nullable();
             $table->string('province_code');
         });
         Schema::create('villages', function (Blueprint $table): void {
             $table->string('code')->primary();
+            $table->string('name')->nullable();
             $table->string('commune_code');
+            $table->string('merged_into_code')->nullable();
         });
         Schema::create('schools', function (Blueprint $table): void {
             $table->id();
@@ -207,6 +212,8 @@ class AuthenticationFlowTest extends TestCase
             $table->id();
             $table->string('school_year')->nullable();
             $table->string('province_code')->nullable();
+            $table->string('commune_code')->nullable();
+            $table->string('village_code')->nullable();
             $table->timestamp('deleted_at')->nullable();
         });
         Schema::create('persons', function (Blueprint $table): void {
@@ -241,8 +248,14 @@ class AuthenticationFlowTest extends TestCase
             ['code' => 'P01', 'name' => 'Tỉnh Một'],
             ['code' => 'P02', 'name' => 'Tỉnh Hai'],
         ]);
-        DB::table('communes')->insert(['code' => 'C01', 'province_code' => 'P01']);
-        DB::table('villages')->insert(['code' => 'V01', 'commune_code' => 'C01']);
+        DB::table('communes')->insert([
+            ['code' => 'C01', 'name' => 'Xã Một', 'province_code' => 'P01'],
+            ['code' => 'C02', 'name' => 'Xã Hai', 'province_code' => 'P02'],
+        ]);
+        DB::table('villages')->insert([
+            ['code' => 'V01', 'name' => 'Thôn Một', 'commune_code' => 'C01'],
+            ['code' => 'V02', 'name' => 'Thôn Hai', 'commune_code' => 'C02'],
+        ]);
         DB::table('schools')->insert([
             'code' => 'S01',
             'name' => 'Trường Một',
@@ -257,9 +270,10 @@ class AuthenticationFlowTest extends TestCase
             ['id' => 2, 'start_time' => '2020-08-01', 'end_time' => '2021-07-31', 'status' => false],
         ]);
         DB::table('households')->insert([
-            ['school_year' => $schoolYear, 'province_code' => 'P01'],
-            ['school_year' => $schoolYear, 'province_code' => 'P01'],
-            ['school_year' => '2020-2021', 'province_code' => 'P02'],
+            ['school_year' => $schoolYear, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
+            ['school_year' => $schoolYear, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
+            ['school_year' => '2020-2021', 'province_code' => 'P02', 'commune_code' => null, 'village_code' => null],
+            ['school_year' => $schoolYear, 'province_code' => 'P02', 'commune_code' => 'C02', 'village_code' => 'V02'],
         ]);
         DB::table('persons')->insert([
             ['household_id' => 1, 'dob' => null],
@@ -271,6 +285,7 @@ class AuthenticationFlowTest extends TestCase
             ['household_id' => 2, 'dob' => ($schoolYearStart - 15).'-06-01'],
             ['household_id' => 2, 'dob' => ($schoolYearStart - 25).'-06-01'],
             ['household_id' => 2, 'dob' => ($schoolYearStart - 10).'-06-01'],
+            ['household_id' => 4, 'dob' => ($schoolYearStart - 5).'-06-01'],
         ]);
         DB::table('person_educations')->insert([
             [
@@ -345,14 +360,14 @@ class AuthenticationFlowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.school_year', $schoolYear)
             ->assertJsonPath('data.totals.provinces', 2)
-            ->assertJsonPath('data.totals.communes', 1)
-            ->assertJsonPath('data.totals.villages', 1)
+            ->assertJsonPath('data.totals.communes', 2)
+            ->assertJsonPath('data.totals.villages', 2)
             ->assertJsonPath('data.totals.schools', 1)
             ->assertJsonPath('data.totals.active_users', 1)
-            ->assertJsonPath('data.totals.households', 2)
-            ->assertJsonPath('data.totals.persons', 8)
+            ->assertJsonPath('data.totals.households', 3)
+            ->assertJsonPath('data.totals.persons', 9)
             ->assertJsonPath('data.age_reference_date', "{$schoolYearStart}-12-31")
-            ->assertJsonPath('data.education_summary.preschool_age_5.population', 1)
+            ->assertJsonPath('data.education_summary.preschool_age_5.population', 2)
             ->assertJsonPath('data.education_summary.preschool_age_5.studying', 1)
             ->assertJsonPath('data.education_summary.preschool_age_5.completed', 1)
             ->assertJsonPath('data.education_summary.primary_age_6_to_14.population', 2)
@@ -363,7 +378,7 @@ class AuthenticationFlowTest extends TestCase
             ->assertJsonPath('data.education_summary.literacy_age_15_to_60.studying', 1)
             ->assertJsonPath('data.education_summary.literacy_age_15_to_60.completed', 1)
             ->assertJsonPath('data.education_summary.literacy_age_15_to_60.relapse', 1)
-            ->assertJsonPath('data.education_summary.data_quality.school_age_missing_education', 1)
+            ->assertJsonPath('data.education_summary.data_quality.school_age_missing_education', 2)
             ->assertJsonPath('data.education_summary.data_quality.missing_birth_dates', 3)
             ->assertJsonPath('data.provinces.0.name', 'Tỉnh Một')
             ->assertJsonPath('data.provinces.0.households', 2)
@@ -379,6 +394,95 @@ class AuthenticationFlowTest extends TestCase
 
         $this->getJson('/api/v1/dashboard/overview?school_year=not-a-school-year')
             ->assertUnprocessable();
+
+        $provinceRole = Role::create([
+            'name' => 'Quản trị tỉnh',
+            'guard_name' => 'web',
+            'scope_level' => 'province',
+        ]);
+        $regularRole = Role::create([
+            'name' => 'Điều tra viên tỉnh',
+            'guard_name' => 'web',
+            'scope_level' => 'province',
+        ]);
+        $viewHouseholdsPermission = Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'guard_name' => 'web',
+        ]);
+        $regularRole->permissions()->attach($viewHouseholdsPermission->id);
+        $regularUser = User::create([
+            'name' => 'Tài khoản thường',
+            'username' => 'regular-province-user',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $regularUser->forceFill([
+            'is_active' => true,
+            'scope_level' => 'province',
+            'province_code' => 'P01',
+        ])->save();
+        $regularUser->roles()->attach($regularRole);
+        $this->actingAs($regularUser, 'web')
+            ->getJson('/api/v1/dashboard/overview')
+            ->assertForbidden();
+
+        $provinceAdmin = User::create([
+            'name' => 'Quản trị tỉnh',
+            'username' => 'province-admin',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $provinceAdmin->forceFill([
+            'is_active' => true,
+            'scope_level' => 'province',
+            'province_code' => 'P01',
+        ])->save();
+        $provinceAdmin->roles()->attach($provinceRole);
+
+        $this->actingAs($provinceAdmin, 'web')
+            ->getJson('/api/v1/session')
+            ->assertOk()
+            ->assertJsonPath('data.user.can_view_dashboard', true);
+
+        $this->actingAs($provinceAdmin, 'web')
+            ->getJson('/api/v1/dashboard/overview')
+            ->assertOk()
+            ->assertJsonPath('data.scope_level', 'province')
+            ->assertJsonPath('data.scope_area', 'Tỉnh Một')
+            ->assertJsonPath('data.totals.communes', 1)
+            ->assertJsonPath('data.totals.households', 2)
+            ->assertJsonPath('data.totals.persons', 8)
+            ->assertJsonPath('data.education_summary.preschool_age_5.population', 1)
+            ->assertJsonPath('data.units.0.name', 'Xã Một')
+            ->assertJsonPath('data.units.0.households', 2);
+
+        $communeRole = Role::create([
+            'name' => 'Quản trị xã',
+            'guard_name' => 'web',
+            'scope_level' => 'commune',
+        ]);
+        $communeAdmin = User::create([
+            'name' => 'Quản trị xã',
+            'username' => 'commune-admin',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $communeAdmin->forceFill([
+            'is_active' => true,
+            'scope_level' => 'commune',
+            'province_code' => 'P01',
+            'commune_code' => 'C01',
+        ])->save();
+        $communeAdmin->roles()->attach($communeRole);
+
+        $this->actingAs($communeAdmin, 'web')
+            ->getJson('/api/v1/dashboard/overview')
+            ->assertOk()
+            ->assertJsonPath('data.scope_level', 'commune')
+            ->assertJsonPath('data.scope_area', 'Xã Một')
+            ->assertJsonPath('data.totals.villages', 1)
+            ->assertJsonPath('data.totals.households', 2)
+            ->assertJsonPath('data.totals.persons', 8)
+            ->assertJsonPath('data.education_summary.preschool_age_5.population', 1)
+            ->assertJsonPath('data.units.0.name', 'Thôn Một')
+            ->assertJsonPath('data.units.0.households', 2);
     }
 
     public function test_authenticated_user_can_update_basic_account_information(): void

@@ -197,6 +197,26 @@ class User extends Authenticatable
         return $levels->first();
     }
 
+    public function canViewDashboard(): bool
+    {
+        if ($this->hasRole(Role::SYSTEM_ADMIN)) {
+            return true;
+        }
+
+        $scopeLevel = $this->roleScopeLevel();
+        $adminRoleNames = match ($scopeLevel) {
+            'province' => ['Quản trị tỉnh', 'Quản trị cấp tỉnh'],
+            'commune' => ['Quản trị xã', 'Quản trị cấp xã'],
+            default => [],
+        };
+
+        return $adminRoleNames !== [] && $this->roles()
+            ->where('roles.guard_name', config('auth.permission_guard', 'web'))
+            ->where('roles.scope_level', $scopeLevel)
+            ->whereIn('roles.name', $adminRoleNames)
+            ->exists();
+    }
+
     // check xem đủ quyền để quản lí cấp dưới không
     public function canManageSubordinateUsers(): bool
     {

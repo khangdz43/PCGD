@@ -77,7 +77,7 @@ class User extends Authenticatable
         if (
             $this->hasPermissionTo(AccessPermission::MANAGE_VILLAGES)
             || ! collect(AccessPermission::villageScopedPermissions())
-                ->contains(fn (string $permission): bool => $this->hasPermissionTo($permission))
+                ->contains(fn(string $permission): bool => $this->hasPermissionTo($permission))
         ) {
             return [];
         }
@@ -95,7 +95,7 @@ class User extends Authenticatable
         // lấy role của user này , load rồi thì không load lại nữa vì cái này lắm thằng query lắm
         $this->loadMissing('roles');
 
-        return $this->roles->contains(fn (Role $role): bool => $role->name === $name
+        return $this->roles->contains(fn(Role $role): bool => $role->name === $name
             && $role->guard_name === config('auth.permission_guard', 'web'));
     }
 
@@ -148,14 +148,27 @@ class User extends Authenticatable
         $this->loadMissing(['roles.permissions', 'roles.creator']);
         $rolePermissions = $this->roles
             ->where('guard_name', config('auth.permission_guard', 'web'))
-            ->flatMap(fn (Role $role) => $role->permissions
-                ->filter(fn ($permission) => $this->hasPermissionTo($permission->name))
+            ->flatMap(fn(Role $role) => $role->permissions
+                ->filter(fn($permission) => $this->hasPermissionTo($permission->name))
                 ->pluck('name'))
             ->all();
 
-        return AccessPermission::withPrerequisites(
+        $permissions = AccessPermission::withPrerequisites(
             AccessPermission::expandLegacyPermissions(array_values(array_unique($rolePermissions)))
         );
+        // Admin trung ương không quản lý danh mục trường hoặc gộp danh mục.
+        if ($this->roleScopeLevel() === 'global') {
+            $permissions = array_diff($permissions, [
+                AccessPermission::MANAGE_SCHOOLS,
+                AccessPermission::VIEW_SCHOOLS,
+                AccessPermission::CREATE_SCHOOLS,
+                AccessPermission::UPDATE_SCHOOLS,
+                AccessPermission::DELETE_SCHOOLS,
+                ...AccessPermission::mergePermissions(),
+            ]);
+        }
+
+        return array_values($permissions);
     }
 
     // trả về scope của user
@@ -182,6 +195,26 @@ class User extends Authenticatable
         }
 
         return $levels->first();
+    }
+
+    public function canViewDashboard(): bool
+    {
+        if ($this->hasRole(Role::SYSTEM_ADMIN)) {
+            return true;
+        }
+
+        $scopeLevel = $this->roleScopeLevel();
+        $adminRoleNames = match ($scopeLevel) {
+            'province' => ['Quản trị tỉnh', 'Quản trị cấp tỉnh'],
+            'commune' => ['Quản trị xã', 'Quản trị cấp xã'],
+            default => [],
+        };
+
+        return $adminRoleNames !== [] && $this->roles()
+            ->where('roles.guard_name', config('auth.permission_guard', 'web'))
+            ->where('roles.scope_level', $scopeLevel)
+            ->whereIn('roles.name', $adminRoleNames)
+            ->exists();
     }
 
     // check xem đủ quyền để quản lí cấp dưới không
@@ -220,8 +253,8 @@ class User extends Authenticatable
         $roles = $this->roles
             ->where('guard_name', config('auth.permission_guard', 'web'))
             ->where('scope_level', $scopeLevel)
-            ->filter(fn (Role $role): bool => $role->permissions->contains(
-                fn ($permission): bool => in_array($permission->name, $rolePermissions, true)
+            ->filter(fn(Role $role): bool => $role->permissions->contains(
+                fn($permission): bool => in_array($permission->name, $rolePermissions, true)
                     && $permission->guard_name === config('auth.permission_guard', 'web')
             ));
 

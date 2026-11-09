@@ -12,7 +12,10 @@ class ProvinceController extends Controller
 
     public function index(Request $request)
     {
-        $provinces = $this->geography->provincesForHome($request->user());
+        $provinces = $this->geography->provincesForHome(
+            $request->user(),
+            $request->boolean('include_account_counts'),
+        );
 
         return response()->json(['data' => $provinces]);
     }

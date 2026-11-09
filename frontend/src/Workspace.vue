@@ -4283,20 +4283,43 @@ function gradeFromClassName(className: unknown): string {
     return grade >= 1 && grade <= 12 ? String(grade) : "";
 }
 
+function preschoolAgeFromClassName(className: unknown): string {
+    const match = String(className ?? "")
+        .trim()
+        .match(/^MN\s*([3-5])(?=\D|$)/iu);
+    if (!match) return "";
+
+    const ages: Record<string, string> = {
+        "3": "3-4 tuổi",
+        "4": "4-5 tuổi",
+        "5": "5-6 tuổi",
+    };
+    return ages[match[1]];
+}
+
+function academicBlockFromClassName(className: unknown): string {
+    return preschoolAgeFromClassName(className) || gradeFromClassName(className);
+}
+
+function schoolLevelFromClassName(className: unknown): string {
+    return /^\s*MN\s*\d/iu.test(String(className ?? "")) ? "MN" : "";
+}
+
 watch(
     () => educationForm.value.current_class,
     (className, previousClassName) => {
-        const grade = gradeFromClassName(className);
-        const previousGrade = gradeFromClassName(previousClassName);
+        const academicBlock = academicBlockFromClassName(className);
+        const previousAcademicBlock =
+            academicBlockFromClassName(previousClassName);
         if (
             previousClassName !== undefined &&
-            grade !== previousGrade &&
+            academicBlock !== previousAcademicBlock &&
             educationForm.value.school_code
         ) {
             educationForm.value.school_code = "";
         }
-        if (educationForm.value.academic_block !== grade) {
-            educationForm.value.academic_block = grade;
+        if (educationForm.value.academic_block !== academicBlock) {
+            educationForm.value.academic_block = academicBlock;
         }
     },
 );
@@ -4308,10 +4331,15 @@ watch(
             window.clearTimeout(personSchoolOptionsTimer);
         }
         const requestSequence = ++personSchoolOptionsSequence;
-        const grade = gradeFromClassName(academicBlock);
+        const schoolLevel = schoolLevelFromClassName(
+            educationForm.value.current_class,
+        );
+        const grade =
+            gradeFromClassName(educationForm.value.current_class) ||
+            gradeFromClassName(academicBlock);
         personSchoolOptionsError.value = "";
 
-        if (!grade) {
+        if (!schoolLevel && !grade) {
             const selectedSchool = personSchools.value.find(
                 (school) =>
                     String(school.code) === educationForm.value.school_code,
@@ -4339,7 +4367,11 @@ watch(
             try {
                 const response = await api.get<unknown>(
                     `/households/${householdId}/persons/schools`,
-                    { params: { academic_block: grade } },
+                    {
+                        params: schoolLevel
+                            ? { school_level: schoolLevel }
+                            : { academic_block: grade },
+                    },
                 );
                 if (requestSequence !== personSchoolOptionsSequence) return;
 
@@ -5023,6 +5055,7 @@ function inlineEducation(person: Row): Row {
 function inlineSchoolGrade(person: Row): string {
     const education = inlineEducation(person);
     return (
+        schoolLevelFromClassName(education.current_class) ||
         gradeFromClassName(education.current_class) ||
         gradeFromClassName(education.academic_block)
     );
@@ -5048,9 +5081,14 @@ async function loadInlineSchoolOptions(person: Row): Promise<void> {
 
     inlineSchoolOptionsLoading.value[key] = true;
     inlineSchoolOptionsErrors.value[key] = "";
+    const schoolLevel = schoolLevelFromClassName(
+        inlineEducation(person).current_class,
+    );
     const request = api
         .get<unknown>(`/households/${householdId}/persons/schools`, {
-            params: { academic_block: grade },
+            params: schoolLevel
+                ? { school_level: schoolLevel }
+                : { academic_block: grade },
         })
         .then(({ data }) => {
             inlineSchoolOptions.value[key] = asRows(
@@ -5073,13 +5111,13 @@ function updateInlineClass(person: Row, event: Event): void {
     if (!(input instanceof HTMLInputElement)) return;
 
     const education = inlineEducation(person);
-    const grade = gradeFromClassName(input.value);
-    if (grade !== String(education.academic_block ?? "")) {
+    const academicBlock = academicBlockFromClassName(input.value);
+    if (academicBlock !== String(education.academic_block ?? "")) {
         education.school_code = "";
         person._school_name = "";
     }
-    education.academic_block = grade;
-    if (grade) void loadInlineSchoolOptions(person);
+    education.academic_block = academicBlock;
+    if (inlineSchoolGrade(person)) void loadInlineSchoolOptions(person);
 }
 
 function inlineSchoolChanged(person: Row): void {
@@ -13836,7 +13874,7 @@ onMounted(async () => {
                                 ><input
                                     v-model="educationForm.academic_block"
                                     type="text"
-                                    maxlength="2"
+                                    maxlength="50"
                                     readonly
                                     aria-readonly="true"
                             /></label>

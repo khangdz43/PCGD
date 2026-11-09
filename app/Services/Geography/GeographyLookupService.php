@@ -13,14 +13,37 @@ use Illuminate\Support\Facades\DB;
 
 class GeographyLookupService
 {
-    public function provincesForHome(User $user): Collection
+    public function provincesForHome(User $user, bool $includeAccountCounts = false): Collection
     {
         $query = Province::select('code', 'name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             $query->where('code', $user->province_code);
         }
 
-        return $query->get();
+        $provinces = $query->orderBy('name')->get();
+        if ($includeAccountCounts && (
+            ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
+            || $user->canManageSubordinateUsers()
+        )) {
+            $counts = DB::table('users')
+                ->whereIn('province_code', $provinces->pluck('code'))
+                ->whereNotExists(function ($query): void {
+                    $query->selectRaw('1')
+                        ->from('model_has_roles')
+                        ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
+                        ->whereColumn('model_has_roles.model_id', 'users.id')
+                        ->where('model_has_roles.model_type', User::class)
+                        ->where('roles.name', Role::SYSTEM_ADMIN);
+                })
+                ->select('province_code')
+                ->selectRaw('COUNT(*) AS account_count')
+                ->groupBy('province_code')
+                ->pluck('account_count', 'province_code');
+
+            $provinces->each(fn ($province) => $province->account_count = $counts[$province->code] ?? 0);
+        }
+
+        return $provinces;
     }
 
     public function communesForProvince(

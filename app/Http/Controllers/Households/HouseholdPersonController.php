@@ -73,12 +73,15 @@ class HouseholdPersonController extends Controller
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'min:2', 'max:100'],
             'academic_block' => ['nullable', 'integer', 'between:1,12'],
+            'school_level' => ['nullable', Rule::in(['MN'])],
         ]);
         $query = School::query()
             ->where('is_active', true)
             ->where('province_code', $household->province_code);
 
-        if (filled($filters['academic_block'] ?? null)) {
+        if (($filters['school_level'] ?? null) === 'MN') {
+            $query->where('level', 'MN');
+        } elseif (filled($filters['academic_block'] ?? null)) {
             $grade = (int) $filters['academic_block'];
             $schoolLevels = $this->eligibleSchoolLevelsForGrade($grade);
             $query->where(function ($builder) use ($schoolLevels): void {
@@ -99,7 +102,10 @@ class HouseholdPersonController extends Controller
                 $builder->where('name', 'like', "%{$search}%")
                     ->orWhere('code', 'like', "%{$search}%");
             });
-        } elseif (! filled($filters['academic_block'] ?? null)) {
+        } elseif (
+            ! filled($filters['academic_block'] ?? null)
+            && ! filled($filters['school_level'] ?? null)
+        ) {
             return response()->json(['schools' => []]);
         }
 
@@ -379,14 +385,19 @@ class HouseholdPersonController extends Controller
 
         $schoolExistsRule = Rule::exists('schools', 'code')
             ->where('province_code', $household?->province_code);
-        $academicBlock = $this->gradeFromClassName(
-            $request->input('education.current_class'),
+        $currentClass = (string) $request->input('education.current_class', '');
+        $preschoolClass = preg_match('/^\s*MN\s*\d/iu', $currentClass) === 1;
+        if ($preschoolClass) {
+            $schoolExistsRule->where('level', 'MN');
+        }
+        $academicBlock = $preschoolClass ? null : ($this->gradeFromClassName(
+            $currentClass,
         ) ?? filter_var(
             $request->input('education.academic_block'),
             FILTER_VALIDATE_INT,
             ['options' => ['min_range' => 1, 'max_range' => 12]],
-        );
-        if ($academicBlock !== false) {
+        ));
+        if ($academicBlock !== false && $academicBlock !== null) {
             $schoolLevels = $this->eligibleSchoolLevelsForGrade((int) $academicBlock);
             $schoolExistsRule->where(function ($query) use ($schoolLevels): void {
                 $query->where('level', $schoolLevels['level']);

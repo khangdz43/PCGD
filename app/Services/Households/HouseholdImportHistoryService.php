@@ -43,6 +43,7 @@ class HouseholdImportHistoryService
 
             $spreadsheet = null;
             try {
+                $path = Storage::disk('local')->path($storedPath);
                 $spreadsheet = IOFactory::load($path);
                 $sheet = $spreadsheet->getActiveSheet();
                 $targetPath = dirname($storedPath) . '/error-' . pathinfo($importLog->file_path, PATHINFO_FILENAME) . '.xlsx';

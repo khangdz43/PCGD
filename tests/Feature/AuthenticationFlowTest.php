@@ -210,7 +210,7 @@ class AuthenticationFlowTest extends TestCase
         });
         Schema::create('households', function (Blueprint $table): void {
             $table->id();
-            $table->string('school_year')->nullable();
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->string('village_code')->nullable();
@@ -270,10 +270,10 @@ class AuthenticationFlowTest extends TestCase
             ['id' => 2, 'start_time' => '2020-08-01', 'end_time' => '2021-07-31', 'status' => false],
         ]);
         DB::table('households')->insert([
-            ['school_year' => $schoolYear, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
-            ['school_year' => $schoolYear, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
-            ['school_year' => '2020-2021', 'province_code' => 'P02', 'commune_code' => null, 'village_code' => null],
-            ['school_year' => $schoolYear, 'province_code' => 'P02', 'commune_code' => 'C02', 'village_code' => 'V02'],
+            ['school_year_id' => 1, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
+            ['school_year_id' => 1, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
+            ['school_year_id' => 2, 'province_code' => 'P02', 'commune_code' => null, 'village_code' => null],
+            ['school_year_id' => 1, 'province_code' => 'P02', 'commune_code' => 'C02', 'village_code' => 'V02'],
         ]);
         DB::table('persons')->insert([
             ['household_id' => 1, 'dob' => null],

@@ -145,7 +145,7 @@ class AccessControlTest extends TestCase
         Schema::create('households', function (Blueprint $table): void {
             $table->id();
             $table->string('household_code');
-            $table->string('school_year');
+            $table->unsignedBigInteger('school_year_id');
             $table->string('head_first_name')->nullable();
             $table->string('head_last_name')->nullable();
             $table->string('province_code')->nullable();
@@ -4138,7 +4138,7 @@ class AccessControlTest extends TestCase
         DB::table('ethnicities')->insert(['code' => 'KINH', 'name' => 'Kinh', 'created_at' => now(), 'updated_at' => now()]);
         DB::table('households')->insert([
             'household_code' => 'HK1',
-            'school_year' => '2025-2026',
+            'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2025-2026')->id,
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'created_at' => now(),
@@ -4466,7 +4466,7 @@ class AccessControlTest extends TestCase
         ]);
         $householdId = DB::table('households')->insertGetId([
             'household_code' => 'IMPORTED-1',
-            'school_year' => '2025-2026',
+            'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2025-2026')->id,
             'import_log_id' => $successfulImport->id,
             'created_at' => now(),
             'updated_at' => now(),
@@ -4496,7 +4496,7 @@ class AccessControlTest extends TestCase
         ]);
         $otherHouseholdId = DB::table('households')->insertGetId([
             'household_code' => 'IMPORTED-OTHER',
-            'school_year' => '2025-2026',
+            'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2025-2026')->id,
             'import_log_id' => $otherImport->id,
             'created_at' => now(),
             'updated_at' => now(),
@@ -5459,8 +5459,8 @@ class AccessControlTest extends TestCase
             ['code' => 'C2', 'name' => 'Xã hai', 'province_code' => 'P2', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('households')->insert([
-            ['household_code' => '01', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'head_first_name' => 'Trong vùng', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '02', 'school_year' => '2026-2027', 'province_code' => 'P2', 'commune_code' => 'C2', 'head_first_name' => 'Ngoài vùng', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '01', 'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id, 'province_code' => 'P1', 'commune_code' => 'C1', 'head_first_name' => 'Trong vùng', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '02', 'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id, 'province_code' => 'P2', 'commune_code' => 'C2', 'head_first_name' => 'Ngoài vùng', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('persons')->insert(array_map(
             fn (int $index): array => [
@@ -5531,14 +5531,16 @@ class AccessControlTest extends TestCase
             ? now()->year.'-'.(now()->year + 1)
             : (now()->year - 1).'-'.now()->year;
         $previousSchoolYear = ((int) explode('-', $currentSchoolYear)[0] - 1).'-'.explode('-', $currentSchoolYear)[0];
+        $currentSchoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel($currentSchoolYear)->id;
+        $previousSchoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel($previousSchoolYear)->id;
         DB::table('households')->insert([
-            ['household_code' => '01', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '02', 'school_year' => $previousSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '03', 'school_year' => $currentSchoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '01', 'school_year_id' => $currentSchoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '02', 'school_year_id' => $previousSchoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '03', 'school_year_id' => $currentSchoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
             ...array_map(
                 static fn (int $code): array => [
                     'household_code' => sprintf('%02d', $code),
-                    'school_year' => $currentSchoolYear,
+                    'school_year_id' => $currentSchoolYearId,
                     'province_code' => 'P1',
                     'commune_code' => 'C1',
                     'village_code' => 'V1',
@@ -5610,10 +5612,11 @@ class AccessControlTest extends TestCase
         $schoolYear = now()->month >= 8
             ? now()->year.'-'.(now()->year + 1)
             : (now()->year - 1).'-'.now()->year;
+        $schoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel($schoolYear)->id;
         DB::table('households')->insert([
-            ['household_code' => '11', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '12', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '13', 'school_year' => $schoolYear, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V3', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '11', 'school_year_id' => $schoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '12', 'school_year_id' => $schoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '13', 'school_year_id' => $schoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V3', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         $role = Role::create(['name' => 'multi-village-default-viewer', 'scope_level' => 'commune', 'guard_name' => 'web']);
@@ -5657,8 +5660,8 @@ class AccessControlTest extends TestCase
             ['code' => 'V2', 'name' => 'Thôn hai', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('households')->insert([
-            ['household_code' => '21', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '22', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '21', 'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '22', 'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id, 'province_code' => 'P1', 'commune_code' => 'C1', 'village_code' => 'V2', 'created_at' => now(), 'updated_at' => now()],
         ]);
 
         $role = Role::create(['name' => 'commune-filter-viewer', 'scope_level' => 'commune', 'guard_name' => 'web']);
@@ -5695,11 +5698,12 @@ class AccessControlTest extends TestCase
         $user = User::factory()->create(['is_active' => true]);
         $user->roles()->attach($role);
         $now = now();
+        $schoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id;
 
         for ($page = 1; $page <= 255; $page++) {
             DB::table('households')->insert([
                 'household_code' => str_pad((string) $page, 3, '0', STR_PAD_LEFT),
-                'school_year' => '2026-2027',
+                'school_year_id' => $schoolYearId,
                 'created_at' => $now,
                 'updated_at' => $now,
             ]);
@@ -5747,10 +5751,11 @@ class AccessControlTest extends TestCase
             ['code' => 'S1', 'name' => 'Trường một', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'S2', 'name' => 'Trường hai', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
+        $schoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id;
         DB::table('households')->insert([
-            ['household_code' => '01', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '02', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
-            ['household_code' => '03', 'school_year' => '2026-2027', 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '01', 'school_year_id' => $schoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '02', 'school_year_id' => $schoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
+            ['household_code' => '03', 'school_year_id' => $schoolYearId, 'province_code' => 'P1', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
         DB::table('persons')->insert([
             ['household_id' => 1, 'created_at' => now(), 'updated_at' => now()],
@@ -5800,10 +5805,11 @@ class AccessControlTest extends TestCase
             ['code' => 'V2', 'name' => 'Thôn hai', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
             ['code' => 'V3', 'name' => 'Thôn ba', 'commune_code' => 'C1', 'created_at' => now(), 'updated_at' => now()],
         ]);
+        $schoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id;
         foreach (['V1', 'V2', 'V3'] as $index => $villageCode) {
             DB::table('households')->insert([
                 'household_code' => sprintf('%02d', $index + 1),
-                'school_year' => '2026-2027',
+                'school_year_id' => $schoolYearId,
                 'province_code' => 'P1',
                 'commune_code' => 'C1',
                 'village_code' => $villageCode,
@@ -6330,10 +6336,11 @@ class AccessControlTest extends TestCase
         $staff = User::where('username', 'canboc1')->firstOrFail();
         self::assertSame('commune', $staff->scope_level);
         self::assertEqualsCanonicalizing(['V1', 'V2'], $staff->managedVillageCodes());
+        $schoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel('2025-2026')->id;
         DB::table('households')->insert([
             [
                 'household_code' => 'H1',
-                'school_year' => '2025-2026',
+                'school_year_id' => $schoolYearId,
                 'province_code' => 'P1',
                 'commune_code' => 'C1',
                 'village_code' => 'V1',
@@ -6342,7 +6349,7 @@ class AccessControlTest extends TestCase
             ],
             [
                 'household_code' => 'H4',
-                'school_year' => '2025-2026',
+                'school_year_id' => $schoolYearId,
                 'province_code' => 'P1',
                 'commune_code' => 'C1',
                 'village_code' => 'V4',

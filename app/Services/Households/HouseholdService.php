@@ -43,7 +43,7 @@ class HouseholdService
 
     public function paginate(User $user, array $filters, bool $withPersonDetails = true): LengthAwarePaginator
     {
-        $relations = ['province', 'commune', 'village'];
+        $relations = ['province', 'commune', 'village', 'schoolYearRecord'];
         if ($withPersonDetails) {
             $relations = [
                 ...$relations,
@@ -81,7 +81,8 @@ class HouseholdService
         }
 
         if (filled($filters['school_year'] ?? null) && $filters['school_year'] !== 'all') {
-            $query->where('school_year', $filters['school_year']);
+            $schoolYearId = SchoolYear::findByLabel((string) $filters['school_year'])?->id;
+            $query->where('school_year_id', $schoolYearId ?? 0);
         }
 
         if (filled($filters['school_code'] ?? null)) {
@@ -255,7 +256,8 @@ class HouseholdService
     {
         $query = Household::withTrashed();
         if ($schoolYear !== null) {
-            $query->where('school_year', $schoolYear);
+            $schoolYearId = SchoolYear::findByLabel($schoolYear)?->id;
+            $query->where('school_year_id', $schoolYearId ?? 0);
         }
 
         $maxCode = $query

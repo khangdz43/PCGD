@@ -64,7 +64,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $this->assertDatabaseHas('households', [
             'household_code' => '01',
-            'school_year' => $this->currentSchoolYear(),
+            'school_year_id' => \App\Models\SchoolYear::findByLabel($this->currentSchoolYear())->id,
             'province_code' => 'P01',
             'commune_code' => 'C01',
             'village_code' => 'V01',
@@ -126,7 +126,7 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseHas('households', [
             'id' => $household->id,
             'household_code' => $household->household_code,
-            'school_year' => '2025-2026',
+            'school_year_id' => $this->schoolYearId('2025-2026'),
             'head_first_name' => 'Bình',
             'head_last_name' => 'Trần',
             'residence_type' => 'TAM_TRU',
@@ -969,7 +969,7 @@ class HouseholdCrudFlowTest extends TestCase
 
         $householdId = DB::table('households')->insertGetId([
             'household_code' => 'KEPT-AFTER-HISTORY-DELETE',
-            'school_year' => $this->currentSchoolYear(),
+            'school_year_id' => $this->schoolYearId($this->currentSchoolYear()),
             'import_log_id' => $successful->id,
             'created_at' => now(),
             'updated_at' => now(),
@@ -2521,7 +2521,7 @@ class HouseholdCrudFlowTest extends TestCase
         Schema::create('households', function (Blueprint $table): void {
             $table->id();
             $table->string('household_code');
-            $table->string('school_year');
+            $table->unsignedBigInteger('school_year_id');
             $table->string('head_first_name')->nullable();
             $table->string('head_last_name')->nullable();
             $table->string('province_code')->nullable();

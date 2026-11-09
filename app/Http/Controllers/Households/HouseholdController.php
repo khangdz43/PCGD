@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Household;
 use App\Models\Ethnicity;
 use App\Models\Role;
+use App\Models\SchoolYear;
 use App\Models\User;
 use App\Services\Households\HouseholdService;
 use App\Support\DataAccessScope;
@@ -79,6 +80,7 @@ class HouseholdController extends Controller
     public function show(Household $household)
     {
         $this->assertAccess($household);
+        $household->load('schoolYearRecord');
         ['persons' => $persons, 'headPerson' => $headPerson, 'hasAnyHouseholdHead' => $hasAnyHouseholdHead] =
             $this->households->details($household);
         $canSeeHouseholdHead = true;
@@ -146,7 +148,10 @@ class HouseholdController extends Controller
             ? ['nullable']
             : ['present', 'nullable'];
         $householdCodeRule = Rule::unique('households', 'household_code')
-            ->where(fn ($query) => $query->where('school_year', $request->input('school_year')));
+            ->where(fn ($query) => $query->where(
+                'school_year_id',
+                SchoolYear::findByLabel((string) $request->input('school_year'))?->id
+            ));
         if ($household) {
             $householdCodeRule->ignore($household->id);
         }

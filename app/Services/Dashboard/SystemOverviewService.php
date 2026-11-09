@@ -25,8 +25,9 @@ class SystemOverviewService
     public function summary(?string $schoolYear = null): array
     {
         $schoolYear ??= $this->households->currentSchoolYear();
-        $householdsForYear = fn ($query) => $query->where('school_year', $schoolYear);
         $schoolYearRecord = SchoolYear::findByLabel($schoolYear);
+        $schoolYearId = $schoolYearRecord?->id ?? 0;
+        $householdsForYear = fn ($query) => $query->where('school_year_id', $schoolYearId);
         $schoolYearStart = (int) substr($schoolYear, 0, 4);
         $ageReferenceDate = sprintf('%04d-12-31', $schoolYearStart);
         $educationSummary = $schoolYearRecord
@@ -43,7 +44,7 @@ class SystemOverviewService
                 'villages' => Village::query()->count(),
                 'schools' => School::query()->whereNull('deleted_at')->count(),
                 'active_users' => User::query()->where('is_active', true)->count(),
-                'households' => Household::query()->where('school_year', $schoolYear)->count(),
+                'households' => Household::query()->where('school_year_id', $schoolYearId)->count(),
                 'persons' => Person::query()
                     ->whereHas('household', $householdsForYear)
                     ->count(),
@@ -203,7 +204,7 @@ class SystemOverviewService
                     ->where('education.school_year_id', '=', $schoolYearId);
             })
             ->whereNull('persons.deleted_at')
-            ->where('households.school_year', $schoolYear);
+            ->where('households.school_year_id', $schoolYearId);
 
         if ($user !== null) {
             if ($user->roleScopeLevel() === 'province') {
@@ -255,9 +256,10 @@ class SystemOverviewService
         $schoolYear ??= $this->households->currentSchoolYear();
         $scopeLevel = $user->roleScopeLevel();
         $schoolYearRecord = SchoolYear::findByLabel($schoolYear);
+        $schoolYearId = $schoolYearRecord?->id ?? 0;
         $schoolYearStart = (int) substr($schoolYear, 0, 4);
         $households = DataAccessScope::households(Household::query(), $user)
-            ->where('school_year', $schoolYear);
+            ->where('school_year_id', $schoolYearId);
         $people = $this->peopleForSchoolYear(
             $schoolYearRecord?->id ?? 0,
             $schoolYear,
@@ -279,7 +281,7 @@ class SystemOverviewService
             $units = Commune::query()
                 ->where('province_code', $user->province_code)
                 ->withCount(['households as households_count' => fn ($query) => $query
-                    ->where('school_year', $schoolYear)])
+                    ->where('school_year_id', $schoolYearId)])
                 ->orderByDesc('households_count')
                 ->orderBy('name')
                 ->limit(10)
@@ -304,7 +306,7 @@ class SystemOverviewService
             $communeCount = 1;
             $units = (clone $villageQuery)
                 ->withCount(['households as households_count' => fn ($query) => $query
-                    ->where('school_year', $schoolYear)])
+                    ->where('school_year_id', $schoolYearId)])
                 ->orderByDesc('households_count')
                 ->orderBy('name')
                 ->limit(10)

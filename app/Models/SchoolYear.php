@@ -71,6 +71,11 @@ class SchoolYear extends Model
         return $this->hasMany(PersonEducation::class, 'school_year_id');
     }
 
+    public function households(): HasMany
+    {
+        return $this->hasMany(Household::class, 'school_year_id');
+    }
+
     /**
      * @return array{int, int}|null
      */

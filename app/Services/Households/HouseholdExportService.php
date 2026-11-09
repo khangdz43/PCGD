@@ -4,6 +4,7 @@ namespace App\Services\Households;
 
 use App\Models\Household;
 use App\Models\Person;
+use App\Models\SchoolYear;
 use App\Models\User;
 use App\Support\DataAccessScope;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -45,7 +46,8 @@ class HouseholdExportService
                 ->where('school_code', $filters['school_code']));
         }
         if (filled($filters['school_year'] ?? null) && $filters['school_year'] !== 'all') {
-            $query->where('school_year', $filters['school_year']);
+            $schoolYearId = SchoolYear::findByLabel((string) $filters['school_year'])?->id;
+            $query->where('school_year_id', $schoolYearId ?? 0);
         }
         foreach (['province_code', 'commune_code', 'village_code'] as $field) {
             if (filled($queryFilters[$field] ?? null)) {

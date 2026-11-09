@@ -1901,6 +1901,10 @@ class AccessControlTest extends TestCase
             ->assertForbidden();
         $target->roles()->detach($ownRole);
         $this->deleteJson("/api/v1/roles/{$ownRole->id}")
+            ->assertUnprocessable();
+        $this->assertDatabaseHas('roles', ['id' => $ownRole->id]);
+        $outsideTarget->roles()->detach($ownRole);
+        $this->deleteJson("/api/v1/roles/{$ownRole->id}")
             ->assertOk();
         $this->assertDatabaseMissing('roles', ['id' => $ownRole->id]);
     }
@@ -2426,7 +2430,7 @@ class AccessControlTest extends TestCase
         $this->assertDatabaseMissing('users', ['phone' => '0900000002']);
     }
 
-    public function test_a_group_can_be_deleted_after_all_assigned_users_are_revoked(): void
+    public function test_group_cannot_be_deleted_until_inactive_assigned_user_is_detached(): void
     {
         $adminRole = Role::create([
             'name' => Role::SYSTEM_ADMIN,
@@ -2468,6 +2472,11 @@ class AccessControlTest extends TestCase
 
         $this->patchJson(route('api.users.status.update', $account), ['is_active' => false])
             ->assertOk();
+        $this->deleteJson(route('api.roles.destroy', $group))
+            ->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'role');
+        $this->assertDatabaseHas('roles', ['id' => $group->id]);
+        $account->roles()->detach($group);
         $this->deleteJson(route('api.roles.destroy', $group))->assertOk();
 
         $this->assertDatabaseMissing('roles', ['id' => $group->id]);

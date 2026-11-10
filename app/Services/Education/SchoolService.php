@@ -69,7 +69,7 @@ class SchoolService
     {
         $query = Province::query()->orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $user->province_code);
+            $query->whereIn('code', $user->operatingProvinceCodes());
         }
 
         return $query->get(['code', 'name']);
@@ -204,12 +204,12 @@ class SchoolService
             return;
         }
 
-        if ($user->province_code !== $provinceCode) {
+        if (! in_array($provinceCode, $user->operatingProvinceCodes(), true)) {
             $query->whereRaw('1 = 0');
         }
 
         if ($user->roleScopeLevel() === 'commune') {
-            $query->where('commune_code', $user->commune_code);
+            $query->whereIn('commune_code', $user->operatingCommuneCodes($provinceCode));
         }
     }
 
@@ -220,8 +220,8 @@ class SchoolService
         }
 
         match ($user->roleScopeLevel()) {
-            'province' => $query->where('province_code', $user->province_code),
-            'commune' => $query->where('commune_code', $user->commune_code),
+            'province' => $query->whereIn('province_code', $user->operatingProvinceCodes()),
+            'commune' => $query->whereIn('commune_code', $user->operatingCommuneCodes()),
             default => $query->whereRaw('1 = 0'),
         };
     }
@@ -232,14 +232,12 @@ class SchoolService
             return;
         }
 
-        $allowed = match ($user->roleScopeLevel()) {
-            'province' => $user->province_code !== null && $scope['province_code'] === $user->province_code,
-            'commune' => $user->province_code !== null
-                && $user->commune_code !== null
-                && $scope['province_code'] === $user->province_code
-                && $scope['commune_code'] === $user->commune_code,
-            default => false,
-        };
+        $allowed = in_array($user->roleScopeLevel(), ['province', 'commune'], true)
+            && isset($scope['province_code'])
+            && $user->operatesInArea(
+                (string) $scope['province_code'],
+                $scope['commune_code'] ?? null,
+            );
 
         abort_unless($allowed, 403);
     }

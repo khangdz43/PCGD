@@ -48,10 +48,10 @@ class MergeHistoryController extends Controller
         $query = VillageMergeHistory::query()->with('mergedBy:id,name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             if ($user->roleScopeLevel() === 'commune') {
-                $query->where('commune_code', $user->commune_code);
+                $query->whereIn('commune_code', $user->operatingCommuneCodes());
             } elseif ($user->roleScopeLevel() === 'province') {
                 $communeCodes = Commune::query()
-                    ->where('province_code', $user->province_code)
+                    ->whereIn('province_code', $user->operatingProvinceCodes())
                     ->select('code');
                 $query->whereIn('commune_code', $communeCodes);
             } else {
@@ -76,9 +76,9 @@ class MergeHistoryController extends Controller
     {
         $query = SchoolMergeHistory::query()->with('mergedBy:id,name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('province_code', $user->province_code);
+            $query->whereIn('province_code', $user->operatingProvinceCodes());
             if ($user->roleScopeLevel() === 'commune') {
-                $query->where('commune_code', $user->commune_code);
+                $query->whereIn('commune_code', $user->operatingCommuneCodes());
             } elseif ($user->roleScopeLevel() !== 'province') {
                 return collect();
             }

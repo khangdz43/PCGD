@@ -92,7 +92,7 @@ class RoleManagementServiceTest extends TestCase
         ));
     }
 
-    public function test_non_admin_can_manage_only_roles_created_by_them_inside_their_area(): void
+    public function test_non_admin_can_manage_only_roles_created_by_them_at_their_scope(): void
     {
         $actor = new User;
         $actor->setRawAttributes(['id' => 8, 'province_code' => 'P01', 'commune_code' => 'C02']);
@@ -115,7 +115,7 @@ class RoleManagementServiceTest extends TestCase
                 'commune_code' => 'C02',
             ]),
         ));
-        self::assertFalse($service->canManageRole(
+        self::assertTrue($service->canManageRole(
             $actor,
             new Role([
                 'name' => 'other-area-role',
@@ -124,6 +124,15 @@ class RoleManagementServiceTest extends TestCase
                 'created_by' => 8,
                 'province_code' => 'P01',
                 'commune_code' => 'C99',
+            ]),
+        ));
+        self::assertFalse($service->canManageRole(
+            $actor,
+            new Role([
+                'name' => 'other-scope-role',
+                'guard_name' => 'web',
+                'scope_level' => 'province',
+                'created_by' => 8,
             ]),
         ));
         self::assertFalse($service->canManageRole(

@@ -10044,6 +10044,7 @@ onMounted(async () => {
                             busy ||
                             villageMergeBusy ||
                             formOptionsBusy ||
+                            (moduleKey === 'roles' && !roleFormReady) ||
                             (moduleKey === 'users' &&
                                 editing &&
                                 !userFormChanged) ||

@@ -362,7 +362,7 @@ class HouseholdImportProcessingService
         }
 
         $existingCodes = Household::query()
-            ->where('school_year', $schoolYear)
+            ->where('school_year_id', $schoolYearId)
             ->whereIn('household_code', array_keys($groups))
             ->pluck('household_code')
             ->all();
@@ -459,7 +459,7 @@ class HouseholdImportProcessingService
         $this->insertRows('households', $householdRows);
 
         $householdIds = DB::table('households')
-            ->where('school_year', $schoolYear)
+            ->where('school_year_id', $schoolYearId)
             ->whereIn('household_code', array_keys($batch))
             ->whereNull('deleted_at')
             ->pluck('id', 'household_code')

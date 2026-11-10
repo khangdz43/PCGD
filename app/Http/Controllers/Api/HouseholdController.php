@@ -51,7 +51,7 @@ class HouseholdController extends Controller
     public function show(Household $household, Request $request): JsonResponse
     {
         abort_unless(DataAccessScope::canAccessHousehold($request->user(), $household), 404);
-        $household->load('province', 'commune', 'village');
+        $household->load('province', 'commune', 'village', 'schoolYearRecord');
         $headPerson = $household->persons()
             ->where('relationship_with_head', 'Chủ hộ')
             ->first([

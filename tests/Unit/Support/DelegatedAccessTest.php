@@ -131,22 +131,24 @@ class DelegatedAccessTest extends TestCase
         ));
     }
 
-    public function test_role_area_is_global_for_system_admin_and_local_for_territorial_actor(): void
+    public function test_role_assignment_is_bound_to_the_creator_and_manageable_scope(): void
     {
-        $admin = Mockery::mock(User::class);
-        $admin->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnTrue();
-        self::assertSame(
-            ['province_code' => null, 'commune_code' => null],
-            DelegatedAccess::roleAreaFor($admin),
-        );
+        $actor = $this->actorWithAttributes(['id' => 8]);
+        $actor->shouldReceive('hasRole')->with(Role::SYSTEM_ADMIN)->zeroOrMoreTimes()->andReturnFalse();
+        $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('commune');
 
-        $actor = $this->actorWithAttributes(['province_code' => 'P01', 'commune_code' => 'C02']);
-        $actor->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
-        $actor->shouldReceive('roleScopeLevel')->twice()->andReturn('commune');
-        self::assertSame(
-            ['province_code' => 'P01', 'commune_code' => 'C02'],
-            DelegatedAccess::roleAreaFor($actor),
-        );
+        self::assertTrue(DelegatedAccess::roleBelongsToActorArea(
+            $actor,
+            new Role(['scope_level' => 'commune', 'created_by' => 8]),
+        ));
+        self::assertFalse(DelegatedAccess::roleBelongsToActorArea(
+            $actor,
+            new Role(['scope_level' => 'province', 'created_by' => 8]),
+        ));
+        self::assertFalse(DelegatedAccess::roleBelongsToActorArea(
+            $actor,
+            new Role(['scope_level' => 'commune', 'created_by' => 99]),
+        ));
     }
 
     private function actorWithAttributes(array $attributes): User&\Mockery\MockInterface

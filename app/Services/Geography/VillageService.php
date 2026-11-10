@@ -62,7 +62,7 @@ class VillageService
     {
         $query = Province::query()->orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $user->province_code);
+            $query->whereIn('code', $user->operatingProvinceCodes());
         }
 
         return $query->get(['code', 'name']);
@@ -186,7 +186,7 @@ class VillageService
 
         return DB::transaction(function () use ($user, $sourceCodes, $targetCode): int {
             $villages = Village::query()
-                ->where('commune_code', $user->commune_code)
+                ->whereIn('commune_code', $user->operatingCommuneCodes())
                 ->whereIn('code', [...$sourceCodes, $targetCode])
                 ->orderBy('code')
                 ->lockForUpdate()
@@ -198,6 +198,12 @@ class VillageService
             if ($target === null || $sources->count() !== count($sourceCodes)) {
                 throw ValidationException::withMessages([
                     'source_codes' => 'Một hoặc nhiều thôn đã thay đổi hoặc không còn thuộc địa bàn quản lý.',
+                ]);
+            }
+
+            if ($villages->pluck('commune_code')->unique()->count() !== 1) {
+                throw ValidationException::withMessages([
+                    'source_codes' => 'Chỉ có thể gộp thôn trong cùng một xã.',
                 ]);
             }
 
@@ -233,23 +239,24 @@ class VillageService
                 'merged_by' => $user->id,
             ]);
 
-            $assignedUserIds = DB::table('user_villages')
+            $assignedAreas = DB::table('user_operating_areas')
                 ->whereIn('village_code', $sourceCodes)
-                ->distinct()
-                ->pluck('user_id');
+                ->get(['user_id', 'province_code', 'commune_code']);
 
-            if ($assignedUserIds->isNotEmpty()) {
-                DB::table('user_villages')->insertOrIgnore(
-                    $assignedUserIds
-                        ->map(fn ($userId): array => [
-                            'user_id' => $userId,
+            if ($assignedAreas->isNotEmpty()) {
+                DB::table('user_operating_areas')->insertOrIgnore(
+                    $assignedAreas
+                        ->map(fn (object $area): array => [
+                            'user_id' => $area->user_id,
+                            'province_code' => $area->province_code,
+                            'commune_code' => $area->commune_code,
                             'village_code' => $target->code,
                         ])
                         ->all()
                 );
             }
 
-            DB::table('user_villages')->whereIn('village_code', $sourceCodes)->delete();
+            DB::table('user_operating_areas')->whereIn('village_code', $sourceCodes)->delete();
             Village::query()
                 ->whereIn('code', $sourceCodes)
                 ->delete();
@@ -270,7 +277,7 @@ class VillageService
 
         return DB::transaction(function () use ($user, $sourceCodes): int {
             $sources = Village::query()
-                ->where('commune_code', $user->commune_code)
+                ->whereIn('commune_code', $user->operatingCommuneCodes())
                 ->whereIn('code', $sourceCodes)
                 ->orderBy('code')
                 ->lockForUpdate()
@@ -278,6 +285,11 @@ class VillageService
             if ($sources->count() !== count($sourceCodes)) {
                 throw ValidationException::withMessages([
                     'source_codes' => 'Một hoặc nhiều thôn không còn thuộc địa bàn quản lý.',
+                ]);
+            }
+            if ($sources->pluck('commune_code')->unique()->count() !== 1) {
+                throw ValidationException::withMessages([
+                    'source_codes' => 'Chỉ có thể tạm dừng thôn trong cùng một xã.',
                 ]);
             }
             $this->assertMergeVillageScope($user, $sources);
@@ -313,7 +325,7 @@ class VillageService
 
         return DB::transaction(function () use ($user, $sourceCodes): int {
             $sources = Village::query()
-                ->where('commune_code', $user->commune_code)
+                ->whereIn('commune_code', $user->operatingCommuneCodes())
                 ->whereIn('code', $sourceCodes)
                 ->orderBy('code')
                 ->lockForUpdate()
@@ -321,6 +333,11 @@ class VillageService
             if ($sources->count() !== count($sourceCodes)) {
                 throw ValidationException::withMessages([
                     'source_codes' => 'Một hoặc nhiều thôn không còn thuộc địa bàn quản lý.',
+                ]);
+            }
+            if ($sources->pluck('commune_code')->unique()->count() !== 1) {
+                throw ValidationException::withMessages([
+                    'source_codes' => 'Chỉ có thể mở lại thôn trong cùng một xã.',
                 ]);
             }
             $this->assertMergeVillageScope($user, $sources);
@@ -360,17 +377,22 @@ class VillageService
 
     private function assertCanMerge(User $user): void
     {
-        abort_unless($user->roleScopeLevel() === 'commune' && filled($user->commune_code), 403);
+        abort_unless($user->roleScopeLevel() === 'commune' && $user->operatingCommuneCodes() !== [], 403);
     }
 
     private function assertMergeVillageScope(User $user, Collection $villages): void
     {
         $managedCodes = $user->managedVillageCodes();
+        $villages->loadMissing('commune');
         if ($managedCodes !== [] && $villages->contains(
             fn (Village $village): bool => ! in_array($village->code, $managedCodes, true)
         )) {
             abort(403);
         }
+        abort_unless($villages->every(fn (Village $village): bool => $user->operatesInArea(
+            $village->commune->province_code,
+            $village->commune_code,
+        )), 403);
     }
 
     private function assertNoActiveImports(array $villageCodes, string $field = 'source_codes'): void
@@ -404,8 +426,8 @@ class VillageService
 
         $commune = Commune::where('code', $communeCode)->firstOrFail();
         $allowed = match ($user->roleScopeLevel()) {
-            'province' => $commune->province_code === $user->province_code,
-            'commune' => $communeCode === $user->commune_code
+            'province' => $user->coversProvince($commune->province_code),
+            'commune' => $user->operatesInArea($commune->province_code, $communeCode)
                 && ($user->managedVillageCodes() === []
                     || ($existingVillage !== null
                         && in_array($existingVillage->code, $user->managedVillageCodes(), true))),
@@ -422,8 +444,9 @@ class VillageService
         }
 
         match ($user->roleScopeLevel()) {
-            'province' => $query->whereHas('commune', fn (Builder $commune) => $commune->where('province_code', $user->province_code)),
-            'commune' => $query->where('commune_code', $user->commune_code)
+            'province' => $query->whereHas('commune', fn (Builder $commune) => $commune
+                ->whereIn('province_code', $user->operatingProvinceCodes())),
+            'commune' => $query->whereIn('commune_code', $user->operatingCommuneCodes())
                 ->when($user->managedVillageCodes() !== [], fn (Builder $villages) => $villages
                     ->whereIn('code', $user->managedVillageCodes())),
             default => $query->whereRaw('1 = 0'),

@@ -101,7 +101,7 @@ class HouseholdService
     {
         $query = Province::orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $user->province_code);
+            $query->whereIn('code', $user->operatingProvinceCodes());
         }
 
         return $query->get(['code', 'name']);

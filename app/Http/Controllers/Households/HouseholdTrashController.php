@@ -41,8 +41,8 @@ class HouseholdTrashController extends Controller
                     ? null
                     : $user->province_code);
             $provinceQuery = Province::query()->orderBy('name');
-            if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->province_code !== null) {
-                $provinceQuery->where('code', $user->province_code);
+            if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
+                $provinceQuery->whereIn('code', $user->operatingProvinceCodes());
             }
             $provinces = $provinceQuery->get(['code', 'name']);
             $communeQuery = Commune::query()->orderBy('name');
@@ -50,9 +50,9 @@ class HouseholdTrashController extends Controller
                 $communeQuery->where('province_code', $selectedProvinceCode);
             }
             if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
-                $communeQuery->where('province_code', $user->province_code);
+                $communeQuery->whereIn('province_code', $user->operatingProvinceCodes());
                 if ($user->roleScopeLevel() === 'commune') {
-                    $communeQuery->where('code', $user->commune_code);
+                    $communeQuery->whereIn('code', $user->operatingCommuneCodes());
                 }
             }
             $communes = $communeQuery->get(['code', 'name', 'province_code']);

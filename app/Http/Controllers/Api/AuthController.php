@@ -79,7 +79,7 @@ class AuthController extends Controller
             'scope_level' => $user->roleScopeLevel(),
             'scope_level_label' => $scope['scope_level_label'],
             'scope_area' => $scope['scope_area'],
-            'role_name' => $user->roles()->pluck('name')->implode(', ') ?: 'Chưa được gán nhóm',
+            'role_name' => $user->role?->name ?? 'Chưa được gán nhóm',
             'can_view_dashboard' => $user->canViewDashboard(),
             'school_year' => $households->currentSchoolYear(),
             'province_code' => $user->province_code,

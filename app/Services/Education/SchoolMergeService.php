@@ -314,16 +314,9 @@ class SchoolMergeService
             return;
         }
 
-        $allowed = match ($user->roleScopeLevel()) {
-            'global' => true,
-            'province' => $user->province_code !== null
-                && $school->province_code === $user->province_code,
-            'commune' => $user->province_code !== null
-                && $user->commune_code !== null
-                && $school->province_code === $user->province_code
-                && $school->commune_code === $user->commune_code,
-            default => false,
-        };
+        $allowed = $user->roleScopeLevel() === 'global'
+            || (in_array($user->roleScopeLevel(), ['province', 'commune'], true)
+                && $user->operatesInArea($school->province_code, $school->commune_code));
 
         abort_unless($allowed, 403);
     }
@@ -336,8 +329,8 @@ class SchoolMergeService
 
         match ($user->roleScopeLevel()) {
             'global' => null,
-            'province' => $query->where('province_code', $user->province_code),
-            'commune' => $query->where('commune_code', $user->commune_code),
+            'province' => $query->whereIn('province_code', $user->operatingProvinceCodes()),
+            'commune' => $query->whereIn('commune_code', $user->operatingCommuneCodes()),
             default => $query->whereRaw('1 = 0'),
         };
     }

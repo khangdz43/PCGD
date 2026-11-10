@@ -28,7 +28,6 @@ class RoleManagementService
                 }
             },
         ])
-            ->with('permissions')
             ->where('guard_name', 'web')
             ->where('name', '!=', Role::SYSTEM_ADMIN)
             ->whereIn('scope_level', $manageableLevels)
@@ -105,7 +104,7 @@ class RoleManagementService
             $this->constrainMembersToActorArea($query, $actor);
         }
 
-        return $query->with(['province:code,name', 'commune:code,name', 'villages:code,name'])
+        return $query->with(['province:code,name', 'commune:code,name', 'villages:code,name', 'operatingAreas'])
             ->orderBy('users.name')
             ->paginate(min(max($perPage, 1), 100));
     }
@@ -117,29 +116,32 @@ class RoleManagementService
             return;
         }
 
-        if ($actor->province_code === null) {
+        $provinceCodes = $actor->operatingProvinceCodes();
+        if ($provinceCodes === []) {
             $query->whereRaw('1 = 0');
             return;
         }
 
-        $query->where('users.province_code', $actor->province_code);
-
-        if ($scopeLevel === 'commune') {
-            if ($actor->commune_code === null) {
-                $query->whereRaw('1 = 0');
-                return;
+        $communeCodes = $actor->operatingCommuneCodes();
+        $villageCodes = $actor->managedVillageCodes();
+        $query->whereHas('operatingAreas', function (Builder $areas) use (
+            $scopeLevel,
+            $provinceCodes,
+            $communeCodes,
+            $villageCodes,
+        ): void {
+            $areas->whereIn('province_code', $provinceCodes);
+            if ($scopeLevel === 'commune') {
+                if ($communeCodes === []) {
+                    $areas->whereRaw('1 = 0');
+                    return;
+                }
+                $areas->whereIn('commune_code', $communeCodes);
+                if ($villageCodes !== []) {
+                    $areas->whereIn('village_code', $villageCodes);
+                }
             }
-
-            $query->where('users.commune_code', $actor->commune_code);
-        }
-
-        if ($scopeLevel === 'commune' && $actor->managedVillageCodes() !== []) {
-            $villageCodes = $actor->managedVillageCodes();
-            $query->where(function (Builder $users) use ($villageCodes): void {
-                $users->whereHas('villages', fn (Builder $villages) => $villages
-                    ->whereIn('villages.code', $villageCodes));
-            });
-        }
+        });
     }
 
     /**
@@ -204,21 +206,19 @@ class RoleManagementService
         );
         unset($data['permissions'], $data['permission_groups'], $data['scope_level']);
         $permissionIds = $this->permissionIdsForScope($actor, $scopeLevel, $permissionIds);
-        $area = DelegatedAccess::roleAreaFor($actor);
-
-        $role = DB::transaction(function () use ($actor, $data, $permissionIds, $area, $scopeLevel): Role {
+        $role = DB::transaction(function () use ($actor, $data, $permissionIds, $scopeLevel): Role {
             $role = Role::create([
                 ...$data,
                 'scope_level' => $scopeLevel,
-                ...$area,
+                'guard_name' => config('auth.permission_guard', 'web'),
                 'created_by' => $actor->id,
             ]);
-            $role->permissions()->sync($permissionIds);
+            $role->syncPermissions($permissionIds);
 
             return $role;
         });
 
-        return $role->load('permissions');
+        return $role->refresh();
     }
 
     public function update(User $actor, Role $role, array $data): void
@@ -263,7 +263,7 @@ class RoleManagementService
                 $data['scope_level'] = $scopeLevel;
             }
             $role->update($data);
-            $role->permissions()->sync($permissionIds);
+            $role->syncPermissions($permissionIds);
         });
     }
 
@@ -282,7 +282,6 @@ class RoleManagementService
         }
 
         DB::transaction(function () use ($role): void {
-            $role->users()->detach();
             $role->delete();
         });
 
@@ -355,7 +354,6 @@ class RoleManagementService
             && $scopeLevel === $actor->roleScopeLevel()
                 ? $actor->roles()
                     ->where('roles.scope_level', $scopeLevel)
-                    ->with('permissions')
                     ->get()
                     ->flatMap(fn (Role $role): \Illuminate\Support\Collection => $role->permissions->pluck('name'))
                     ->unique()

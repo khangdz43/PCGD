@@ -148,8 +148,8 @@ class UserRoleController extends Controller
     public function show(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        $actor->loadMissing(['roles.permissions', 'roles.creator']);
-        $user->loadMissing(['roles.permissions', 'roles.creator', 'villages']);
+        $actor->loadMissing(['roles.creator']);
+        $user->loadMissing(['roles.creator', 'villages']);
 
         abort_unless($this->users->canViewUser($actor, $user), 403);
         $user->loadMissing(['province', 'commune']);
@@ -225,8 +225,8 @@ class UserRoleController extends Controller
     public function edit(Request $request, User $user): JsonResponse
     {
         $actor = $request->user();
-        $actor->loadMissing(['roles.permissions', 'roles.creator']);
-        $user->loadMissing(['roles.permissions', 'roles.creator', 'villages']);
+        $actor->loadMissing(['roles.creator']);
+        $user->loadMissing(['roles.creator', 'villages']);
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
         $roles = $this->users->rolesForForm($actor, $accountLevels);
         abort_unless($this->users->canEditUserConfiguration($actor, $user, $roles), 403);

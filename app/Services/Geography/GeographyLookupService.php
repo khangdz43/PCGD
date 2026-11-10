@@ -15,29 +15,21 @@ class GeographyLookupService
 {
     public function provincesForHome(User $user, bool $includeAccountCounts = false): Collection
     {
-        $query = Province::select('code', 'name');
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $user->province_code);
+        $query = Province::query()->select('code', 'name');
+        if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
+            $query->whereIn('code', $user->operatingProvinceCodes());
         }
 
         $provinces = $query->orderBy('name')->get();
-        if ($includeAccountCounts && (
-            ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
-            || $user->canManageSubordinateUsers()
-        )) {
-            $counts = DB::table('users')
-                ->whereIn('province_code', $provinces->pluck('code'))
-                ->whereNotExists(function ($query): void {
-                    $query->selectRaw('1')
-                        ->from('model_has_roles')
-                        ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
-                        ->whereColumn('model_has_roles.model_id', 'users.id')
-                        ->where('model_has_roles.model_type', User::class)
-                        ->where('roles.name', Role::SYSTEM_ADMIN);
-                })
-                ->select('province_code')
-                ->selectRaw('COUNT(*) AS account_count')
-                ->groupBy('province_code')
+        if ($includeAccountCounts && $this->canViewAccountCounts($user)) {
+            $counts = DB::table('user_operating_areas')
+                ->join('users', 'users.id', '=', 'user_operating_areas.user_id')
+                ->join('roles', 'roles.id', '=', 'users.role_id')
+                ->whereIn('user_operating_areas.province_code', $provinces->pluck('code'))
+                ->where('roles.name', '!=', Role::SYSTEM_ADMIN)
+                ->select('user_operating_areas.province_code')
+                ->selectRaw('COUNT(DISTINCT users.id) AS account_count')
+                ->groupBy('user_operating_areas.province_code')
                 ->pluck('account_count', 'province_code');
 
             $provinces->each(fn ($province) => $province->account_count = $counts[$province->code] ?? 0);
@@ -53,16 +45,18 @@ class GeographyLookupService
         ?int $exceptUserId,
         bool $includeAccountCounts
     ): Collection {
-        $province = Province::where('code', $provinceCode)->firstOrFail();
+        $province = Province::query()->where('code', $provinceCode)->firstOrFail();
         $communes = $province->communes();
 
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            if ($user->province_code !== $provinceCode) {
+        if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
+            if (! in_array($provinceCode, $user->operatingProvinceCodes(), true)) {
                 $communes->whereRaw('1 = 0');
             }
 
             if ($user->roleScopeLevel() === 'commune') {
-                $communes->where('code', $user->commune_code);
+                $communes->whereIn('code', $user->operatingCommuneCodes($provinceCode));
+            } elseif ($user->roleScopeLevel() === 'province' && ! $user->coversProvince($provinceCode)) {
+                $communes->whereRaw('1 = 0');
             }
         }
 
@@ -78,30 +72,21 @@ class GeographyLookupService
         }
 
         $communeList = $communes->select('code', 'name')->get();
-        if ($includeAccountCounts && (
-            ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
-            || $user->canManageSubordinateUsers()
-        )) {
-            $countsQuery = DB::table('users')
-                ->whereIn('commune_code', $communeList->pluck('code'));
+        if ($includeAccountCounts && $this->canViewAccountCounts($user)) {
+            $countsQuery = DB::table('user_operating_areas')
+                ->join('users', 'users.id', '=', 'user_operating_areas.user_id')
+                ->join('roles', 'roles.id', '=', 'users.role_id')
+                ->whereIn('user_operating_areas.commune_code', $communeList->pluck('code'));
             if ($user->hasRole(Role::SYSTEM_ADMIN)) {
-                $countsQuery->whereNotExists(function ($query): void {
-                    $query->selectRaw('1')
-                        ->from('model_has_roles')
-                        ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
-                        ->whereColumn('model_has_roles.model_id', 'users.id')
-                        ->where('model_has_roles.model_type', User::class)
-                        ->where('roles.name', Role::SYSTEM_ADMIN);
-                });
+                $countsQuery->where('roles.name', '!=', Role::SYSTEM_ADMIN);
             } else {
-                $countsQuery->where('province_code', $user->province_code)
-                    ->where('id', '!=', $user->id)
-                    ->whereIn('scope_level', DelegatedAccess::manageableAccountLevels($user));
+                $countsQuery->where('users.id', '!=', $user->id)
+                    ->whereIn('roles.scope_level', DelegatedAccess::manageableAccountLevels($user));
             }
             $counts = $countsQuery
-                ->select('commune_code')
-                ->selectRaw('COUNT(*) AS account_count')
-                ->groupBy('commune_code')
+                ->select('user_operating_areas.commune_code')
+                ->selectRaw('COUNT(DISTINCT users.id) AS account_count')
+                ->groupBy('user_operating_areas.commune_code')
                 ->pluck('account_count', 'commune_code');
 
             $communeList->each(fn ($commune) => $commune->account_count = $counts[$commune->code] ?? 0);
@@ -112,17 +97,13 @@ class GeographyLookupService
 
     public function villagesForCommune(string $communeCode, User $user, bool $includeAccountCounts): Collection
     {
-        $commune = Commune::where('code', $communeCode)->firstOrFail();
+        $commune = Commune::query()->where('code', $communeCode)->firstOrFail();
         $villages = $commune->villages()
             ->whereNull('merged_into_code')
             ->whereNull('intake_paused_at');
 
-        if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            if ($user->province_code !== $commune->province_code) {
-                $villages->whereRaw('1 = 0');
-            }
-
-            if ($user->roleScopeLevel() === 'commune' && $user->commune_code !== $communeCode) {
+        if (! $user->hasRole(Role::SYSTEM_ADMIN) && $user->roleScopeLevel() !== 'global') {
+            if (! $user->operatesInArea($commune->province_code, $communeCode)) {
                 $villages->whereRaw('1 = 0');
             }
 
@@ -132,37 +113,48 @@ class GeographyLookupService
         }
 
         $villageList = $villages->select('code', 'name')->get();
-        if ($includeAccountCounts && (
-            ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
-            || $user->canManageSubordinateUsers()
-        )) {
-            $countsQuery = DB::table('user_villages')
-                ->join('users', 'users.id', '=', 'user_villages.user_id')
-                ->whereIn('user_villages.village_code', $villageList->pluck('code'));
+        if ($includeAccountCounts && $this->canViewAccountCounts($user) && $villageList->isNotEmpty()) {
+            $villageCodes = $villageList->pluck('code');
+            $countsQuery = DB::table('user_operating_areas')
+                ->join('users', 'users.id', '=', 'user_operating_areas.user_id')
+                ->join('roles', 'roles.id', '=', 'users.role_id')
+                ->whereIn('user_operating_areas.village_code', $villageCodes);
             if ($user->hasRole(Role::SYSTEM_ADMIN)) {
-                $countsQuery->whereNotExists(function ($query): void {
-                    $query->selectRaw('1')
-                        ->from('model_has_roles')
-                        ->join('roles', 'roles.id', '=', 'model_has_roles.role_id')
-                        ->whereColumn('model_has_roles.model_id', 'users.id')
-                        ->where('model_has_roles.model_type', User::class)
-                        ->where('roles.name', Role::SYSTEM_ADMIN);
-                });
+                $countsQuery->where('roles.name', '!=', Role::SYSTEM_ADMIN);
             } else {
-                $countsQuery->where('users.province_code', $user->province_code)
-                    ->where('users.commune_code', $user->commune_code)
-                    ->where('users.id', '!=', $user->id)
-                    ->where('users.scope_level', 'commune');
+                $countsQuery->where('users.id', '!=', $user->id)
+                    ->where('user_operating_areas.commune_code', $user->commune_code)
+                    ->where('roles.scope_level', 'commune');
             }
             $counts = $countsQuery
-                ->select('user_villages.village_code')
+                ->select('user_operating_areas.village_code')
                 ->selectRaw('COUNT(DISTINCT users.id) AS account_count')
-                ->groupBy('user_villages.village_code')
+                ->groupBy('user_operating_areas.village_code')
                 ->pluck('account_count', 'village_code');
 
-            $villageList->each(fn ($village) => $village->account_count = $counts[$village->code] ?? 0);
+            $broadAreaCount = DB::table('user_operating_areas')
+                ->join('users', 'users.id', '=', 'user_operating_areas.user_id')
+                ->join('roles', 'roles.id', '=', 'users.role_id')
+                ->where('user_operating_areas.commune_code', $communeCode)
+                ->whereNull('user_operating_areas.village_code');
+            if ($user->hasRole(Role::SYSTEM_ADMIN)) {
+                $broadAreaCount->where('roles.name', '!=', Role::SYSTEM_ADMIN);
+            } else {
+                $broadAreaCount->where('users.id', '!=', $user->id)
+                    ->where('roles.scope_level', 'commune');
+            }
+            $broadAreaCount = $broadAreaCount->distinct('users.id')->count('users.id');
+
+            $villageList->each(fn ($village) => $village->account_count =
+                ($counts[$village->code] ?? 0) + $broadAreaCount);
         }
 
         return $villageList;
+    }
+
+    private function canViewAccountCounts(User $user): bool
+    {
+        return ($user->hasRole(Role::SYSTEM_ADMIN) && $user->can(AccessPermission::VIEW_ORGANIZATION_ACCOUNTS))
+            || $user->canManageSubordinateUsers();
     }
 }

@@ -208,9 +208,9 @@ class SystemOverviewService
 
         if ($user !== null) {
             if ($user->roleScopeLevel() === 'province') {
-                $query->where('households.province_code', $user->province_code);
+                $query->whereIn('households.province_code', $user->operatingProvinceCodes());
             } elseif ($user->roleScopeLevel() === 'commune') {
-                $query->where('households.commune_code', $user->commune_code);
+                $query->whereIn('households.commune_code', $user->operatingCommuneCodes());
                 $managedVillageCodes = $user->managedVillageCodes();
                 if ($managedVillageCodes !== []) {
                     $query->whereIn('households.village_code', $managedVillageCodes);
@@ -265,21 +265,23 @@ class SystemOverviewService
             $schoolYear,
             $user,
         );
+        $provinceCodes = $user->operatingProvinceCodes();
+        $communeCodes = $user->operatingCommuneCodes();
         $area = $scopeLevel === 'province'
-            ? Province::query()->where('code', $user->province_code)->firstOrFail()
-            : Commune::query()->where('code', $user->commune_code)->firstOrFail();
+            ? Province::query()->whereIn('code', $provinceCodes)->firstOrFail()
+            : Commune::query()->whereIn('code', $communeCodes)->firstOrFail();
         $schoolQuery = School::query()->whereNull('deleted_at');
         if ($scopeLevel === 'province') {
-            $schoolQuery->where('province_code', $user->province_code);
-            $communeCount = Commune::query()->where('province_code', $user->province_code)->count();
+            $schoolQuery->whereIn('province_code', $provinceCodes);
+            $communeCount = Commune::query()->whereIn('province_code', $provinceCodes)->count();
             $villageCount = Village::query()
                 ->whereIn('commune_code', Commune::query()
                     ->select('code')
-                    ->where('province_code', $user->province_code))
+                    ->whereIn('province_code', $provinceCodes))
                 ->whereNull('merged_into_code')
                 ->count();
             $units = Commune::query()
-                ->where('province_code', $user->province_code)
+                ->whereIn('province_code', $provinceCodes)
                 ->withCount(['households as households_count' => fn ($query) => $query
                     ->where('school_year_id', $schoolYearId)])
                 ->orderByDesc('households_count')
@@ -292,18 +294,19 @@ class SystemOverviewService
                     'households' => $commune->households_count,
                 ])
                 ->all();
-            $accountQuery = User::query()->where('province_code', $user->province_code);
+            $accountQuery = User::query()->whereHas('operatingAreas', fn ($areas) => $areas
+                ->whereIn('province_code', $provinceCodes));
         } else {
-            $schoolQuery->where('commune_code', $user->commune_code);
+            $schoolQuery->whereIn('commune_code', $communeCodes);
             $villageQuery = Village::query()
-                ->where('commune_code', $user->commune_code)
+                ->whereIn('commune_code', $communeCodes)
                 ->whereNull('merged_into_code');
             $managedVillageCodes = $user->managedVillageCodes();
             if ($managedVillageCodes !== []) {
                 $villageQuery->whereIn('code', $managedVillageCodes);
             }
             $villageCount = (clone $villageQuery)->count();
-            $communeCount = 1;
+            $communeCount = count($communeCodes);
             $units = (clone $villageQuery)
                 ->withCount(['households as households_count' => fn ($query) => $query
                     ->where('school_year_id', $schoolYearId)])
@@ -318,8 +321,9 @@ class SystemOverviewService
                 ])
                 ->all();
             $accountQuery = User::query()
-                ->where('commune_code', $user->commune_code)
-                ->where('scope_level', 'commune');
+                ->whereHas('role', fn ($roles) => $roles->where('roles.scope_level', 'commune'))
+                ->whereHas('operatingAreas', fn ($areas) => $areas
+                    ->whereIn('commune_code', $communeCodes));
             if ($managedVillageCodes !== []) {
                 $accountQuery->whereHas('villages', fn ($query) => $query
                     ->whereIn('villages.code', $managedVillageCodes));

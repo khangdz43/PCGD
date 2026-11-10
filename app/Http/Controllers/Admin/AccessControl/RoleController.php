@@ -112,8 +112,6 @@ class RoleController extends Controller
     {
         $actor = $request->user();
         abort_unless($this->roles->canViewRole($actor, $role), 403);
-        $role->load('permissions');
-
         return response()->json([
             'data' => [
                 'id' => $role->id,
@@ -154,7 +152,7 @@ class RoleController extends Controller
         abort_unless($this->roles->canManageRole($actor, $role), 403);
         $scopeLevels = DelegatedAccess::manageableRoleLevels($actor);
 
-        $role->load('permissions')->loadCount('users');
+        $role->loadCount('users');
         /** @var Collection<int, Permission> $permissions */
         $permissions = $role->name === Role::SYSTEM_ADMIN
             ? Permission::where('guard_name', 'web')

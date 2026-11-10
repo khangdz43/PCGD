@@ -89,7 +89,7 @@ class HouseholdExportServiceTest extends TestCase
         /** @var User&MockInterface $actor */
         $actor = Mockery::mock($actor)->makePartial();
         $actor->shouldReceive('hasRole')->once()->andReturnFalse();
-        $actor->shouldReceive('roleScopeLevel')->once()->andReturn('province');
+        $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('province');
 
         $workbook = $this->exportedWorkbook($actor, [
             'school_code' => 'SCH-01',

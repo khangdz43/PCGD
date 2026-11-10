@@ -1550,7 +1550,7 @@ class HouseholdCrudFlowTest extends TestCase
             'guard_name' => 'web',
             'scope_level' => 'global',
         ]);
-        $systemAdmin->roles()->attach($systemAdminRole);
+        $systemAdmin->assignRole($systemAdminRole);
 
         $this->actingAs($systemAdmin)
             ->getJson('/api/v1/village-merges')
@@ -1600,7 +1600,7 @@ class HouseholdCrudFlowTest extends TestCase
             'scope_level' => 'global',
             'guard_name' => 'web',
         ]);
-        $systemAdminRole->permissions()->sync([
+        $systemAdminRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -1610,7 +1610,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'guard_name' => 'web',
             ])->id,
         ]);
-        $user->roles()->attach($systemAdminRole);
+        $user->assignRole($systemAdminRole);
 
         $permissions = $this->actingAs($user)
             ->getJson('/api/v1/session')
@@ -1654,9 +1654,9 @@ class HouseholdCrudFlowTest extends TestCase
         ]);
         $deletedHousehold->delete();
 
-        DB::table('user_villages')->insert([
-            ['user_id' => $user->id, 'village_code' => 'V03'],
-            ['user_id' => $user->id, 'village_code' => 'V01'],
+        DB::table('user_operating_areas')->insert([
+            ['user_id' => $user->id, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V03'],
+            ['user_id' => $user->id, 'province_code' => 'P01', 'commune_code' => 'C01', 'village_code' => 'V01'],
         ]);
 
         $this->actingAs($user)
@@ -1692,17 +1692,17 @@ class HouseholdCrudFlowTest extends TestCase
             'id' => $person->id,
             'household_id' => $activeHousehold->id,
         ]);
-        $this->assertDatabaseHas('user_villages', [
+        $this->assertDatabaseHas('user_operating_areas', [
             'user_id' => $user->id,
             'village_code' => 'V01',
         ]);
-        $this->assertDatabaseMissing('user_villages', [
+        $this->assertDatabaseMissing('user_operating_areas', [
             'user_id' => $user->id,
             'village_code' => 'V03',
         ]);
         $this->assertSame(
             1,
-            DB::table('user_villages')
+            DB::table('user_operating_areas')
                 ->where('user_id', $user->id)
                 ->where('village_code', 'V01')
                 ->count()
@@ -2420,6 +2420,8 @@ class HouseholdCrudFlowTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('role_id')->nullable();
+            $table->unsignedBigInteger('role_assigned_by')->nullable();
             $table->string('name');
             $table->string('username')->unique();
             $table->string('citizen_id', 12)->nullable();
@@ -2439,6 +2441,7 @@ class HouseholdCrudFlowTest extends TestCase
             $table->string('guard_name')->default('web');
             $table->string('scope_level')->default('global');
             $table->string('description')->nullable();
+            $table->json('permission_codes')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
@@ -2467,6 +2470,21 @@ class HouseholdCrudFlowTest extends TestCase
             $table->unsignedBigInteger('user_id');
             $table->string('village_code');
             $table->primary(['user_id', 'village_code']);
+        });
+        Schema::create('user_operating_areas', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('province_code', 20);
+            $table->string('commune_code', 20)->nullable();
+            $table->string('village_code', 20)->nullable();
+            $table->unique(
+                ['user_id', 'province_code', 'commune_code', 'village_code'],
+                'user_operating_areas_assignment_unique',
+            );
+            $table->index(
+                ['province_code', 'commune_code', 'village_code'],
+                'user_operating_areas_location_index',
+            );
         });
         Schema::create('provinces', function (Blueprint $table): void {
             $table->string('code')->primary();
@@ -2669,7 +2687,7 @@ class HouseholdCrudFlowTest extends TestCase
                 'name' => $permissionName,
                 'guard_name' => 'web',
             ]);
-            $role->permissions()->attach($permission);
+            $role->attachPermissions($permission);
         }
 
         $user = User::create([
@@ -2683,7 +2701,12 @@ class HouseholdCrudFlowTest extends TestCase
             'commune_code' => 'C01',
             'scope_level' => $scopeLevel,
         ])->save();
-        $user->roles()->attach($role);
+        $user->assignRole($role);
+        $user->operatingAreas()->create([
+            'province_code' => 'P01',
+            'commune_code' => $scopeLevel === 'commune' ? 'C01' : null,
+            'village_code' => null,
+        ]);
 
         return $user;
     }

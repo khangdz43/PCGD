@@ -3,7 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Builder;
 
 class Permission extends Model
 {
@@ -13,9 +13,10 @@ class Permission extends Model
         'description',
     ];
 
-    // manytomany  
-    public function roles(): BelongsToMany
+    public function roles(): Builder
     {
-        return $this->belongsToMany(Role::class, 'role_has_permissions');
+        return Role::query()
+            ->where('guard_name', $this->guard_name)
+            ->whereJsonContains('permission_codes', $this->name);
     }
 }

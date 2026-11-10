@@ -113,6 +113,21 @@ class AccessControlTest extends TestCase
             $table->string('village_code');
             $table->primary(['user_id', 'village_code']);
         });
+        Schema::create('user_operating_areas', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('province_code', 20);
+            $table->string('commune_code', 20)->nullable();
+            $table->string('village_code', 20)->nullable();
+            $table->unique(
+                ['user_id', 'province_code', 'commune_code', 'village_code'],
+                'user_operating_areas_assignment_unique',
+            );
+            $table->index(
+                ['province_code', 'commune_code', 'village_code'],
+                'user_operating_areas_location_index',
+            );
+        });
         Schema::create('schools', function (Blueprint $table): void {
             $table->id();
             $table->string('code')->unique();
@@ -157,6 +172,18 @@ class AccessControlTest extends TestCase
             $table->unsignedBigInteger('deleted_by')->nullable();
             $table->softDeletes();
             $table->timestamps();
+        });
+        User::saved(function (User $user): void {
+            $provinceCode = $user->getRawOriginal('province_code');
+            if (! filled($provinceCode) || $user->operatingAreas()->exists()) {
+                return;
+            }
+
+            $user->operatingAreas()->create([
+                'province_code' => $provinceCode,
+                'commune_code' => $user->getRawOriginal('commune_code'),
+                'village_code' => null,
+            ]);
         });
     }
 
@@ -204,6 +231,42 @@ class AccessControlTest extends TestCase
             ->pluck('permissions.name')
             ->all();
         $role->save();
+    }
+
+    private function syncUserVillages(User $user, array $villageCodes): void
+    {
+        $user->operatingAreas()->delete();
+        $user->unsetRelation('operatingAreas')->unsetRelation('villages');
+        if ($user->hasPermissionTo(AccessPermission::MANAGE_VILLAGES)) {
+            $area = DB::table('villages')
+                ->join('communes', 'communes.code', '=', 'villages.commune_code')
+                ->whereIn('villages.code', $villageCodes)
+                ->first(['communes.province_code', 'villages.commune_code']);
+            if ($area !== null) {
+                $user->operatingAreas()->create([
+                    'province_code' => $area->province_code,
+                    'commune_code' => $area->commune_code,
+                    'village_code' => null,
+                ]);
+            }
+
+            return;
+        }
+
+        $areas = DB::table('villages')
+            ->join('communes', 'communes.code', '=', 'villages.commune_code')
+            ->whereIn('villages.code', $villageCodes)
+            ->get(['villages.code as village_code', 'communes.province_code', 'villages.commune_code'])
+            ->map(fn (object $area): array => [
+                'province_code' => $area->province_code,
+                'commune_code' => $area->commune_code,
+                'village_code' => $area->village_code,
+            ])
+            ->all();
+
+        if ($areas !== []) {
+            $user->operatingAreas()->createMany($areas);
+        }
     }
 
     public function test_api_login_is_public_but_session_requires_authentication(): void
@@ -1019,8 +1082,6 @@ class AccessControlTest extends TestCase
 
         $communeRole = Role::where('name', 'Nhóm quản trị xã')->firstOrFail();
         $this->assertSame($provinceAdmin->id, $communeRole->created_by);
-        $this->assertSame('P1', $communeRole->province_code);
-        $this->assertNull($communeRole->commune_code);
 
         $this->getJson(route('api.users.create'))
             ->assertOk()
@@ -2202,7 +2263,10 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
             'created_by' => $manager->id,
+        ]);
+        DB::table('roles')->where('id', $communeAdminRole->id)->update([
             'province_code' => 'P1',
+            'commune_code' => null,
         ]);
         $communeAdmin = User::factory()->create([
             'created_by' => $manager->id,
@@ -3219,7 +3283,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $villageUser->assignRole($villageRole);
-        $villageUser->villages()->sync(['V1']);
+        $this->syncUserVillages($villageUser, ['V1']);
 
         $this->actingAs($villageUser)
             ->getJson('/api/v1/communes/C1/villages')
@@ -3227,7 +3291,7 @@ class AccessControlTest extends TestCase
             ->assertJsonPath('data.0.code', 'V1')
             ->assertJsonCount(1, 'data');
 
-        $villageUser->villages()->sync(['V1', 'V2']);
+        $this->syncUserVillages($villageUser, ['V1', 'V2']);
         $this->getJson('/api/v1/communes/C1/villages')
             ->assertOk()
             ->assertJsonCount(2, 'data')
@@ -3313,7 +3377,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $villageOneUser->assignRole($accountRole);
-        $villageOneUser->villages()->sync(['V1', 'V2']);
+        $this->syncUserVillages($villageOneUser, ['V1', 'V2']);
 
         $villageTwoUser = User::factory()->create([
             'name' => 'Người dùng thôn hai',
@@ -3325,7 +3389,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $villageTwoUser->assignRole($accountRole);
-        $villageTwoUser->villages()->sync(['V2']);
+        $this->syncUserVillages($villageTwoUser, ['V2']);
 
         $otherProvinceUser = User::factory()->create([
             'name' => 'Người dùng tỉnh hai',
@@ -5175,12 +5239,10 @@ class AccessControlTest extends TestCase
         $this->assertDatabaseHas('roles', [
             'name' => 'Quản trị nhân khẩu',
             'created_by' => $firstManager->id,
-            'province_code' => 'P1',
         ]);
         $this->assertDatabaseHas('roles', [
             'name' => 'Quản trị nhân khẩu',
             'created_by' => $secondManager->id,
-            'province_code' => 'P2',
         ]);
     }
 
@@ -5384,7 +5446,7 @@ class AccessControlTest extends TestCase
             'created_by' => $manager->id,
         ]);
         $target->assignRole($villageRole);
-        $target->villages()->sync(['V1']);
+        $this->syncUserVillages($target, ['V1']);
 
         $outsideTarget = User::factory()->create([
             'province_code' => 'P1',
@@ -5394,7 +5456,7 @@ class AccessControlTest extends TestCase
             'created_by' => $manager->id,
         ]);
         $outsideTarget->assignRole($villageRole);
-        $outsideTarget->villages()->sync(['V2']);
+        $this->syncUserVillages($outsideTarget, ['V2']);
 
         $this->actingAs($manager)
             ->getJson(route('api.users.index'))
@@ -5609,7 +5671,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $user->assignRole($role);
-        $user->villages()->sync(['V1']);
+        $this->syncUserVillages($user, ['V1']);
 
         $firstPage = $this->actingAs($user)
             ->getJson(route('api.households.index'))
@@ -5676,7 +5738,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $user->assignRole($role);
-        $user->villages()->sync(['V1', 'V2']);
+        $this->syncUserVillages($user, ['V1', 'V2']);
 
         $this->actingAs($user)
             ->getJson(route('api.households.index'))
@@ -5875,7 +5937,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $user->assignRole($role);
-        $user->villages()->sync(['V1', 'V2']);
+        $this->syncUserVillages($user, ['V1', 'V2']);
 
         $visibleCodes = DataAccessScope::households(Household::query(), $user)
             ->orderBy('household_code')
@@ -5946,8 +6008,8 @@ class AccessControlTest extends TestCase
 
         $villageUser = User::where('username', 'multivillage')->firstOrFail();
         $this->assertEqualsCanonicalizing(['V1', 'V2'], $villageUser->managedVillageCodes());
-        $this->assertDatabaseHas('user_villages', ['user_id' => $villageUser->id, 'village_code' => 'V1']);
-        $this->assertDatabaseHas('user_villages', ['user_id' => $villageUser->id, 'village_code' => 'V2']);
+        $this->assertDatabaseHas('user_operating_areas', ['user_id' => $villageUser->id, 'village_code' => 'V1']);
+        $this->assertDatabaseHas('user_operating_areas', ['user_id' => $villageUser->id, 'village_code' => 'V2']);
 
         $this->postJson(route('api.users.store'), [
             'name' => 'Ngoài xã',
@@ -6004,7 +6066,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
         ]);
         $manager->assignRole($managerRole);
-        $manager->villages()->sync(['V1']);
+        $this->syncUserVillages($manager, ['V1']);
 
         $staffRole = Role::create([
             'name' => 'Nhóm quản lý toàn bộ thôn xã',
@@ -6044,7 +6106,13 @@ class AccessControlTest extends TestCase
 
         $staff = User::where('username', 'villageman1')->firstOrFail();
         self::assertSame([], $staff->managedVillageCodes());
-        $this->assertDatabaseMissing('user_villages', ['user_id' => $staff->id]);
+        self::assertSame(
+            0,
+            DB::table('user_operating_areas')
+                ->where('user_id', $staff->id)
+                ->whereNotNull('village_code')
+                ->count(),
+        );
         $householdInAnotherVillage = new Household;
         $householdInAnotherVillage->province_code = 'P1';
         $householdInAnotherVillage->commune_code = 'C1';
@@ -6091,7 +6159,13 @@ class AccessControlTest extends TestCase
 
         $accountViewer = User::where('username', 'commviewer1')->firstOrFail();
         self::assertSame([], $accountViewer->managedVillageCodes());
-        $this->assertDatabaseMissing('user_villages', ['user_id' => $accountViewer->id]);
+        self::assertSame(
+            0,
+            DB::table('user_operating_areas')
+                ->where('user_id', $accountViewer->id)
+                ->whereNotNull('village_code')
+                ->count(),
+        );
     }
 
     public function test_delegated_permission_is_revoked_when_assigner_loses_it(): void
@@ -6188,7 +6262,7 @@ class AccessControlTest extends TestCase
             'is_active' => false,
         ]);
         $villageAccount->assignRole($villageRole);
-        $villageAccount->villages()->sync(['V1']);
+        $this->syncUserVillages($villageAccount, ['V1']);
 
         $this->actingAs($admin)
             ->get('/admin/organization-accounts')
@@ -6488,7 +6562,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'village',
         ]);
         $user->assignRole($role);
-        $user->villages()->sync(['V1']);
+        $this->syncUserVillages($user, ['V1']);
 
         $migration = require database_path('migrations/2026_11_03_000000_migrate_village_scopes_to_commune.php');
         $migration->up();
@@ -6560,13 +6634,18 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
             'created_by' => $provinceManager->id,
+        ]);
+        DB::table('roles')->where('id', $provinceRole->id)->update([
             'province_code' => 'P1',
+            'commune_code' => null,
         ]);
         $communeRole = Role::create([
             'name' => 'Nhóm cán bộ do xã tạo',
             'scope_level' => 'commune',
             'guard_name' => 'web',
             'created_by' => $communeManager->id,
+        ]);
+        DB::table('roles')->where('id', $communeRole->id)->update([
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);

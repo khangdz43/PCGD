@@ -45,12 +45,31 @@ class AuthenticationFlowTest extends TestCase
             $table->json('permission_codes')->nullable();
             $table->timestamps();
         });
+        Schema::create('user_operating_areas', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('province_code', 20);
+            $table->string('commune_code', 20)->nullable();
+            $table->string('village_code', 20)->nullable();
+        });
         Schema::create('permissions', function (Blueprint $table): void {
             $table->id();
             $table->string('name');
             $table->string('guard_name');
             $table->string('description')->nullable();
             $table->timestamps();
+        });
+        User::saved(function (User $user): void {
+            $provinceCode = $user->getRawOriginal('province_code');
+            if (! filled($provinceCode) || $user->operatingAreas()->exists()) {
+                return;
+            }
+
+            $user->operatingAreas()->create([
+                'province_code' => $provinceCode,
+                'commune_code' => $user->getRawOriginal('commune_code'),
+                'village_code' => null,
+            ]);
         });
     }
 

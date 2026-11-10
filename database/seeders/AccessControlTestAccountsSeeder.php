@@ -158,7 +158,7 @@ class AccessControlTestAccountsSeeder extends Seeder
                 );
 
                 $permissionNames = AccessPermission::withPrerequisites($definition['permissions']);
-                $role->permissions()->sync(
+                $role->syncPermissions(
                     $permissions->whereIn('name', $permissionNames)->pluck('id')->all()
                 );
 
@@ -172,7 +172,7 @@ class AccessControlTestAccountsSeeder extends Seeder
                     : null;
                 $user->scope_level = $definition['scope'];
                 $user->save();
-                $user->roles()->sync([$role->id => ['assigned_by' => null]]);
+                $user->assignRole($role);
                 $user->villages()->sync($definition['scope'] === 'village' ? [$village->code] : []);
             }
         });

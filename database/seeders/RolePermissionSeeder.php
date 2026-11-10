@@ -40,7 +40,7 @@ class RolePermissionSeeder extends Seeder
                 ]
             );
             // Sync tất cả permissions cho SYSTEM_ADMIN
-            $systemAdminRole->permissions()->sync(
+            $systemAdminRole->syncPermissions(
                 $permissions
                     ->reject(fn (Permission $permission): bool => in_array(
                         $permission->name,

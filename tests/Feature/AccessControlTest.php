@@ -3886,14 +3886,16 @@ class AccessControlTest extends TestCase
                 'is_primary_admin' => true,
             ])
             ->assertJsonPath('data.available_primary_admin_scopes.province', false)
-            ->assertJsonMissing([
+            ->assertJsonFragment([
                 'name' => 'Cán bộ tạo tài khoản cho cấp xã',
+                'assignable_scope_levels' => ['province'],
+                'is_primary_admin' => false,
             ])
             ->assertJsonMissing(['name' => Role::SYSTEM_ADMIN]);
 
         $this->getJson('/api/v1/users?page=1&per_page=10')
             ->assertOk()
-            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('meta.total', 2)
             ->assertJsonFragment([
                 'username' => $existingProvinceAdmin->username,
                 'role_name' => 'Quản trị cấp tỉnh',
@@ -3902,11 +3904,11 @@ class AccessControlTest extends TestCase
                 'id' => $provincialAdminRole->id,
                 'name' => 'Quản trị cấp tỉnh',
             ])
-            ->assertJsonMissing([
+            ->assertJsonFragment([
                 'id' => $provinceStaffRole->id,
                 'name' => 'Cán bộ tạo tài khoản cho cấp xã',
             ])
-            ->assertJsonMissing(['username' => $provinceStaff->username]);
+            ->assertJsonFragment(['username' => $provinceStaff->username]);
 
         $this->getJson("/api/v1/users?role_id={$provincialAdminRole->id}")
             ->assertOk()
@@ -3916,7 +3918,7 @@ class AccessControlTest extends TestCase
 
         $this->patchJson("/api/v1/users/{$provinceStaff->id}/status", [
             'is_active' => false,
-        ])->assertForbidden();
+        ])->assertOk();
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản không phải admin tỉnh',
@@ -3928,8 +3930,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'province_code' => 'P01',
             'is_active' => true,
-        ])->assertUnprocessable()
-            ->assertJsonPath('error.details.0.field', 'role_id');
+        ])->assertCreated();
 
         $this->postJson('/api/v1/users', [
             'name' => 'Tài khoản mật khẩu ngắn',
@@ -4053,7 +4054,7 @@ class AccessControlTest extends TestCase
         ]);
     }
 
-    public function test_central_user_can_only_use_account_status_and_password_actions(): void
+    public function test_central_user_account_manager_can_manage_provincial_accounts(): void
     {
         DB::table('provinces')->insert([
             'code' => 'P1',
@@ -4132,7 +4133,12 @@ class AccessControlTest extends TestCase
         ])->assertForbidden();
         $this->postJson("/api/v1/users/{$regularProvinceUser->id}/password-resets")
             ->assertForbidden();
-        $this->getJson('/api/v1/users/create')->assertForbidden();
+        $this->getJson('/api/v1/users/create')
+            ->assertOk()
+            ->assertJsonPath('data.account_levels', ['province']);
+        $this->getJson(route('api.roles.create'))
+            ->assertOk()
+            ->assertJsonPath('data.scope_levels', ['province']);
         $this->getJson("/api/v1/users/{$target->id}/edit")->assertForbidden();
         $this->getJson("/api/v1/users/{$target->id}")->assertOk();
     }
@@ -4769,6 +4775,58 @@ class AccessControlTest extends TestCase
             ->assertJsonStructure(['data']);
     }
 
+    public function test_global_account_manager_role_without_school_permission_is_assignable_to_province(): void
+    {
+        DB::table('provinces')->insert([
+            'code' => 'P1',
+            'name' => 'Tỉnh một',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->assignRole($adminRole);
+
+        $role = Role::create([
+            'name' => 'Quản trị tài khoản cấp tỉnh',
+            'scope_level' => 'province',
+            'guard_name' => 'web',
+            'created_by' => $admin->id,
+        ]);
+        $role->syncPermissions(collect([
+            AccessPermission::MANAGE_ACCESS_CONTROL,
+            AccessPermission::MANAGE_USER_ACCOUNTS,
+        ])->map(fn (string $name): int => Permission::firstOrCreate([
+            'name' => $name,
+            'guard_name' => 'web',
+        ])->id)->all());
+
+        $this->actingAs($admin)
+            ->getJson(route('api.users.create'))
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $role->id,
+                'name' => $role->name,
+                'assignable_scope_levels' => ['province'],
+            ]);
+
+        $this->postJson(route('api.users.store'), [
+            'name' => 'Quản trị tài khoản tỉnh',
+            'username' => 'provadmin1',
+            'citizen_id' => '001111111290',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'role_id' => $role->id,
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'is_active' => true,
+        ])->assertCreated();
+    }
+
     public function test_system_administrator_creates_province_and_limited_central_accounts(): void
     {
         DB::table('provinces')->insert([
@@ -5199,6 +5257,103 @@ class AccessControlTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['data']);
         $this->getJson(route('api.households.create'))->assertOk();
+    }
+
+    public function test_central_account_manager_can_create_only_provincial_groups_and_accounts(): void
+    {
+        DB::table('provinces')->insert([
+            'code' => 'P1',
+            'name' => 'Tỉnh một',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $adminRole = Role::create([
+            'name' => Role::SYSTEM_ADMIN,
+            'scope_level' => 'global',
+            'guard_name' => 'web',
+        ]);
+        $admin = User::factory()->create(['is_active' => true]);
+        $admin->assignRole($adminRole);
+
+        $centralPermissionIds = collect([
+            AccessPermission::VIEW_USERS,
+            AccessPermission::CREATE_USERS,
+            AccessPermission::UPDATE_USERS,
+            AccessPermission::DELETE_USERS,
+            AccessPermission::VIEW_ROLES,
+            AccessPermission::CREATE_ROLES,
+            AccessPermission::UPDATE_ROLES,
+            AccessPermission::DELETE_ROLES,
+        ])->map(fn (string $name): int => Permission::firstOrCreate([
+            'name' => $name,
+            'guard_name' => 'web',
+        ])->id)->all();
+
+        $this->actingAs($admin)->postJson(route('api.roles.store'), [
+            'name' => 'Quản lý tài khoản Trung ương',
+            'scope_level' => 'global',
+            'permissions' => $centralPermissionIds,
+        ])->assertCreated();
+        $centralRole = Role::where('name', 'Quản lý tài khoản Trung ương')->firstOrFail();
+
+        $this->postJson(route('api.users.store'), [
+            'name' => 'Cán bộ quản lý Trung ương',
+            'username' => 'centralmgr1',
+            'citizen_id' => '001111111290',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'role_id' => $centralRole->id,
+            'scope_level' => 'global',
+            'is_active' => true,
+        ])->assertCreated();
+        $centralUser = User::where('username', 'centralmgr1')->firstOrFail();
+
+        $this->actingAs($centralUser)
+            ->getJson(route('api.users.create'))
+            ->assertOk()
+            ->assertJsonPath('data.account_levels', ['province']);
+        $this->getJson(route('api.roles.create'))
+            ->assertOk()
+            ->assertJsonPath('data.scope_levels', ['province']);
+        $this->postJson(route('api.roles.store'), [
+            'name' => 'Nhóm quản lý tài khoản tỉnh',
+            'scope_level' => 'province',
+            'permissions' => $centralPermissionIds,
+        ])->assertCreated();
+        $provinceRole = Role::where('name', 'Nhóm quản lý tài khoản tỉnh')->firstOrFail();
+        $this->postJson(route('api.roles.store'), [
+            'name' => 'Nhóm không được cùng cấp',
+            'scope_level' => 'global',
+            'permissions' => $centralPermissionIds,
+        ])->assertUnprocessable()
+            ->assertJsonPath('error.details.0.field', 'scope_level');
+
+        $this->postJson(route('api.users.store'), [
+            'name' => 'Tài khoản quản lý tỉnh',
+            'username' => 'province1',
+            'citizen_id' => '001111111291',
+            'password' => 'SecurePass123!',
+            'password_confirmation' => 'SecurePass123!',
+            'role_id' => $provinceRole->id,
+            'scope_level' => 'province',
+            'province_code' => 'P1',
+            'is_active' => true,
+        ])->assertCreated();
+        $this->assertDatabaseHas('users', [
+            'username' => 'province1',
+            'created_by' => $centralUser->id,
+            'province_code' => 'P1',
+        ]);
+        $provinceUser = User::where('username', 'province1')->firstOrFail();
+        $this->assertTrue($provinceUser->hasPermissionTo(AccessPermission::CREATE_USERS));
+        $this->assertTrue($provinceUser->hasPermissionTo(AccessPermission::CREATE_ROLES));
+        $this->actingAs($centralUser)
+            ->getJson(route('api.roles.index'))
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Nhóm quản lý tài khoản tỉnh']);
+        $this->getJson(route('api.users.index'))
+            ->assertOk()
+            ->assertJsonFragment(['username' => 'province1']);
     }
 
     public function test_province_accounts_can_create_groups_with_same_name_independently(): void

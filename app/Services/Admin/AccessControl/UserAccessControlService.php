@@ -451,7 +451,7 @@ class UserAccessControlService
         }
 
         if ($actor->hasRole(Role::SYSTEM_ADMIN) && $targetLevel === 'province'
-            && ! $this->hasPrimaryAdminRole($target, 'province')) {
+            && ! $this->hasAccountManagementRole($target, 'province')) {
             return false;
         }
 
@@ -680,13 +680,13 @@ class UserAccessControlService
             }
 
             return $targetLevel === 'province'
-                && $this->hasPrimaryAdminRole($target, 'province')
+                && $this->hasAccountManagementRole($target, 'province')
                 && DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
         }
 
         if ($actor->roleScopeLevel() === 'global') {
             return $targetLevel === 'province'
-                && $this->hasPrimaryAdminRole($target, 'province')
+                && $this->hasAccountManagementRole($target, 'province')
                 && DelegatedAccess::userIsInActorArea($actor, $target, $targetLevel);
         }
 
@@ -699,6 +699,14 @@ class UserAccessControlService
 
         return $user->roles->contains(fn (Role $role): bool => $role->scope_level === $scopeLevel
             && $this->isPrimaryAdminRole($role));
+    }
+
+    private function hasAccountManagementRole(User $user, string $scopeLevel): bool
+    {
+        $user->loadMissing('roles');
+
+        return $user->roles->contains(fn (Role $role): bool => $role->scope_level === $scopeLevel
+            && $this->roleHasPermission($role, AccessPermission::MANAGE_USER_ACCOUNTS));
     }
 
     private function statusTargetLevels(User $actor): array
@@ -814,7 +822,7 @@ class UserAccessControlService
         if (
             $accountLevel === 'province'
             && ($actor->hasRole(Role::SYSTEM_ADMIN) || $actor->roleScopeLevel() === 'global')
-            && ! $this->isPrimaryAdminRole($role)
+            && ! $this->roleHasPermission($role, AccessPermission::MANAGE_USER_ACCOUNTS)
         ) {
             return false;
         }
@@ -856,7 +864,6 @@ class UserAccessControlService
                         ->orWhereHas('role', function (Builder $roles): void {
                             $roles->where('roles.scope_level', 'province')
                                 ->where('roles.guard_name', 'web');
-                            $this->constrainRolePermission($roles, AccessPermission::MANAGE_SCHOOLS);
                             $this->constrainRolePermission($roles, AccessPermission::MANAGE_USER_ACCOUNTS);
                         })
                         ->orWhereDoesntHave('role');
@@ -890,7 +897,6 @@ class UserAccessControlService
                             $roles->where('roles.created_by', $actor->id)
                                 ->where('roles.scope_level', 'province')
                                 ->where('roles.guard_name', 'web');
-                            $this->constrainRolePermission($roles, AccessPermission::MANAGE_SCHOOLS);
                             $this->constrainRolePermission($roles, AccessPermission::MANAGE_USER_ACCOUNTS);
                         });
             });

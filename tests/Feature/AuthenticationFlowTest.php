@@ -32,6 +32,8 @@ class AuthenticationFlowTest extends TestCase
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->string('scope_level')->nullable();
+            $table->unsignedBigInteger('role_id')->nullable();
+            $table->unsignedBigInteger('role_assigned_by')->nullable();
             $table->rememberToken();
             $table->timestamps();
         });
@@ -40,14 +42,8 @@ class AuthenticationFlowTest extends TestCase
             $table->string('name');
             $table->string('guard_name');
             $table->string('scope_level');
+            $table->json('permission_codes')->nullable();
             $table->timestamps();
-        });
-        Schema::create('model_has_roles', function (Blueprint $table): void {
-            $table->foreignId('role_id');
-            $table->string('model_type');
-            $table->unsignedBigInteger('model_id');
-            $table->unsignedBigInteger('assigned_by')->nullable();
-            $table->primary(['role_id', 'model_id', 'model_type']);
         });
         Schema::create('permissions', function (Blueprint $table): void {
             $table->id();
@@ -55,11 +51,6 @@ class AuthenticationFlowTest extends TestCase
             $table->string('guard_name');
             $table->string('description')->nullable();
             $table->timestamps();
-        });
-        Schema::create('role_has_permissions', function (Blueprint $table): void {
-            $table->foreignId('role_id');
-            $table->foreignId('permission_id');
-            $table->primary(['role_id', 'permission_id']);
         });
     }
 
@@ -89,7 +80,7 @@ class AuthenticationFlowTest extends TestCase
             'guard_name' => 'web',
             'scope_level' => 'global',
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->get('/api/v1/csrf-cookie')->assertNoContent();
 
@@ -353,7 +344,7 @@ class AuthenticationFlowTest extends TestCase
             'guard_name' => 'web',
             'scope_level' => 'global',
         ]);
-        $user->roles()->attach($systemRole);
+        $user->assignRole($systemRole);
         $user->unsetRelation('roles');
 
         $this->getJson('/api/v1/dashboard/overview')
@@ -409,7 +400,7 @@ class AuthenticationFlowTest extends TestCase
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]);
-        $regularRole->permissions()->attach($viewHouseholdsPermission->id);
+        $regularRole->attachPermissions($viewHouseholdsPermission->id);
         $regularUser = User::create([
             'name' => 'Tài khoản thường',
             'username' => 'regular-province-user',
@@ -420,7 +411,7 @@ class AuthenticationFlowTest extends TestCase
             'scope_level' => 'province',
             'province_code' => 'P01',
         ])->save();
-        $regularUser->roles()->attach($regularRole);
+        $regularUser->assignRole($regularRole);
         $this->actingAs($regularUser, 'web')
             ->getJson('/api/v1/dashboard/overview')
             ->assertForbidden();
@@ -435,7 +426,7 @@ class AuthenticationFlowTest extends TestCase
             'scope_level' => 'province',
             'province_code' => 'P01',
         ])->save();
-        $provinceAdmin->roles()->attach($provinceRole);
+        $provinceAdmin->assignRole($provinceRole);
 
         $this->actingAs($provinceAdmin, 'web')
             ->getJson('/api/v1/session')
@@ -470,7 +461,7 @@ class AuthenticationFlowTest extends TestCase
             'province_code' => 'P01',
             'commune_code' => 'C01',
         ])->save();
-        $communeAdmin->roles()->attach($communeRole);
+        $communeAdmin->assignRole($communeRole);
 
         $this->actingAs($communeAdmin, 'web')
             ->getJson('/api/v1/dashboard/overview')

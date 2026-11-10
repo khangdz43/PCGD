@@ -39,6 +39,8 @@ class AccessControlTest extends TestCase
         Schema::create('users', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('created_by')->nullable();
+            $table->unsignedBigInteger('role_id')->nullable();
+            $table->unsignedBigInteger('role_assigned_by')->nullable();
             $table->string('name');
             $table->string('username')->nullable()->unique();
             $table->string('phone', 20)->nullable();
@@ -59,6 +61,7 @@ class AccessControlTest extends TestCase
             $table->string('guard_name')->default('web');
             $table->string('scope_level')->default('global');
             $table->string('description')->nullable();
+            $table->json('permission_codes')->nullable();
             $table->unsignedBigInteger('created_by')->nullable();
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
@@ -73,12 +76,12 @@ class AccessControlTest extends TestCase
             $table->timestamps();
         });
         Schema::create('role_has_permissions', function (Blueprint $table): void {
-            $table->foreignId('role_id');
-            $table->foreignId('permission_id');
+            $table->unsignedBigInteger('role_id');
+            $table->unsignedBigInteger('permission_id');
             $table->primary(['role_id', 'permission_id']);
         });
         Schema::create('model_has_roles', function (Blueprint $table): void {
-            $table->foreignId('role_id');
+            $table->unsignedBigInteger('role_id');
             $table->string('model_type');
             $table->unsignedBigInteger('model_id');
             $table->unsignedBigInteger('assigned_by')->nullable();
@@ -162,6 +165,47 @@ class AccessControlTest extends TestCase
         $this->actingAs($user, 'web');
     }
 
+    private function syncLegacyRoleAssignment(User $user): void
+    {
+        if ($user->role_id === null) {
+            return;
+        }
+
+        DB::table('model_has_roles')->insertOrIgnore([
+            'role_id' => $user->role_id,
+            'model_type' => User::class,
+            'model_id' => $user->id,
+            'assigned_by' => $user->role_assigned_by,
+        ]);
+    }
+
+    private function syncLegacyRolePermissions(Role $role): void
+    {
+        foreach ($role->permission_codes ?? [] as $permissionCode) {
+            $permissionId = Permission::query()
+                ->where('guard_name', $role->guard_name)
+                ->where('name', $permissionCode)
+                ->value('id');
+            if ($permissionId !== null) {
+                DB::table('role_has_permissions')->insertOrIgnore([
+                    'role_id' => $role->id,
+                    'permission_id' => $permissionId,
+                ]);
+            }
+        }
+    }
+
+    private function refreshRoleCodesFromLegacyPermissions(Role $role): void
+    {
+        $role->permission_codes = DB::table('role_has_permissions')
+            ->join('permissions', 'permissions.id', '=', 'role_has_permissions.permission_id')
+            ->where('role_has_permissions.role_id', $role->id)
+            ->where('permissions.guard_name', $role->guard_name)
+            ->pluck('permissions.name')
+            ->all();
+        $role->save();
+    }
+
     public function test_api_login_is_public_but_session_requires_authentication(): void
     {
         $this->postJson('/api/v1/login', [
@@ -179,7 +223,8 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $user = User::factory()->create(['is_active' => true]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
+        $user->unsetRelation('role');
 
         DB::flushQueryLog();
         DB::enableQueryLog();
@@ -193,6 +238,23 @@ class AccessControlTest extends TestCase
         DB::disableQueryLog();
     }
 
+    public function test_role_permissions_are_saved_as_permission_codes(): void
+    {
+        $permission = Permission::create([
+            'name' => AccessPermission::VIEW_HOUSEHOLDS,
+            'guard_name' => 'web',
+        ]);
+        $role = Role::create([
+            'name' => 'Nhóm quyền JSON',
+            'scope_level' => 'commune',
+            'guard_name' => 'web',
+        ]);
+
+        $role->syncPermissions([$permission->id]);
+
+        $this->assertSame([AccessPermission::VIEW_HOUSEHOLDS], $role->fresh()->permission_codes);
+    }
+
     public function test_account_index_can_filter_by_group_role(): void
     {
         $adminRole = Role::create([
@@ -201,7 +263,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $groupA = Role::create([
             'name' => 'Nhóm A',
@@ -216,7 +278,7 @@ class AccessControlTest extends TestCase
             'created_by' => $admin->id,
         ]);
         foreach ([$groupA, $groupB] as $group) {
-            $group->permissions()->sync([
+            $group->syncPermissions([
                 Permission::firstOrCreate([
                     'name' => AccessPermission::MANAGE_SCHOOLS,
                     'guard_name' => 'web',
@@ -242,8 +304,8 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $userA->roles()->attach($groupA);
-        $userB->roles()->attach($groupB);
+        $userA->assignRole($groupA);
+        $userB->assignRole($groupB);
 
         $this->actingAs($admin)
             ->getJson(route('api.users.index', ['role_id' => $groupA->id]))
@@ -260,7 +322,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $this->actingAs($admin)
             ->getJson(route('api.users.index'))
@@ -281,7 +343,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $systemAdmin = User::factory()->create(['is_active' => true]);
-        $systemAdmin->roles()->attach($systemAdminRole);
+        $systemAdmin->assignRole($systemAdminRole);
 
         $this->actingAs($systemAdmin)
             ->getJson(route('api.roles.index'))
@@ -297,7 +359,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($systemAdminRole);
+        $admin->assignRole($systemAdminRole);
         $role = Role::create([
             'name' => 'Nhóm tài khoản toàn quốc',
             'scope_level' => 'global',
@@ -349,7 +411,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $household = Household::create([
             'household_code' => 'HK-DELETE',
             'school_year' => '2026-2027',
@@ -427,7 +489,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_VILLAGES,
             'guard_name' => 'web',
         ]));
@@ -437,7 +499,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $household = Household::create([
             'household_code' => 'HK-VILLAGE-DELETE',
@@ -498,7 +560,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_VILLAGES,
             'guard_name' => 'web',
         ]));
@@ -508,7 +570,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->authenticateApiUser($user);
         $this->postJson('/api/v1/villages', [
@@ -602,8 +664,8 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'description' => 'Xem phiếu điều tra và nhân khẩu',
         ]);
-        $role->permissions()->attach($permission);
-        $user->roles()->attach($role);
+        $role->attachPermissions($permission);
+        $user->assignRole($role);
 
         $this->actingAs($user)
             ->getJson(route('api.account.show'))
@@ -695,14 +757,14 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $systemAdmin = User::factory()->create(['is_active' => true]);
-        $systemAdmin->roles()->attach($systemAdminRole);
+        $systemAdmin->assignRole($systemAdminRole);
 
         $provinceAdminRole = Role::create([
             'name' => 'Quản trị tỉnh',
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceAdminRole->permissions()->sync([
+        $provinceAdminRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -718,7 +780,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $provinceAdmin->roles()->attach($provinceAdminRole);
+        $provinceAdmin->assignRole($provinceAdminRole);
 
         $this->actingAs($systemAdmin)
             ->getJson(route('api.users.create'))
@@ -734,7 +796,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $provinceRole = Role::create([
             'name' => 'Quản trị tỉnh cần reset',
@@ -742,7 +804,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provinceRole->permissions()->sync([
+        $provinceRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -760,7 +822,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'password' => 'old-secure-password',
         ]);
-        $target->roles()->attach($provinceRole);
+        $target->assignRole($provinceRole);
 
         $this->actingAs($admin)
             ->getJson(route('api.users.index'))
@@ -807,7 +869,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $manageUserRole->permissions()->sync([
+        $manageUserRole->syncPermissions([
             Permission::firstOrCreate(['name' => AccessPermission::MANAGE_USER_ACCOUNTS, 'guard_name' => 'web'])->id,
             Permission::firstOrCreate(['name' => AccessPermission::VIEW_HOUSEHOLDS, 'guard_name' => 'web'])->id,
         ]);
@@ -819,7 +881,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $actor->roles()->attach($manageUserRole);
+        $actor->assignRole($manageUserRole);
 
         $managedUser = User::factory()->create([
             'name' => 'Tài khoản ngoài phạm vi',
@@ -828,7 +890,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $managedUser->roles()->attach(Role::create([
+        $managedUser->assignRole(Role::create([
             'name' => 'Quản trị tỉnh hai',
             'scope_level' => 'province',
             'guard_name' => 'web',
@@ -874,7 +936,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceRole->permissions()->sync([
+        $provinceRole->syncPermissions([
             $permissions[AccessPermission::MANAGE_USER_ACCOUNTS]->id,
             $permissions[AccessPermission::MANAGE_ACCESS_CONTROL]->id,
             $permissions[AccessPermission::MANAGE_SCHOOLS]->id,
@@ -892,8 +954,8 @@ class AccessControlTest extends TestCase
             'updated_at' => now(),
         ]);
         $provinceAdmin = User::findOrFail($provinceAdminId);
-        $provinceAdmin->roles()->attach($provinceRole);
-
+        $provinceAdmin->assignRole($provinceRole);
+        $this->assertContains(AccessPermission::MANAGE_SCHOOLS, $provinceAdmin->permissionNames());
         $this->actingAs($provinceAdmin)
             ->getJson(route('api.users.index'))
             ->assertOk()
@@ -909,7 +971,7 @@ class AccessControlTest extends TestCase
         $this->assertSame($provinceAdmin->id, $limitedProvinceRole->created_by);
         $this->assertSame(
             [AccessPermission::MANAGE_SCHOOLS],
-            $limitedProvinceRole->permissions()->pluck('name')->all()
+            $limitedProvinceRole->permissions->pluck('name')->all()
         );
 
         $this->postJson(route('api.roles.store'), [
@@ -1160,7 +1222,7 @@ class AccessControlTest extends TestCase
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach([
+        $managerRole->attachPermissions([
             $managerPermission,
             $manageGroupsPermission,
             $manageSchoolsPermission,
@@ -1172,7 +1234,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
         $this->actingAs($manager);
 
         $this->getJson(route('api.users.create'))
@@ -1295,11 +1357,10 @@ class AccessControlTest extends TestCase
         $this->assertDatabaseHas('users', ['username' => 'commuser1', 'province_code' => 'P1', 'commune_code' => 'C1']);
         $peer = User::where('username', 'commuser1')->firstOrFail();
         $this->assertTrue($peer->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
-        $this->assertDatabaseHas('model_has_roles', [
-            'model_id' => $peer->id,
-            'model_type' => User::class,
+        $this->assertDatabaseHas('users', [
+            'id' => $peer->id,
             'role_id' => $localRole->id,
-            'assigned_by' => $manager->id,
+            'role_assigned_by' => $manager->id,
         ]);
 
         $this->postJson(route('api.users.store'), [
@@ -1330,7 +1391,7 @@ class AccessControlTest extends TestCase
             'is_active' => '1',
         ])->assertForbidden();
 
-        $managerRole->permissions()->detach([
+        $managerRole->detachPermissions([
             $viewPermission->id,
             $manageGroupsPermission->id,
             $managerPermission->id,
@@ -1346,7 +1407,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $user = User::factory()->create(['is_active' => true]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $inputRole = Role::create([
             'name' => 'Phòng nhập liệu',
             'description' => 'Xem và nhập phiếu điều tra.',
@@ -1354,7 +1415,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $user->id,
         ]);
-        $inputRole->permissions()->sync([
+        $inputRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -1415,8 +1476,8 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $legacyProvinceRole->permissions()->attach($viewPermission);
-        $scopedUser->roles()->attach($legacyProvinceRole);
+        $legacyProvinceRole->attachPermissions($viewPermission);
+        $scopedUser->assignRole($legacyProvinceRole);
         $this->assertFalse(Gate::forUser($scopedUser)->allows(AccessPermission::VIEW_HOUSEHOLDS));
 
         $updatePermission = Permission::create([
@@ -1434,8 +1495,8 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $legacyRole->permissions()->attach($updatePermission);
-        $scopedUser->roles()->attach($legacyRole);
+        $legacyRole->attachPermissions($updatePermission);
+        $scopedUser->assignRole($legacyRole);
         $this->assertFalse($scopedUser->fresh()->hasPermissionTo(AccessPermission::UPDATE_HOUSEHOLDS));
     }
 
@@ -1447,7 +1508,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $group = Role::create([
             'name' => 'Nhóm quản trị tỉnh',
@@ -1455,7 +1516,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $group->permissions()->sync([
+        $group->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -1486,7 +1547,8 @@ class AccessControlTest extends TestCase
             'username' => 'not-member',
             'is_active' => true,
         ]);
-        $group->users()->attach([$activeMember->id, $inactiveMember->id]);
+        $activeMember->assignRole($group);
+        $inactiveMember->assignRole($group);
 
         $this->actingAs($admin)->getJson(route('api.roles.index'))
             ->assertOk()
@@ -1510,13 +1572,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach($manageGroups);
+        $managerRole->attachPermissions($manageGroups);
         $manager = User::factory()->create([
             'scope_level' => 'province',
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
 
         $group = Role::create([
             'name' => 'Nhóm quản trị xã do tỉnh tạo',
@@ -1551,11 +1613,9 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C3',
             'is_active' => true,
         ]);
-        $group->users()->attach([
-            $createdByManager->id,
-            $createdByAnotherManager->id,
-            $outsideProvince->id,
-        ]);
+        $createdByManager->assignRole($group);
+        $createdByAnotherManager->assignRole($group);
+        $outsideProvince->assignRole($group);
 
         $this->actingAs($manager)
             ->getJson(route('api.roles.index'))
@@ -1577,7 +1637,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $group = Role::create([
             'name' => 'Nhóm nhiều quyền',
@@ -1590,7 +1650,7 @@ class AccessControlTest extends TestCase
             'description' => "Quyền kiểm thử {$index}",
             'guard_name' => 'web',
         ]));
-        $group->permissions()->attach($permissions->pluck('id')->all());
+        $group->attachPermissions($permissions->pluck('id')->all());
 
         $response = $this->actingAs($admin)
             ->getJson(route('api.roles.index'))
@@ -1614,14 +1674,14 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach($manageAccessPermission);
+        $managerRole->attachPermissions($manageAccessPermission);
         $communeManager = User::factory()->create([
             'scope_level' => 'commune',
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $communeManager->roles()->attach($managerRole);
+        $communeManager->assignRole($managerRole);
 
         $villageRole = Role::create([
             'name' => 'Nhóm cán bộ xã',
@@ -1637,7 +1697,7 @@ class AccessControlTest extends TestCase
             'description' => 'Xem phiếu kiểm thử cấp xã',
             'guard_name' => 'web',
         ]);
-        $villageRole->permissions()->attach($viewHouseholdsPermission);
+        $villageRole->attachPermissions($viewHouseholdsPermission);
 
         $this->actingAs($communeManager)
             ->getJson(route('api.roles.index'))
@@ -1655,11 +1715,11 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach(Permission::create([
+        $managerRole->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_ACCESS_CONTROL,
             'guard_name' => 'web',
         ]));
-        $managerRole->permissions()->attach(Permission::create([
+        $managerRole->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
             'guard_name' => 'web',
         ]));
@@ -1669,7 +1729,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $communeManager->roles()->attach($managerRole);
+        $communeManager->assignRole($managerRole);
 
         $ownRole = Role::create([
             'name' => 'Nhóm cán bộ xã tự tạo',
@@ -1683,8 +1743,8 @@ class AccessControlTest extends TestCase
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach($viewPermission);
-        $ownRole->permissions()->attach($viewPermission);
+        $managerRole->attachPermissions($viewPermission);
+        $ownRole->attachPermissions($viewPermission);
 
         $otherOwnerRole = Role::create([
             'name' => 'Giao viên nhập liệu',
@@ -1694,7 +1754,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $otherOwnerRole->permissions()->attach($viewPermission);
+        $otherOwnerRole->attachPermissions($viewPermission);
         $roleAssignedToManager = Role::create([
             'name' => 'Nhóm được gán trực tiếp cho quản trị xã',
             'scope_level' => 'commune',
@@ -1703,21 +1763,20 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C2',
         ]);
-        $roleAssignedToManager->permissions()->attach($viewPermission);
-        $communeManager->roles()->attach($roleAssignedToManager);
+        $roleAssignedToManager->attachPermissions($viewPermission);
         $assignedUser = User::factory()->create([
             'created_by' => $communeManager->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $assignedUser->roles()->attach($ownRole);
+        $assignedUser->assignRole($ownRole);
         $assignedOtherRoleUser = User::factory()->create([
             'scope_level' => 'commune',
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $assignedOtherRoleUser->roles()->attach($otherOwnerRole);
+        $assignedOtherRoleUser->assignRole($otherOwnerRole);
         $outsideAreaRole = Role::create([
             'name' => 'Nhóm xã khác',
             'scope_level' => 'commune',
@@ -1731,7 +1790,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C2',
         ]);
-        $assignedOutsideAreaUser->roles()->attach($outsideAreaRole);
+        $assignedOutsideAreaUser->assignRole($outsideAreaRole);
 
         $roles = (new RoleManagementService)->rolesForIndex($communeManager);
         $visibleOwnRole = $roles->getCollection()->firstWhere('id', $ownRole->id);
@@ -1765,7 +1824,7 @@ class AccessControlTest extends TestCase
             'permissions' => [$viewPermission->id],
         ])->assertOk();
         $this->assertDatabaseHas('roles', ['id' => $ownRole->id, 'name' => 'Nhóm cán bộ xã đã sửa']);
-        $assignedUser->roles()->detach($ownRole);
+        $assignedUser->removeRole($ownRole);
         $this->deleteJson("/api/v1/roles/{$ownRole->id}")
             ->assertOk();
         $this->assertDatabaseMissing('roles', ['id' => $ownRole->id]);
@@ -1796,8 +1855,8 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $managerRole->permissions()->sync($permissions->pluck('id')->all());
-        $manager->roles()->attach($managerRole);
+        $managerRole->syncPermissions($permissions->pluck('id')->all());
+        $manager->assignRole($managerRole);
 
         $ownRole = Role::create([
             'name' => 'Nhóm cán bộ do tài khoản hiện tại tạo',
@@ -1807,7 +1866,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $ownRole->permissions()->attach($permissions[AccessPermission::VIEW_HOUSEHOLDS]);
+        $ownRole->attachPermissions($permissions[AccessPermission::VIEW_HOUSEHOLDS]);
         $sharedRole = Role::create([
             'name' => 'Nhóm cán bộ do quản trị khác tạo',
             'scope_level' => 'commune',
@@ -1816,7 +1875,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $sharedRole->permissions()->attach($permissions[AccessPermission::VIEW_HOUSEHOLDS]);
+        $sharedRole->attachPermissions($permissions[AccessPermission::VIEW_HOUSEHOLDS]);
         $target = User::factory()->create([
             'created_by' => $manager->id,
             'scope_level' => 'commune',
@@ -1824,14 +1883,14 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $target->roles()->attach($ownRole);
+        $target->assignRole($ownRole);
         $foreignTarget = User::factory()->create([
             'created_by' => User::factory()->create()->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $foreignTarget->roles()->attach($sharedRole);
+        $foreignTarget->assignRole($sharedRole);
 
         $ownAccountWithForeignRole = User::factory()->create([
             'created_by' => $manager->id,
@@ -1839,7 +1898,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $ownAccountWithForeignRole->roles()->attach($sharedRole);
+        $ownAccountWithForeignRole->assignRole($sharedRole);
 
         $outsideTarget = User::factory()->create([
             'created_by' => $manager->id,
@@ -1848,7 +1907,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C2',
             'is_active' => false,
         ]);
-        $outsideTarget->roles()->attach($ownRole);
+        $outsideTarget->assignRole($ownRole);
 
         $roleService = new RoleManagementService;
         $visibleRole = $roleService->rolesForIndex($manager)->getCollection()->firstWhere('id', $ownRole->id);
@@ -1899,11 +1958,11 @@ class AccessControlTest extends TestCase
         self::assertFalse($outsideTarget->fresh()->is_active);
         $this->deleteJson("/api/v1/roles/{$sharedRole->id}")
             ->assertForbidden();
-        $target->roles()->detach($ownRole);
+        $target->removeRole($ownRole);
         $this->deleteJson("/api/v1/roles/{$ownRole->id}")
             ->assertUnprocessable();
         $this->assertDatabaseHas('roles', ['id' => $ownRole->id]);
-        $outsideTarget->roles()->detach($ownRole);
+        $outsideTarget->removeRole($ownRole);
         $this->deleteJson("/api/v1/roles/{$ownRole->id}")
             ->assertOk();
         $this->assertDatabaseMissing('roles', ['id' => $ownRole->id]);
@@ -1920,7 +1979,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'global',
             'is_active' => true,
         ]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $permissions = collect([
             AccessPermission::MANAGE_SCHOOLS,
@@ -1934,7 +1993,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $ownedRole->permissions()->sync($permissions->pluck('id')->all());
+        $ownedRole->syncPermissions($permissions->pluck('id')->all());
         $otherOwner = User::factory()->create();
         $otherRole = Role::create([
             'name' => 'Nhóm thuộc tài khoản khác',
@@ -1948,14 +2007,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'province_code' => 'P1',
         ]);
-        $ownedAccount->roles()->attach($ownedRole, ['assigned_by' => $admin->id]);
-        $ownedAccount->roles()->attach($otherRole);
+        $ownedAccount->assignRole($ownedRole, $admin->id);
         $otherAccount = User::factory()->create([
             'created_by' => $otherOwner->id,
             'scope_level' => 'province',
             'province_code' => 'P2',
         ]);
-        $otherAccount->roles()->attach($ownedRole, ['assigned_by' => $admin->id]);
+        $otherAccount->assignRole($ownedRole, $admin->id);
 
         $accounts = (new UserAccessControlService)->indexData(
             $admin,
@@ -2003,7 +2061,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'province_code' => 'P1',
         ]);
-        $assignedUser->roles()->attach($otherRole);
+        $assignedUser->assignRole($otherRole);
 
         $roles = (new RoleManagementService)->rolesForIndex($manager);
 
@@ -2018,7 +2076,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceManagerRole->permissions()->attach([
+        $provinceManagerRole->attachPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
                 'guard_name' => 'web',
@@ -2033,7 +2091,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $provinceManager->roles()->attach($provinceManagerRole);
+        $provinceManager->assignRole($provinceManagerRole);
 
         $communeAdminRole = Role::create([
             'name' => 'Quản trị xã đầy đủ quyền',
@@ -2042,7 +2100,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $communeAdminRole->permissions()->sync(collect(AccessPermission::permissionsForScope('commune'))
+        $communeAdminRole->syncPermissions(collect(AccessPermission::permissionsForScope('commune'))
             ->map(fn (string $name): int => Permission::firstOrCreate([
                 'name' => $name,
                 'guard_name' => 'web',
@@ -2053,7 +2111,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $communeAdmin->roles()->attach($communeAdminRole);
+        $communeAdmin->assignRole($communeAdminRole);
 
         $staffRole = Role::create([
             'name' => 'Cán bộ nhập liệu xã',
@@ -2062,7 +2120,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $staffRole->permissions()->attach(Permission::firstOrCreate([
+        $staffRole->attachPermissions(Permission::firstOrCreate([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -2071,7 +2129,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $communeStaff->roles()->attach($staffRole);
+        $communeStaff->assignRole($staffRole);
         foreach ([
             ['name' => 'Cán bộ tạo tài khoản cho cấp xã', 'username' => 'province-create-commune'],
             ['name' => 'Thanh tra trường học tỉnh', 'username' => 'province-school-inspector'],
@@ -2083,7 +2141,7 @@ class AccessControlTest extends TestCase
                 'created_by' => $provinceManager->id,
                 'province_code' => 'P1',
             ]);
-            $provinceRole->permissions()->attach(Permission::firstOrCreate([
+            $provinceRole->attachPermissions(Permission::firstOrCreate([
                 'name' => $index === 0
                     ? AccessPermission::MANAGE_USER_ACCOUNTS
                     : AccessPermission::MANAGE_SCHOOLS,
@@ -2095,7 +2153,7 @@ class AccessControlTest extends TestCase
                 'province_code' => 'P1',
                 'created_by' => $provinceManager->id,
             ]);
-            $provinceAccount->roles()->attach($provinceRole);
+            $provinceAccount->assignRole($provinceRole);
         }
 
         $this->authenticateApiUser($provinceManager);
@@ -2124,7 +2182,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->sync(collect([
+        $managerRole->syncPermissions(collect([
             AccessPermission::VIEW_USERS,
             AccessPermission::MANAGE_USER_ACCOUNTS,
             AccessPermission::MANAGE_ACCESS_CONTROL,
@@ -2137,7 +2195,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
 
         $communeAdminRole = Role::create([
             'name' => 'Quản trị xã',
@@ -2153,7 +2211,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $communeAdmin->roles()->attach($communeAdminRole, ['assigned_by' => $manager->id]);
+        $communeAdmin->assignRole($communeAdminRole, $manager->id);
 
         $communePermissions = collect(AccessPermission::permissionsForScope('commune'))
             ->mapWithKeys(fn (string $name): array => [
@@ -2187,7 +2245,7 @@ class AccessControlTest extends TestCase
                 'province_code' => 'P1',
                 'commune_code' => 'C1',
             ]);
-            $group->permissions()->sync(
+            $group->syncPermissions(
                 $communePermissions->only($groupDefinition['permissions'])->values()->all()
             );
         }
@@ -2202,10 +2260,12 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]));
 
+        $this->syncLegacyRoleAssignment($communeAdmin);
         $migration = require database_path('migrations/2026_11_05_000001_repair_seeded_commune_admin_role_permissions.php');
         $migration->up();
         $completeMigration = require database_path('migrations/2026_11_05_000002_complete_commune_admin_seeded_permissions.php');
         $completeMigration->up();
+        $this->refreshRoleCodesFromLegacyPermissions($communeAdminRole);
 
         $this->actingAs($manager, 'web')
             ->getJson('/api/v1/users')
@@ -2243,7 +2303,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach([
+        $managerRole->attachPermissions([
             Permission::create(['name' => AccessPermission::MANAGE_USER_ACCOUNTS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::MANAGE_ACCESS_CONTROL, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::VIEW_HOUSEHOLDS, 'guard_name' => 'web'])->id,
@@ -2254,7 +2314,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $communeManager->roles()->attach($managerRole);
+        $communeManager->assignRole($managerRole);
         $staffRole = Role::create([
             'name' => 'Nhóm cán bộ xã tự tạo',
             'scope_level' => 'commune',
@@ -2263,7 +2323,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $staffRole->permissions()->attach(Permission::create([
+        $staffRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -2274,7 +2334,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $staff->roles()->attach($staffRole, ['assigned_by' => $communeManager->id]);
+        $staff->assignRole($staffRole, $communeManager->id);
 
         $this->actingAs($communeManager, 'web')
             ->getJson('/api/v1/users')
@@ -2304,7 +2364,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $group = Role::create([
             'name' => 'Nhóm quản trị tỉnh',
@@ -2312,7 +2372,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $member = User::factory()->create(['is_active' => true]);
-        $member->roles()->attach($group);
+        $member->assignRole($group);
 
         $this->actingAs($admin)
             ->get(route('api.roles.index'))
@@ -2330,7 +2390,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $group = Role::create([
             'name' => 'Nhóm tỉnh khác',
             'scope_level' => 'province',
@@ -2348,13 +2408,13 @@ class AccessControlTest extends TestCase
             'created_by' => $admin->id,
             'province_code' => 'P1',
         ]);
-        $localGroup->permissions()->attach($manageGroups);
+        $localGroup->attachPermissions($manageGroups);
         $localUser = User::factory()->create([
             'scope_level' => 'province',
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $localUser->roles()->attach($localGroup);
+        $localUser->assignRole($localGroup);
 
         $this->actingAs($localUser)->get(route('api.roles.users.index', $group))
             ->assertForbidden();
@@ -2382,7 +2442,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $schoolManagerRole = Role::create([
             'name' => 'Quản lý trường học',
@@ -2405,7 +2465,7 @@ class AccessControlTest extends TestCase
                 'guard_name' => 'web',
             ],
         ])->map(fn (array $attributes) => Permission::create($attributes));
-        $schoolManagerRole->permissions()->attach($provincePermissions);
+        $schoolManagerRole->attachPermissions($provincePermissions);
 
         $this->actingAs($admin)
             ->getJson(route('api.users.create'))
@@ -2438,7 +2498,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $group = Role::create([
             'name' => 'Phòng nhập liệu',
@@ -2446,7 +2506,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $group->permissions()->sync([
+        $group->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -2462,7 +2522,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $account->roles()->attach($group);
+        $account->assignRole($group);
 
         $this->actingAs($admin)
             ->deleteJson(route('api.roles.destroy', $group))
@@ -2476,15 +2536,11 @@ class AccessControlTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('error.details.0.field', 'role');
         $this->assertDatabaseHas('roles', ['id' => $group->id]);
-        $account->roles()->detach($group);
+        $account->removeRole($group);
         $this->deleteJson(route('api.roles.destroy', $group))->assertOk();
 
         $this->assertDatabaseMissing('roles', ['id' => $group->id]);
-        $this->assertDatabaseMissing('model_has_roles', [
-            'role_id' => $group->id,
-            'model_id' => $account->id,
-            'model_type' => User::class,
-        ]);
+        $this->assertDatabaseMissing('users', ['id' => $account->id, 'role_id' => $group->id]);
     }
 
     public function test_household_action_permissions_also_grant_list_access(): void
@@ -2508,8 +2564,8 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->sync($permissions->pluck('id')->all());
-        $user->roles()->attach($role, ['assigned_by' => null]);
+        $role->syncPermissions($permissions->pluck('id')->all());
+        $user->assignRole($role, null);
 
         $this->actingAs($user)
             ->getJson(route('api.households.index'))
@@ -2535,14 +2591,14 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach($permission);
+        $role->attachPermissions($permission);
         $user = User::factory()->create([
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $this->assertTrue($user->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertContains(AccessPermission::VIEW_HOUSEHOLDS, $user->fresh()->permissionNames());
 
@@ -2573,14 +2629,14 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach($permission);
+        $role->attachPermissions($permission);
         $user = User::factory()->create([
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $household = Household::create([
             'household_code' => 'OUTSIDE',
             'school_year' => '2025-2026',
@@ -2606,7 +2662,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $this->authenticateApiUser($admin);
         $this->getJson('/api/v1/villages/form')
@@ -2630,7 +2686,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $group = Role::create([
             'name' => 'Nhóm API',
@@ -2644,7 +2700,7 @@ class AccessControlTest extends TestCase
             'created_by' => $admin->id,
             'is_active' => true,
         ]);
-        $member->roles()->attach($group);
+        $member->assignRole($group);
 
         $this->authenticateApiUser($admin);
         $this
@@ -2665,7 +2721,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $permission = Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
@@ -2701,7 +2757,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $singleMemberRole = Role::create([
             'name' => 'Nhóm một tài khoản đã khóa',
@@ -2713,7 +2769,7 @@ class AccessControlTest extends TestCase
             'created_by' => $admin->id,
             'is_active' => false,
         ]);
-        $singleMemberRole->users()->attach($singleInactiveMember);
+        $singleInactiveMember->assignRole($singleMemberRole);
 
         $multipleMembersRole = Role::create([
             'name' => 'Nhóm nhiều tài khoản đã khóa',
@@ -2725,7 +2781,7 @@ class AccessControlTest extends TestCase
             'created_by' => $admin->id,
             'is_active' => false,
         ]);
-        $multipleMembersRole->users()->attach($multipleInactiveMembers);
+        $multipleInactiveMembers->each(fn (User $member) => $member->assignRole($multipleMembersRole));
 
         $emptyRole = Role::create([
             'name' => 'Nhóm chưa có thành viên',
@@ -2790,7 +2846,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceAdminRole->permissions()->sync(collect([
+        $provinceAdminRole->syncPermissions(collect([
             AccessPermission::MANAGE_SCHOOLS,
             AccessPermission::MANAGE_USER_ACCOUNTS,
         ])->map(fn (string $name): int => Permission::create([
@@ -2802,7 +2858,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $communeAdminRole->permissions()->sync(collect([
+        $communeAdminRole->syncPermissions(collect([
             AccessPermission::MANAGE_VILLAGES,
             AccessPermission::MANAGE_USER_ACCOUNTS,
         ])->map(fn (string $name): int => Permission::create([
@@ -2814,10 +2870,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $customRole->permissions()->attach(Permission::create([
+        $customRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
+        $this->syncLegacyRolePermissions($provinceAdminRole);
+        $this->syncLegacyRolePermissions($communeAdminRole);
+        $this->syncLegacyRolePermissions($customRole);
 
         $migration = require database_path('migrations/2026_11_05_000003_lock_seeded_territorial_admin_roles.php');
         $migration->up();
@@ -2835,7 +2894,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $role = Role::create([
             'name' => 'Quản trị cấp tỉnh',
@@ -2843,7 +2902,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $role->permissions()->sync(collect([
+        $role->syncPermissions(collect([
             AccessPermission::MANAGE_SCHOOLS,
             AccessPermission::MANAGE_USER_ACCOUNTS,
         ])->map(fn (string $name): int => Permission::firstOrCreate([
@@ -2902,7 +2961,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->sync([
+        $managerRole->syncPermissions([
             $permissions[AccessPermission::VIEW_ROLES]->id,
             $permissions[AccessPermission::CREATE_ROLES]->id,
             $permissions[AccessPermission::VIEW_USERS]->id,
@@ -2913,7 +2972,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
         $this->authenticateApiUser($manager);
 
         $this->postJson('/api/v1/roles', [
@@ -2943,7 +3002,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceRole->permissions()->sync([
+        $provinceRole->syncPermissions([
             $permissions[AccessPermission::MANAGE_ACCESS_CONTROL]->id,
             $permissions[AccessPermission::MANAGE_USER_ACCOUNTS]->id,
             $permissions[AccessPermission::MANAGE_SCHOOLS]->id,
@@ -2953,7 +3012,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'province_code' => 'P1',
         ]);
-        $provinceAdmin->roles()->attach($provinceRole);
+        $provinceAdmin->assignRole($provinceRole);
         $this->authenticateApiUser($provinceAdmin);
 
         $this->postJson('/api/v1/roles', [
@@ -2967,9 +3026,10 @@ class AccessControlTest extends TestCase
         ])->assertCreated();
 
         $communeAdminRole = Role::where('name', 'Quản trị xã mới')->firstOrFail();
-        $this->assertTrue($communeAdminRole->permissions()
-            ->where('name', AccessPermission::MANAGE_SCHOOLS)
-            ->exists());
+        $this->assertTrue($communeAdminRole->permissions->contains(
+            'name',
+            AccessPermission::MANAGE_SCHOOLS
+        ));
     }
 
     public function test_account_management_permission_also_grants_group_management(): void
@@ -2987,12 +3047,12 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach($accountPermission);
+        $role->attachPermissions($accountPermission);
         $user = User::factory()->create([
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->assertTrue($user->can('manage-user-accounts'));
         $this->assertTrue($user->can('manage-access-control'));
@@ -3013,13 +3073,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'global',
             'guard_name' => 'web',
         ]);
-        $globalRole->permissions()->attach($viewPermission);
+        $globalRole->attachPermissions($viewPermission);
 
         $provinceUser = User::factory()->create([
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $provinceUser->roles()->attach($globalRole);
+        $provinceUser->assignRole($globalRole);
         $this->assertFalse($provinceUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
 
         $systemRole = Role::create([
@@ -3028,7 +3088,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $systemUser = User::factory()->create(['is_active' => true]);
-        $systemUser->roles()->attach($systemRole);
+        $systemUser->assignRole($systemRole);
         $this->assertTrue($systemUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
     }
 
@@ -3055,7 +3115,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $editorRole->permissions()->sync(collect([
+        $editorRole->syncPermissions(collect([
             $permissionIds[AccessPermission::CREATE_HOUSEHOLDS],
             $permissionIds[AccessPermission::UPDATE_HOUSEHOLDS],
             $permissionIds[AccessPermission::DELETE_HOUSEHOLDS],
@@ -3063,7 +3123,7 @@ class AccessControlTest extends TestCase
             $permissionIds[AccessPermission::EXPORT_HOUSEHOLDS],
         ])->all());
         $editor = User::factory()->create(['scope_level' => 'commune', 'is_active' => true]);
-        $editor->roles()->attach($editorRole, ['assigned_by' => null]);
+        $editor->assignRole($editorRole, null);
 
         $this->assertTrue($editor->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertTrue($editor->hasPermissionTo(AccessPermission::CREATE_HOUSEHOLDS));
@@ -3078,9 +3138,9 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $viewerRole->permissions()->attach($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
+        $viewerRole->attachPermissions($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
         $viewer = User::factory()->create(['scope_level' => 'commune', 'is_active' => true]);
-        $viewer->roles()->attach($viewerRole, ['assigned_by' => null]);
+        $viewer->assignRole($viewerRole, null);
 
         $this->assertTrue($viewer->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertFalse($viewer->hasPermissionTo(AccessPermission::CREATE_HOUSEHOLDS));
@@ -3109,7 +3169,7 @@ class AccessControlTest extends TestCase
         ]);
 
         $provinceRole = Role::create(['name' => 'province-importer', 'scope_level' => 'province', 'guard_name' => 'web']);
-        $provinceRole->permissions()->attach(Permission::create([
+        $provinceRole->attachPermissions(Permission::create([
             'name' => AccessPermission::IMPORT_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -3118,7 +3178,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $provinceUser->roles()->attach($provinceRole);
+        $provinceUser->assignRole($provinceRole);
 
         $this->actingAs($provinceUser)
             ->getJson('/api/v1/provinces')
@@ -3127,14 +3187,14 @@ class AccessControlTest extends TestCase
             ->assertJsonCount(1, 'data');
 
         $communeRole = Role::create(['name' => 'commune-importer', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $communeRole->permissions()->attach(Permission::where('name', AccessPermission::IMPORT_HOUSEHOLDS)->firstOrFail());
+        $communeRole->attachPermissions(Permission::where('name', AccessPermission::IMPORT_HOUSEHOLDS)->firstOrFail());
         $communeUser = User::factory()->create([
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $communeUser->roles()->attach($communeRole);
+        $communeUser->assignRole($communeRole);
 
         $this->actingAs($communeUser)
             ->getJson('/api/v1/provinces')
@@ -3148,7 +3208,7 @@ class AccessControlTest extends TestCase
             ->assertJsonFragment(['code' => 'V2']);
 
         $villageRole = Role::create(['name' => 'commune-importer', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $villageRole->permissions()->attach(Permission::create([
+        $villageRole->attachPermissions(Permission::create([
             'name' => AccessPermission::IMPORT_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -3158,7 +3218,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $villageUser->roles()->attach($villageRole);
+        $villageUser->assignRole($villageRole);
         $villageUser->villages()->sync(['V1']);
 
         $this->actingAs($villageUser)
@@ -3189,7 +3249,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         User::factory()->create([
             'name' => 'Tài khoản tỉnh',
@@ -3225,14 +3285,14 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $accountRole = Role::create([
             'name' => 'Nhân viên nhập liệu',
             'scope_level' => 'province',
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $accountRole->permissions()->sync([
+        $accountRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -3252,7 +3312,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $villageOneUser->roles()->attach($accountRole);
+        $villageOneUser->assignRole($accountRole);
         $villageOneUser->villages()->sync(['V1', 'V2']);
 
         $villageTwoUser = User::factory()->create([
@@ -3264,7 +3324,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $villageTwoUser->roles()->attach($accountRole);
+        $villageTwoUser->assignRole($accountRole);
         $villageTwoUser->villages()->sync(['V2']);
 
         $otherProvinceUser = User::factory()->create([
@@ -3275,7 +3335,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $otherProvinceUser->roles()->attach($accountRole);
+        $otherProvinceUser->assignRole($accountRole);
 
         $this->actingAs($admin)
             ->getJson(route('api.users.index', [
@@ -3310,13 +3370,13 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceRole->permissions()->attach($manageAccounts);
+        $provinceRole->attachPermissions($manageAccounts);
         $provinceAdmin = User::factory()->create([
             'scope_level' => 'province',
             'province_code' => 'P1',
             'is_active' => true,
         ]);
-        $provinceAdmin->roles()->attach($provinceRole);
+        $provinceAdmin->assignRole($provinceRole);
 
         $communeAccountRole = Role::create([
             'name' => 'Tài khoản cấp xã',
@@ -3325,7 +3385,7 @@ class AccessControlTest extends TestCase
             'created_by' => $provinceAdmin->id,
             'province_code' => 'P1',
         ]);
-        $communeAccountRole->permissions()->sync([
+        $communeAccountRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
                 'guard_name' => 'web',
@@ -3342,7 +3402,7 @@ class AccessControlTest extends TestCase
             'created_by' => $provinceAdmin->id,
             'province_code' => 'P1',
         ]);
-        $provinceAccountRole->permissions()->sync([
+        $provinceAccountRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
                 'guard_name' => 'web',
@@ -3369,7 +3429,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $communeAccount->roles()->attach($communeAccountRole);
+        $communeAccount->assignRole($communeAccountRole);
 
         $provinceAccount = User::factory()->create([
             'name' => 'Tài khoản tỉnh do mình tạo',
@@ -3379,7 +3439,7 @@ class AccessControlTest extends TestCase
             'created_by' => $provinceAdmin->id,
             'is_active' => true,
         ]);
-        $provinceAccount->roles()->attach($provinceAccountRole);
+        $provinceAccount->assignRole($provinceAccountRole);
 
         $otherProvinceAccount = User::factory()->create([
             'name' => 'Tài khoản tỉnh do người khác tạo',
@@ -3389,7 +3449,7 @@ class AccessControlTest extends TestCase
             'created_by' => User::factory()->create()->id,
             'is_active' => true,
         ]);
-        $otherProvinceAccount->roles()->attach($provinceAccountRole);
+        $otherProvinceAccount->assignRole($provinceAccountRole);
 
         $globalAccount = User::factory()->create([
             'name' => 'Tài khoản toàn hệ thống không hiển thị',
@@ -3399,7 +3459,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $globalAccount->roles()->attach($globalAccountRole);
+        $globalAccount->assignRole($globalAccountRole);
 
         $outsideCommuneAccount = User::factory()->create([
             'name' => 'Tài khoản xã ngoài tỉnh',
@@ -3409,7 +3469,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C2',
             'is_active' => true,
         ]);
-        $outsideCommuneAccount->roles()->attach(Role::create([
+        $outsideCommuneAccount->assignRole(Role::create([
             'name' => 'Tài khoản xã ngoài phạm vi',
             'scope_level' => 'commune',
             'guard_name' => 'web',
@@ -3439,14 +3499,14 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $accountRole = Role::create([
             'name' => 'Quản trị tỉnh',
             'scope_level' => 'province',
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $accountRole->permissions()->sync([
+        $accountRole->syncPermissions([
             Permission::firstOrCreate([
                 'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
                 'guard_name' => 'web',
@@ -3466,7 +3526,7 @@ class AccessControlTest extends TestCase
                 'scope_level' => 'province',
                 'is_active' => true,
             ]);
-            $user->roles()->attach($accountRole);
+            $user->assignRole($accountRole);
         }
 
         $this->actingAs($admin)
@@ -3493,7 +3553,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $group = Role::create([
             'name' => 'Nhóm nhiều thành viên',
             'scope_level' => 'province',
@@ -3509,7 +3569,7 @@ class AccessControlTest extends TestCase
                 'scope_level' => 'province',
                 'is_active' => true,
             ]);
-            $group->users()->attach($member);
+            $member->assignRole($group);
         }
 
         $this->authenticateApiUser($admin);
@@ -3542,7 +3602,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $schoolPermission = Permission::create(['name' => AccessPermission::MANAGE_SCHOOLS]);
         $accountPermission = Permission::create(['name' => AccessPermission::MANAGE_USER_ACCOUNTS]);
@@ -3553,7 +3613,7 @@ class AccessControlTest extends TestCase
                 'guard_name' => 'web',
                 'created_by' => $admin->id,
             ]);
-            $role->permissions()->attach([$schoolPermission->id, $accountPermission->id]);
+            $role->attachPermissions([$schoolPermission->id, $accountPermission->id]);
             $user = User::factory()->create([
                 'name' => "API paged user {$index}",
                 'username' => "api-paged-user-{$index}",
@@ -3562,7 +3622,7 @@ class AccessControlTest extends TestCase
                 'scope_level' => 'province',
                 'is_active' => true,
             ]);
-            $user->roles()->attach($role);
+            $user->assignRole($role);
         }
 
         $this->authenticateApiUser($admin);
@@ -3679,7 +3739,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($systemAdminRole);
+        $admin->assignRole($systemAdminRole);
 
         $centralStaffRole = Role::create([
             'name' => 'Cán bộ Trung ương',
@@ -3687,7 +3747,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $centralStaffRole->permissions()->attach(Permission::create([
+        $centralStaffRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -3698,7 +3758,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provincialAdminRole->permissions()->attach([
+        $provincialAdminRole->attachPermissions([
             Permission::create([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -3714,14 +3774,14 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $admin->id,
         ]);
-        $existingProvinceAdmin->roles()->attach($provincialAdminRole);
+        $existingProvinceAdmin->assignRole($provincialAdminRole);
         $provinceStaffRole = Role::create([
             'name' => 'Cán bộ tạo tài khoản cho cấp xã',
             'scope_level' => 'province',
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provinceStaffRole->permissions()->attach(Permission::create([
+        $provinceStaffRole->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
             'guard_name' => 'web',
         ]));
@@ -3731,7 +3791,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $admin->id,
         ]);
-        $provinceStaff->roles()->attach($provinceStaffRole);
+        $provinceStaff->assignRole($provinceStaffRole);
 
         $this->authenticateApiUser($admin);
 
@@ -3892,7 +3952,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($systemRole);
+        $admin->assignRole($systemRole);
 
         $provinceRole = Role::create([
             'name' => 'Quản trị cấp tỉnh',
@@ -3900,7 +3960,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provinceRole->permissions()->sync(collect([
+        $provinceRole->syncPermissions(collect([
             AccessPermission::MANAGE_SCHOOLS,
             AccessPermission::MANAGE_USER_ACCOUNTS,
         ])->map(fn (string $name): int => Permission::firstOrCreate([
@@ -3946,19 +4006,19 @@ class AccessControlTest extends TestCase
             'scope_level' => 'global',
             'guard_name' => 'web',
         ]);
-        $centralRole->permissions()->attach($permission);
+        $centralRole->attachPermissions($permission);
         $centralUser = User::factory()->create([
             'scope_level' => 'global',
             'is_active' => true,
         ]);
-        $centralUser->roles()->attach($centralRole);
+        $centralUser->assignRole($centralRole);
         $targetRole = Role::create([
             'name' => 'Quản trị cấp tỉnh',
             'scope_level' => 'province',
             'guard_name' => 'web',
             'created_by' => $centralUser->id,
         ]);
-        $targetRole->permissions()->attach([
+        $targetRole->attachPermissions([
             Permission::create([
                 'name' => AccessPermission::MANAGE_SCHOOLS,
                 'guard_name' => 'web',
@@ -3974,14 +4034,14 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $centralUser->id,
         ]);
-        $target->roles()->attach($targetRole);
+        $target->assignRole($targetRole);
         $regularProvinceRole = Role::create([
             'name' => 'Tài khoản tỉnh thông thường',
             'scope_level' => 'province',
             'guard_name' => 'web',
             'created_by' => $centralUser->id,
         ]);
-        $regularProvinceRole->permissions()->attach(Permission::create([
+        $regularProvinceRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -3991,7 +4051,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $centralUser->id,
         ]);
-        $regularProvinceUser->roles()->attach($regularProvinceRole);
+        $regularProvinceUser->assignRole($regularProvinceRole);
 
         $this->authenticateApiUser($centralUser);
 
@@ -4021,7 +4081,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $manageUsers = Permission::create([
             'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
@@ -4037,14 +4097,14 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provinceRole->permissions()->attach([$manageUsers->id, $manageSchools->id]);
+        $provinceRole->attachPermissions([$manageUsers->id, $manageSchools->id]);
         $regularRole = Role::create([
             'name' => 'Cán bộ Trung ương',
             'scope_level' => 'global',
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $regularRole->permissions()->attach(Permission::create([
+        $regularRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -4061,7 +4121,7 @@ class AccessControlTest extends TestCase
                 'is_active' => true,
                 'created_by' => $admin->id,
             ]);
-            $user->roles()->attach($account['role']);
+            $user->assignRole($account['role']);
         }
 
         $this->actingAs($admin)
@@ -4091,7 +4151,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_VILLAGES,
             'guard_name' => 'web',
         ]));
@@ -4101,7 +4161,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->actingAs($user)
             ->getJson(route('api.villages.create'))
@@ -4146,7 +4206,7 @@ class AccessControlTest extends TestCase
         ]);
 
         $role = Role::create(['name' => 'commune-form-editor', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $role->permissions()->attach([
+        $role->attachPermissions([
             Permission::create(['name' => AccessPermission::CREATE_HOUSEHOLDS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::VIEW_HOUSEHOLDS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::MANAGE_SCHOOLS, 'guard_name' => 'web'])->id,
@@ -4157,7 +4217,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->actingAs($user)
             ->getJson('/api/v1/schools')
@@ -4226,7 +4286,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach([
+        $role->attachPermissions([
             Permission::create(['name' => AccessPermission::VIEW_SCHOOLS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::CREATE_SCHOOLS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::UPDATE_SCHOOLS, 'guard_name' => 'web'])->id,
@@ -4236,7 +4296,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->actingAs($user)
             ->postJson('/api/v1/schools', [
@@ -4291,15 +4351,6 @@ class AccessControlTest extends TestCase
             $table->string('status')->nullable();
             $table->timestamp('created_at')->useCurrent();
         });
-        Schema::table('households', function (Blueprint $table): void {
-            $table->unsignedBigInteger('import_log_id')->nullable();
-        });
-        Schema::table('persons', function (Blueprint $table): void {
-            $table->unsignedBigInteger('import_log_id')->nullable();
-        });
-        Schema::table('person_educations', function (Blueprint $table): void {
-            $table->unsignedBigInteger('import_log_id')->nullable();
-        });
         Schema::create('person_disabilities', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
@@ -4336,7 +4387,7 @@ class AccessControlTest extends TestCase
         DB::table('ethnicities')->insert(['code' => 'KINH', 'name' => 'Kinh', 'created_at' => now(), 'updated_at' => now()]);
 
         $role = Role::create(['name' => 'commune-importer', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::IMPORT_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -4346,7 +4397,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $spreadsheet = new Spreadsheet;
         $sheet = $spreadsheet->getActiveSheet();
@@ -4467,19 +4518,16 @@ class AccessControlTest extends TestCase
         $householdId = DB::table('households')->insertGetId([
             'household_code' => 'IMPORTED-1',
             'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2025-2026')->id,
-            'import_log_id' => $successfulImport->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         $personId = DB::table('persons')->insertGetId([
             'household_id' => $householdId,
-            'import_log_id' => $successfulImport->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
         DB::table('person_educations')->insert([
             'person_id' => $personId,
-            'import_log_id' => $successfulImport->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -4497,7 +4545,6 @@ class AccessControlTest extends TestCase
         $otherHouseholdId = DB::table('households')->insertGetId([
             'household_code' => 'IMPORTED-OTHER',
             'school_year_id' => \App\Models\SchoolYear::resolveOrCreateFromLabel('2025-2026')->id,
-            'import_log_id' => $otherImport->id,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -4566,8 +4613,8 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $villageRole->permissions()->attach($villagePermission);
-        $villageManager->roles()->attach($villageRole, ['assigned_by' => null]);
+        $villageRole->attachPermissions($villagePermission);
+        $villageManager->assignRole($villageRole, null);
         $this->assertTrue(Gate::forUser($villageManager)->allows(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse(Gate::forUser($villageManager)->allows(AccessPermission::MANAGE_SCHOOLS));
         $this->actingAs($villageManager)
@@ -4587,8 +4634,8 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $legacyRole->permissions()->attach($legacyPermission);
-        $legacyManager->roles()->attach($legacyRole, ['assigned_by' => null]);
+        $legacyRole->attachPermissions($legacyPermission);
+        $legacyManager->assignRole($legacyRole, null);
         $this->assertFalse(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse(Gate::forUser($legacyManager)->allows(AccessPermission::MANAGE_SCHOOLS));
         $this->assertFalse(Gate::forUser($legacyManager)->allows('manage-catalogs'));
@@ -4604,8 +4651,8 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $provinceRole->permissions()->attach($schoolPermission);
-        $provinceManager->roles()->attach($provinceRole, ['assigned_by' => null]);
+        $provinceRole->attachPermissions($schoolPermission);
+        $provinceManager->assignRole($provinceRole, null);
         $this->assertTrue(Gate::forUser($provinceManager)->allows(AccessPermission::MANAGE_SCHOOLS));
         $this->actingAs($provinceManager)
             ->getJson(route('api.schools.index'))
@@ -4624,12 +4671,12 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $villageRole->permissions()->attach($villagePermission);
+        $villageRole->attachPermissions($villagePermission);
         $villageManager = User::factory()->create([
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $villageManager->roles()->attach($villageRole, ['assigned_by' => null]);
+        $villageManager->assignRole($villageRole, null);
 
         $this->actingAs($villageManager)
             ->getJson(route('api.villages.index'))
@@ -4645,12 +4692,12 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $schoolRole->permissions()->attach($schoolPermission);
+        $schoolRole->attachPermissions($schoolPermission);
         $schoolManager = User::factory()->create([
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $schoolManager->roles()->attach($schoolRole, ['assigned_by' => null]);
+        $schoolManager->assignRole($schoolRole, null);
 
         $this->actingAs($schoolManager)
             ->getJson(route('api.schools.index'))
@@ -4679,7 +4726,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $viewHouseholdsPermission = Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
@@ -4728,14 +4775,14 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $unassignedCentralCommuneRole->permissions()->attach($viewHouseholdsPermission);
+        $unassignedCentralCommuneRole->attachPermissions($viewHouseholdsPermission);
 
         $legacyGlobalRole = Role::create([
             'name' => 'legacy-global-viewer',
             'scope_level' => 'global',
             'guard_name' => 'web',
         ]);
-        $legacyGlobalRole->permissions()->attach($viewHouseholdsPermission);
+        $legacyGlobalRole->attachPermissions($viewHouseholdsPermission);
 
         $this->postJson(route('api.roles.store'), [
             'name' => 'Nhóm thôn do trung ương tạo',
@@ -4928,7 +4975,7 @@ class AccessControlTest extends TestCase
                 AccessPermission::UPDATE_HOUSEHOLDS,
                 AccessPermission::VIEW_HOUSEHOLDS,
             ],
-            $communeRole->permissions()->pluck('name')->all()
+            $communeRole->permissions->pluck('name')->all()
         );
 
         $this->actingAs($provinceUser)
@@ -4959,7 +5006,7 @@ class AccessControlTest extends TestCase
             'created_by' => $otherProvinceAccount->id,
             'province_code' => 'P1',
         ]);
-        $otherProvinceRole->permissions()->attach($viewHouseholdsPermission);
+        $otherProvinceRole->attachPermissions($viewHouseholdsPermission);
         $this->actingAs($provinceUser)
             ->getJson(route('api.users.create'))
             ->assertJsonMissing(['name' => 'Nhóm xã của tài khoản tỉnh khác']);
@@ -5078,9 +5125,8 @@ class AccessControlTest extends TestCase
         $this->assertFalse($villageUser->hasPermissionTo(AccessPermission::MANAGE_VILLAGES));
         $this->assertFalse($villageUser->hasPermissionTo(AccessPermission::MANAGE_USER_ACCOUNTS));
         $this->assertSame(['V1'], $villageUser->managedVillageCodes());
-        $this->assertDatabaseHas('model_has_roles', [
-            'model_id' => $villageUser->id,
-            'model_type' => User::class,
+        $this->assertDatabaseHas('users', [
+            'id' => $villageUser->id,
             'role_id' => $villageRole->id,
         ]);
 
@@ -5102,21 +5148,21 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach($manageGroupsPermission);
+        $managerRole->attachPermissions($manageGroupsPermission);
 
         $firstManager = User::factory()->create([
             'province_code' => 'P1',
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $firstManager->roles()->attach($managerRole);
+        $firstManager->assignRole($managerRole);
 
         $secondManager = User::factory()->create([
             'province_code' => 'P2',
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $secondManager->roles()->attach($managerRole);
+        $secondManager->assignRole($managerRole);
 
         foreach ([$firstManager, $secondManager] as $manager) {
             $this->actingAs($manager)->postJson(route('api.roles.store'), [
@@ -5157,14 +5203,14 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
         $provinceRole = Role::create([
             'name' => 'province-user',
             'scope_level' => 'province',
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provinceRole->permissions()->attach([
+        $provinceRole->attachPermissions([
             Permission::create(['name' => AccessPermission::MANAGE_SCHOOLS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::MANAGE_USER_ACCOUNTS, 'guard_name' => 'web'])->id,
         ]);
@@ -5174,7 +5220,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $admin->id,
         ]);
-        $target->roles()->attach($provinceRole);
+        $target->assignRole($provinceRole);
 
         $this->actingAs($admin)
             ->getJson(route('api.users.index'))
@@ -5217,15 +5263,15 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach(Permission::create([
+        $managerRole->attachPermissions(Permission::create([
             'name' => AccessPermission::MANAGE_USER_ACCOUNTS,
             'guard_name' => 'web',
         ]));
-        $managerRole->permissions()->attach(Permission::create([
+        $managerRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_USERS,
             'guard_name' => 'web',
         ]));
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
         $communeRole = Role::create([
             'name' => 'commune-user',
             'scope_level' => 'commune',
@@ -5233,7 +5279,7 @@ class AccessControlTest extends TestCase
             'created_by' => $manager->id,
             'province_code' => 'P1',
         ]);
-        $communeRole->permissions()->attach([
+        $communeRole->attachPermissions([
             Permission::create([
                 'name' => AccessPermission::CREATE_HOUSEHOLDS,
                 'guard_name' => 'web',
@@ -5254,14 +5300,14 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $manager->id,
         ]);
-        $target->roles()->attach($communeRole);
+        $target->assignRole($communeRole);
         $sameLevelAccount = User::factory()->create([
             'province_code' => 'P1',
             'scope_level' => 'province',
             'is_active' => true,
             'created_by' => $manager->id,
         ]);
-        $sameLevelAccount->roles()->attach($managerRole);
+        $sameLevelAccount->assignRole($managerRole);
 
         $this->actingAs($manager)
             ->getJson(route('api.users.index'))
@@ -5309,14 +5355,14 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach($manageUsers);
+        $managerRole->attachPermissions($manageUsers);
         $manager = User::factory()->create([
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
 
         $villageRole = Role::create([
             'name' => 'village-user',
@@ -5326,7 +5372,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $villageRole->permissions()->attach(Permission::create([
+        $villageRole->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -5337,7 +5383,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $manager->id,
         ]);
-        $target->roles()->attach($villageRole);
+        $target->assignRole($villageRole);
         $target->villages()->sync(['V1']);
 
         $outsideTarget = User::factory()->create([
@@ -5347,7 +5393,7 @@ class AccessControlTest extends TestCase
             'is_active' => true,
             'created_by' => $manager->id,
         ]);
-        $outsideTarget->roles()->attach($villageRole);
+        $outsideTarget->assignRole($villageRole);
         $outsideTarget->villages()->sync(['V2']);
 
         $this->actingAs($manager)
@@ -5385,7 +5431,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $target = User::factory()->create([
             'username' => 'unassigned-account',
@@ -5400,7 +5446,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $admin->id,
         ]);
-        $provinceRole->permissions()->attach([
+        $provinceRole->attachPermissions([
             Permission::create(['name' => AccessPermission::MANAGE_SCHOOLS, 'guard_name' => 'web'])->id,
             Permission::create(['name' => AccessPermission::MANAGE_USER_ACCOUNTS, 'guard_name' => 'web'])->id,
         ]);
@@ -5479,14 +5525,14 @@ class AccessControlTest extends TestCase
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach($permission);
+        $role->attachPermissions($permission);
         $user = User::factory()->create([
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'scope_level' => 'commune',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $visibleCodes = DataAccessScope::households(Household::query(), $user)
             ->orderBy('household_code')
@@ -5556,13 +5602,13 @@ class AccessControlTest extends TestCase
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach($viewPermission);
+        $role->attachPermissions($viewPermission);
         $user = User::factory()->create([
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $user->villages()->sync(['V1']);
 
         $firstPage = $this->actingAs($user)
@@ -5620,7 +5666,7 @@ class AccessControlTest extends TestCase
         ]);
 
         $role = Role::create(['name' => 'multi-village-default-viewer', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -5629,7 +5675,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $user->villages()->sync(['V1', 'V2']);
 
         $this->actingAs($user)
@@ -5665,7 +5711,7 @@ class AccessControlTest extends TestCase
         ]);
 
         $role = Role::create(['name' => 'commune-filter-viewer', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -5674,7 +5720,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $this->actingAs($user)
             ->getJson(route('api.households.index', [
@@ -5696,7 +5742,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $user = User::factory()->create(['is_active' => true]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $now = now();
         $schoolYearId = \App\Models\SchoolYear::resolveOrCreateFromLabel('2026-2027')->id;
 
@@ -5775,7 +5821,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'scope_level' => 'commune',
         ])->save();
-        $user->roles()->attach($role);
+        $user->assignRole($role);
 
         $visibleCodes = DataAccessScope::households(Household::query(), $user)
             ->orderBy('household_code')
@@ -5819,7 +5865,7 @@ class AccessControlTest extends TestCase
         }
 
         $role = Role::create(['name' => 'multiple-village-officer', 'scope_level' => 'commune', 'guard_name' => 'web']);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -5828,7 +5874,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $user->villages()->sync(['V1', 'V2']);
 
         $visibleCodes = DataAccessScope::households(Household::query(), $user)
@@ -5864,7 +5910,7 @@ class AccessControlTest extends TestCase
         ]);
         $accountPermission = Permission::where('name', AccessPermission::MANAGE_USER_ACCOUNTS)->firstOrFail();
         $viewPermission = Permission::where('name', AccessPermission::VIEW_HOUSEHOLDS)->firstOrFail();
-        $managerRole->permissions()->sync([$accountPermission->id, $viewPermission->id]);
+        $managerRole->syncPermissions([$accountPermission->id, $viewPermission->id]);
         $manager = User::factory()->create([
             'is_active' => true,
         ]);
@@ -5873,7 +5919,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'scope_level' => 'commune',
         ])->save();
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
         $villageRole = Role::create([
             'name' => 'village-reader',
             'scope_level' => 'commune',
@@ -5882,7 +5928,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $villageRole->permissions()->attach($viewPermission);
+        $villageRole->attachPermissions($viewPermission);
 
         $this->actingAs($manager)->postJson(route('api.users.store'), [
             'name' => 'Quản lý nhiều thôn',
@@ -5950,14 +5996,14 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->sync($permissions->pluck('id')->all());
+        $managerRole->syncPermissions($permissions->pluck('id')->all());
         $manager = User::factory()->create([
             'scope_level' => 'commune',
             'province_code' => 'P1',
             'commune_code' => 'C1',
             'is_active' => true,
         ]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
         $manager->villages()->sync(['V1']);
 
         $staffRole = Role::create([
@@ -5968,7 +6014,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $staffRole->permissions()->attach($permissions[AccessPermission::MANAGE_VILLAGES]);
+        $staffRole->attachPermissions($permissions[AccessPermission::MANAGE_VILLAGES]);
 
         $this->actingAs($manager, 'web')
             ->getJson('/api/v1/users/create')
@@ -6017,7 +6063,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $accountViewerRole->permissions()->attach(Permission::firstOrCreate([
+        $accountViewerRole->attachPermissions(Permission::firstOrCreate([
             'name' => AccessPermission::VIEW_USERS,
             'guard_name' => 'web',
         ]));
@@ -6059,9 +6105,9 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'guard_name' => 'web',
         ]);
-        $managerRole->permissions()->attach($permission);
+        $managerRole->attachPermissions($permission);
         $manager = User::factory()->create(['is_active' => true]);
-        $manager->roles()->attach($managerRole);
+        $manager->assignRole($managerRole);
 
         $delegatedRole = Role::create([
             'name' => 'delegated-viewer',
@@ -6069,17 +6115,17 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => $manager->id,
         ]);
-        $delegatedRole->permissions()->attach($permission);
+        $delegatedRole->attachPermissions($permission);
         $villageUser = User::factory()->create(['is_active' => true]);
-        $villageUser->roles()->sync([$delegatedRole->id => ['assigned_by' => $manager->id]]);
+        $villageUser->assignRole($delegatedRole, $manager->id);
         $assignedRoleUser = User::factory()->create(['scope_level' => 'commune', 'is_active' => true]);
-        $assignedRoleUser->roles()->sync([$delegatedRole->id => ['assigned_by' => $manager->id]]);
+        $assignedRoleUser->assignRole($delegatedRole, $manager->id);
 
         $this->assertTrue($manager->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertTrue($villageUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertTrue($assignedRoleUser->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
 
-        $managerRole->permissions()->detach($permission);
+        $managerRole->detachPermissions($permission);
 
         $this->assertFalse($manager->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
         $this->assertFalse($villageUser->fresh()->hasPermissionTo(AccessPermission::VIEW_HOUSEHOLDS));
@@ -6112,7 +6158,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $admin = User::factory()->create(['is_active' => true]);
-        $admin->roles()->attach($adminRole);
+        $admin->assignRole($adminRole);
 
         $provinceRole = Role::create([
             'name' => 'Quản trị tỉnh một',
@@ -6126,7 +6172,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'province',
             'is_active' => true,
         ]);
-        $provinceAccount->roles()->attach($provinceRole);
+        $provinceAccount->assignRole($provinceRole);
 
         $villageRole = Role::create([
             'name' => 'Giáo viên nhập liệu',
@@ -6141,7 +6187,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'commune',
             'is_active' => false,
         ]);
-        $villageAccount->roles()->attach($villageRole);
+        $villageAccount->assignRole($villageRole);
         $villageAccount->villages()->sync(['V1']);
 
         $this->actingAs($admin)
@@ -6215,11 +6261,11 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'province_code' => 'P1',
         ]);
-        $parentRole->permissions()->sync([
+        $parentRole->syncPermissions([
             $permissionIds[AccessPermission::MANAGE_USER_ACCOUNTS],
             $permissionIds[AccessPermission::MANAGE_ACCESS_CONTROL],
         ]);
-        $parent->roles()->attach($parentRole);
+        $parent->assignRole($parentRole);
 
         $communeAdminRole = Role::create([
             'name' => 'Quản trị xã C1',
@@ -6229,8 +6275,8 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $communeAdminRole->permissions()->sync($permissionIds->values()->all());
-        $commune->roles()->attach($communeAdminRole);
+        $communeAdminRole->syncPermissions($permissionIds->values()->all());
+        $commune->assignRole($communeAdminRole);
 
         $provinceRole = Role::create([
             'name' => 'Nhóm xã dùng chung tỉnh P1',
@@ -6239,7 +6285,7 @@ class AccessControlTest extends TestCase
             'created_by' => $parent->id,
             'province_code' => 'P1',
         ]);
-        $provinceRole->permissions()->attach($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
+        $provinceRole->attachPermissions($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
 
         $staffRole = Role::create([
             'name' => 'Cán bộ nhập liệu',
@@ -6249,7 +6295,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $staffRole->permissions()->attach($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
+        $staffRole->attachPermissions($permissionIds[AccessPermission::VIEW_HOUSEHOLDS]);
         $staffAdminRole = Role::create([
             'name' => 'Nhóm quản trị xã do cán bộ xã tạo',
             'scope_level' => 'commune',
@@ -6258,7 +6304,7 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $staffAdminRole->permissions()->attach([
+        $staffAdminRole->attachPermissions([
             $permissionIds[AccessPermission::MANAGE_USER_ACCOUNTS],
             $permissionIds[AccessPermission::MANAGE_VILLAGES],
         ]);
@@ -6274,7 +6320,7 @@ class AccessControlTest extends TestCase
             'name' => AccessPermission::CREATE_HOUSEHOLDS,
             'guard_name' => 'web',
         ]);
-        $roleWithPermissionBeyondActor->permissions()->attach($createHouseholdsPermission);
+        $roleWithPermissionBeyondActor->attachPermissions($createHouseholdsPermission);
 
         $unassignedCommuneUser = User::factory()->create([
             'scope_level' => 'commune',
@@ -6432,7 +6478,7 @@ class AccessControlTest extends TestCase
             'scope_level' => 'village',
             'guard_name' => 'web',
         ]);
-        $role->permissions()->attach(Permission::create([
+        $role->attachPermissions(Permission::create([
             'name' => AccessPermission::VIEW_HOUSEHOLDS,
             'guard_name' => 'web',
         ]));
@@ -6441,7 +6487,7 @@ class AccessControlTest extends TestCase
             'commune_code' => 'C1',
             'scope_level' => 'village',
         ]);
-        $user->roles()->attach($role);
+        $user->assignRole($role);
         $user->villages()->sync(['V1']);
 
         $migration = require database_path('migrations/2026_11_03_000000_migrate_village_scopes_to_commune.php');
@@ -6460,7 +6506,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $systemAdministrator = User::factory()->create();
-        $systemAdministrator->roles()->attach($systemRole);
+        $systemAdministrator->assignRole($systemRole);
 
         $legacyAccount = User::factory()->create(['created_by' => null]);
         $legacyRole = Role::create([
@@ -6469,7 +6515,9 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
             'created_by' => null,
         ]);
-        $legacyAccount->roles()->attach($legacyRole, ['assigned_by' => $systemAdministrator->id]);
+        $legacyAccount->assignRole($legacyRole, $systemAdministrator->id);
+        $this->syncLegacyRoleAssignment($systemAdministrator);
+        $this->syncLegacyRoleAssignment($legacyAccount);
 
         $migration = require database_path('migrations/2026_11_04_000000_backfill_access_control_creator_ownership.php');
         $migration->up();
@@ -6496,7 +6544,7 @@ class AccessControlTest extends TestCase
             'guard_name' => 'web',
         ]);
         $systemAdministrator = User::factory()->create();
-        $systemAdministrator->roles()->attach($systemRole);
+        $systemAdministrator->assignRole($systemRole);
 
         $provinceManager = User::factory()->create([
             'scope_level' => 'province',
@@ -6529,14 +6577,14 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C2',
         ]);
-        $provinceMember->roles()->attach($provinceRole, ['assigned_by' => $systemAdministrator->id]);
+        $provinceMember->assignRole($provinceRole, $systemAdministrator->id);
         $outsideProvinceMember = User::factory()->create([
             'created_by' => $systemAdministrator->id,
             'scope_level' => 'commune',
             'province_code' => 'P2',
             'commune_code' => 'C3',
         ]);
-        $outsideProvinceMember->roles()->attach($provinceRole, ['assigned_by' => $systemAdministrator->id]);
+        $outsideProvinceMember->assignRole($provinceRole, $systemAdministrator->id);
 
         $communeMember = User::factory()->create([
             'created_by' => $systemAdministrator->id,
@@ -6544,14 +6592,32 @@ class AccessControlTest extends TestCase
             'province_code' => 'P1',
             'commune_code' => 'C1',
         ]);
-        $communeMember->roles()->attach($communeRole);
+        $communeMember->assignRole($communeRole);
         $outsideCommuneMember = User::factory()->create([
             'created_by' => $systemAdministrator->id,
             'scope_level' => 'commune',
             'province_code' => 'P1',
             'commune_code' => 'C2',
         ]);
-        $outsideCommuneMember->roles()->attach($communeRole, ['assigned_by' => $systemAdministrator->id]);
+        $outsideCommuneMember->assignRole($communeRole, $systemAdministrator->id);
+        foreach ([
+            $systemAdministrator,
+            $provinceMember,
+            $outsideProvinceMember,
+            $communeMember,
+            $outsideCommuneMember,
+        ] as $member) {
+            $this->syncLegacyRoleAssignment($member);
+        }
+        foreach ([
+            $systemAdministrator,
+            $provinceMember,
+            $outsideProvinceMember,
+            $communeMember,
+            $outsideCommuneMember,
+        ] as $member) {
+            $this->syncLegacyRoleAssignment($member);
+        }
 
         $migration = require database_path('migrations/2026_11_05_000000_repair_territorial_role_seed_ownership.php');
         $migration->up();

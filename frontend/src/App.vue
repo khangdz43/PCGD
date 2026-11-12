@@ -111,7 +111,10 @@ function syncModuleUrl(module: ModuleKey): void {
 
 function restoreModuleFromUrl(): void {
     const requestedModule = moduleFromUrl();
-    activeModule.value = requestedModule === "" && !canViewDashboard.value
+    const isRestrictedModule = ["users", "roles"].includes(requestedModule);
+    activeModule.value = isRestrictedModule && !user.value?.is_account_administrator
+        ? firstAvailableModule()
+        : requestedModule === "" && !canViewDashboard.value
         ? firstAvailableModule()
         : requestedModule;
 }
@@ -124,8 +127,8 @@ function firstAvailableModule(): ModuleKey {
     if (availablePermissions.includes("view-households")) return "households";
     if (availablePermissions.includes("view-villages")) return "villages";
     if (availablePermissions.includes("view-schools")) return "schools";
-    if (availablePermissions.includes("view-users")) return "users";
-    if (availablePermissions.includes("view-roles")) return "roles";
+    if (user.value?.is_account_administrator && availablePermissions.includes("view-users")) return "users";
+    if (user.value?.is_account_administrator && availablePermissions.includes("view-roles")) return "roles";
     if (availablePermissions.includes("view-trash")) return "trash";
     if (availablePermissions.includes("view-imports")) return "import-history";
     if (availablePermissions.includes("create-imports")) return "import-file";
@@ -578,6 +581,7 @@ function updateCurrentUserName(profile: { name: string }): void {
             :permissions="permissions"
             :scope-level="user?.scope_level ?? null"
             :can-view-dashboard="canViewDashboard"
+            :is-account-administrator="user?.is_account_administrator === true"
             @select="activeModule = $event"
         />
         <div class="app-main">

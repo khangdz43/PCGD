@@ -39,6 +39,7 @@ class RolePermissionSeeder extends Seeder
                     'description' => 'Quản trị toàn bộ hệ thống',
                 ]
             );
+            $systemAdminRole->forceFill(['is_system' => true])->save();
             // Sync tất cả permissions cho SYSTEM_ADMIN
             $systemAdminRole->syncPermissions(
                 $permissions
@@ -50,7 +51,65 @@ class RolePermissionSeeder extends Seeder
                     ->pluck('id')
             );
 
-            $this->command->info('Đã khởi tạo quyền và nhóm quản trị hệ thống.');
+            $centralAdminRole = Role::updateOrCreate(
+                ['name' => Role::CENTRAL_ADMIN, 'guard_name' => 'web'],
+                [
+                    'scope_level' => 'global',
+                    'description' => 'Quản trị tài khoản và nhóm người dùng Trung ương, cấp tỉnh',
+                    'created_by' => null,
+                ]
+            );
+            $centralAdminRole->forceFill(['is_system' => true])->save();
+            $centralAdminRole->syncPermissions(
+                $permissions
+                    ->filter(fn (Permission $permission): bool => in_array($permission->name, [
+                        AccessPermission::MANAGE_ACCESS_CONTROL,
+                        AccessPermission::MANAGE_USER_ACCOUNTS,
+                        AccessPermission::VIEW_USERS,
+                        AccessPermission::CREATE_USERS,
+                        AccessPermission::UPDATE_USERS,
+                        AccessPermission::DELETE_USERS,
+                        AccessPermission::VIEW_ROLES,
+                        AccessPermission::CREATE_ROLES,
+                        AccessPermission::UPDATE_ROLES,
+                        AccessPermission::DELETE_ROLES,
+                        AccessPermission::VIEW_ORGANIZATION_ACCOUNTS,
+                    ], true))
+                    ->pluck('id')
+            );
+
+            foreach ([
+                [
+                    'name' => Role::PROVINCE_ADMIN_NAMES[0],
+                    'scope_level' => 'province',
+                    'description' => 'Quản trị tài khoản, nhóm người dùng và trường học cấp tỉnh',
+                ],
+                [
+                    'name' => Role::COMMUNE_ADMIN_NAMES[0],
+                    'scope_level' => 'commune',
+                    'description' => 'Quản trị tài khoản, nhóm người dùng và địa bàn cấp xã',
+                ],
+            ] as $definition) {
+                $role = Role::updateOrCreate(
+                    ['name' => $definition['name'], 'guard_name' => 'web'],
+                    [
+                        'scope_level' => $definition['scope_level'],
+                        'description' => $definition['description'],
+                        'created_by' => null,
+                    ]
+                );
+                $role->forceFill(['is_system' => true])->save();
+                $role->syncPermissions(
+                    $permissions
+                        ->whereIn(
+                            'name',
+                            AccessPermission::permissionsForScope($definition['scope_level'])
+                        )
+                        ->pluck('id')
+                );
+            }
+
+            $this->command->info('Đã khởi tạo các nhóm quản trị hệ thống.');
         });
     }
 }

@@ -92,13 +92,14 @@ class RoleManagementServiceTest extends TestCase
         ));
     }
 
-    public function test_non_admin_can_manage_only_roles_created_by_them_at_their_scope(): void
+    public function test_scope_admin_can_manage_only_roles_created_by_them_at_their_scope(): void
     {
         $actor = new User;
         $actor->setRawAttributes(['id' => 8, 'province_code' => 'P01', 'commune_code' => 'C02']);
         /** @var User&MockInterface $actor */
         $actor = Mockery::mock($actor)->makePartial();
         $actor->shouldReceive('hasRole')->with(Role::SYSTEM_ADMIN)->zeroOrMoreTimes()->andReturnFalse();
+        $actor->shouldReceive('isAccountAdministrator')->zeroOrMoreTimes()->andReturnTrue();
         $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('commune');
         $actor->shouldReceive('canManageAccountGroups')->zeroOrMoreTimes()->andReturnFalse();
 

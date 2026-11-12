@@ -31,7 +31,25 @@ class RoleManagementService
             ->where('guard_name', 'web')
             ->where('name', '!=', Role::SYSTEM_ADMIN)
             ->whereIn('scope_level', $manageableLevels)
-            ->where('created_by', $actor->id);
+            ->where(function (Builder $roles) use ($actor): void {
+                $roles->where('created_by', $actor->id);
+                if ($actor->isAccountAdministrator()) {
+                    $roles->orWhere('is_system', true);
+                }
+            });
+        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
+            $systemRoleNames = match ($actor->roleScopeLevel()) {
+                'global' => [Role::CENTRAL_ADMIN],
+                'province' => Role::PROVINCE_ADMIN_NAMES,
+                'commune' => Role::COMMUNE_ADMIN_NAMES,
+                default => [],
+            };
+            if ($systemRoleNames !== []) {
+                $query->whereNot(fn (Builder $roles) => $roles
+                    ->where('is_system', true)
+                    ->whereIn('name', $systemRoleNames));
+            }
+        }
 
         if (filled($filters['q'] ?? null)) {
             $search = trim((string) $filters['q']);
@@ -74,7 +92,8 @@ class RoleManagementService
             return false;
         }
 
-        return $role->created_by === $actor->id;
+        return $role->created_by === $actor->id
+            || ($role->isSystemAccountAdministrator() && $actor->isAccountAdministrator());
     }
 
     public function canViewRole(User $actor, Role $role): bool
@@ -92,7 +111,8 @@ class RoleManagementService
             return false;
         }
 
-        return $role->created_by === $actor->id;
+        return $role->created_by === $actor->id
+            || ($role->isSystemAccountAdministrator() && $actor->isAccountAdministrator());
     }
 
     public function membersFor(User $actor, Role $role, int $perPage = 5): LengthAwarePaginator
@@ -154,25 +174,10 @@ class RoleManagementService
             ->unique()
             ->all();
 
-        if (! $actor->hasRole(Role::SYSTEM_ADMIN)) {
-            $delegatablePermissions = AccessPermission::withPrerequisites($actor->permissionNames());
-            $delegatedAdminPermissions = [
-                AccessPermission::MANAGE_USER_ACCOUNTS,
-                AccessPermission::VIEW_USERS,
-                AccessPermission::CREATE_USERS,
-                AccessPermission::UPDATE_USERS,
-                AccessPermission::DELETE_USERS,
-                AccessPermission::MANAGE_ACCESS_CONTROL,
-                AccessPermission::VIEW_ROLES,
-                AccessPermission::CREATE_ROLES,
-                AccessPermission::UPDATE_ROLES,
-                AccessPermission::DELETE_ROLES,
-            ];
-            $permissionNames = array_values(array_diff(
-                $permissionNames,
-                array_diff($delegatedAdminPermissions, $delegatablePermissions)
-            ));
-        }
+        $permissionNames = array_values(array_diff(
+            $permissionNames,
+            AccessPermission::systemManagementPermissions(),
+        ));
 
         return Permission::where('guard_name', 'web')
             ->whereIn('name', $permissionNames)
@@ -197,6 +202,17 @@ class RoleManagementService
 
     public function create(User $actor, array $data): Role
     {
+        if (in_array($data['name'], [
+            Role::SYSTEM_ADMIN,
+            Role::CENTRAL_ADMIN,
+            ...Role::PROVINCE_ADMIN_NAMES,
+            ...Role::COMMUNE_ADMIN_NAMES,
+        ], true)) {
+            throw ValidationException::withMessages([
+                'name' => 'Tên nhóm này được dành riêng cho nhóm quản trị do hệ thống quản lý.',
+            ]);
+        }
+
         $permissionIds = $data['permissions'] ?? [];
         $scopeLevel = $data['scope_level'];
         $permissionIds = $this->expandPermissionGroups(

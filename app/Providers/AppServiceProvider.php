@@ -33,6 +33,13 @@ class AppServiceProvider extends ServiceProvider
                 return true;
             }
 
+            if (
+                in_array($ability, AccessPermission::systemManagementPermissions(), true)
+                && ! $user->isAccountAdministrator()
+            ) {
+                return false;
+            }
+
             if (array_key_exists($ability, AccessPermission::definitions())) {
                 return $user->hasPermissionTo($ability);
             }

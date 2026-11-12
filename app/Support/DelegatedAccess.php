@@ -17,25 +17,24 @@ final class DelegatedAccess
 
     public static function manageableAccountLevels(User $actor): array
     {
-        abort_unless(
-            $actor->hasRole(Role::SYSTEM_ADMIN)
-                || $actor->canManageSubordinateUsers()
-                || $actor->can('view-users'),
-            403
-        );
-
         if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
             return ['global', ...self::CHILD_LEVELS['global']];
         }
+
+        abort_unless($actor->isAccountAdministrator(), 403);
 
         return self::managedLevels($actor);
     }
 
     public static function manageableRoleLevels(User $actor): array
     {
-        return $actor->hasRole(Role::SYSTEM_ADMIN)
-            ? ['global', 'province']
-            : self::managedLevels($actor);
+        if ($actor->hasRole(Role::SYSTEM_ADMIN)) {
+            return ['global', 'province'];
+        }
+
+        abort_unless($actor->isAccountAdministrator(), 403);
+
+        return self::managedLevels($actor);
     }
 
     public static function hasActiveTerritorialAdmin(
@@ -147,10 +146,11 @@ final class DelegatedAccess
         }
 
         if ($actor->roleScopeLevel() === 'global') {
-            return $targetLevel === 'province'
-                && filled($provinceCode)
-                && $communeCode === null
-                && $villageCodes === [];
+            return match ($targetLevel) {
+                'global' => $provinceCode === null && $communeCode === null && $villageCodes === [],
+                'province' => filled($provinceCode) && $communeCode === null && $villageCodes === [],
+                default => false,
+            };
         }
 
         if (! filled($provinceCode)
@@ -189,7 +189,10 @@ final class DelegatedAccess
         return $actor->hasRole(Role::SYSTEM_ADMIN)
             || (
                 in_array($role->scope_level, $manageableLevels ?? self::manageableRoleLevels($actor), true)
-                && $role->created_by === $actor->id
+                && (
+                    $role->created_by === $actor->id
+                    || ($role->isSystemAccountAdministrator() && $actor->isAccountAdministrator())
+                )
             );
     }
 
@@ -201,6 +204,13 @@ final class DelegatedAccess
     ): bool {
         $target->loadMissing('operatingAreas');
         $areas = $target->operatingAreas;
+
+        if ($targetLevel === 'global') {
+            return $areas->isEmpty()
+                && ! $target->hasRole(Role::SYSTEM_ADMIN)
+                && ($actor->hasRole(Role::SYSTEM_ADMIN) || $actor->roleScopeLevel() === 'global');
+        }
+
         if ($areas->isEmpty()) {
             return false;
         }
@@ -254,7 +264,7 @@ final class DelegatedAccess
         $level = $actor->roleScopeLevel();
         abort_unless($level !== null && array_key_exists($level, self::CHILD_LEVELS), 403);
 
-        $sameLevel = in_array($level, ['province', 'commune'], true) ? [$level] : [];
+        $sameLevel = in_array($level, ['global', 'province', 'commune'], true) ? [$level] : [];
 
         return [...$sameLevel, ...self::CHILD_LEVELS[$level]];
     }

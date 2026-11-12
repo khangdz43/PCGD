@@ -43,6 +43,23 @@ final class AccessPermission
 
     public const DELETE_ROLES = 'delete-roles';
 
+    public static function systemManagementPermissions(): array
+    {
+        return [
+            self::VIEW_ORGANIZATION_ACCOUNTS,
+            self::MANAGE_USER_ACCOUNTS,
+            self::VIEW_USERS,
+            self::CREATE_USERS,
+            self::UPDATE_USERS,
+            self::DELETE_USERS,
+            self::MANAGE_ACCESS_CONTROL,
+            self::VIEW_ROLES,
+            self::CREATE_ROLES,
+            self::UPDATE_ROLES,
+            self::DELETE_ROLES,
+        ];
+    }
+
     public const VIEW_SCHOOLS = 'view-schools';
 
     public const CREATE_SCHOOLS = 'create-schools';

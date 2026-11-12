@@ -81,6 +81,7 @@ class AuthController extends Controller
             'scope_area' => $scope['scope_area'],
             'role_name' => $user->role?->name ?? 'Chưa được gán nhóm',
             'can_view_dashboard' => $user->canViewDashboard(),
+            'is_account_administrator' => $user->isAccountAdministrator(),
             'school_year' => $households->currentSchoolYear(),
             'province_code' => $user->province_code,
             'commune_code' => $user->commune_code,

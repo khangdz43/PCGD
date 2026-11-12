@@ -397,8 +397,8 @@ class User extends Authenticatable
 
         $scopeLevel = $this->roleScopeLevel();
         $adminRoleNames = match ($scopeLevel) {
-            'province' => ['Quản trị tỉnh', 'Quản trị cấp tỉnh'],
-            'commune' => ['Quản trị xã', 'Quản trị cấp xã'],
+            'province' => Role::PROVINCE_ADMIN_NAMES,
+            'commune' => Role::COMMUNE_ADMIN_NAMES,
             default => [],
         };
 
@@ -407,6 +407,17 @@ class User extends Authenticatable
             ->where('roles.scope_level', $scopeLevel)
             ->whereIn('roles.name', $adminRoleNames)
             ->exists();
+    }
+
+    public function isAccountAdministrator(): bool
+    {
+        if ($this->hasRole(Role::SYSTEM_ADMIN)) {
+            return true;
+        }
+
+        $role = $this->relationLoaded('role') ? $this->role : $this->assignedRole();
+
+        return $role?->isSystemAccountAdministrator() ?? false;
     }
 
     // check xem đủ quyền để quản lí cấp dưới không

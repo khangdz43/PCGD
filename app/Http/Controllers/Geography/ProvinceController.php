@@ -10,11 +10,21 @@ class ProvinceController extends Controller
 {
     public function __construct(private readonly GeographyLookupService $geography) {}
 
+    public function index(Request $request)
+    {
+        $provinces = $this->geography->provincesForHome(
+            $request->user(),
+            $request->boolean('include_account_counts'),
+        );
+
+        return response()->json(['data' => $provinces]);
+    }
+
     public function home(Request $request)
     {
         $provinces = $this->geography->provincesForHome($request->user());
 
-        return view('index', compact('provinces'));
+        return response()->json(['data' => $provinces]);
     }
 
     public function getCommunes(string $provinceCode, Request $request)

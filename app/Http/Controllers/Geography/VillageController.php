@@ -16,41 +16,81 @@ class VillageController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $villages = $this->villages->listing($user, $request->only(['q', 'province_code', 'commune_code']));
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'province_code' => ['nullable', 'string', 'max:50'],
+            'commune_code' => ['nullable', 'string', 'max:50'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $villages = $this->villages->listing($user, $filters);
         $provinces = $this->villages->provincesFor($user);
         $provinceCode = $user->hasRole(Role::SYSTEM_ADMIN) ? '' : $user->province_code;
-        $communeCode = in_array($user->roleScopeLevel(), ['commune', 'village'], true)
+        $communeCode = $user->roleScopeLevel() === 'commune'
             ? $user->commune_code
             : '';
 
-        return view('villages.index', compact('villages', 'provinces', 'provinceCode', 'communeCode'));
+        return response()->json([
+            'villages' => $villages,
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+            'commune_code' => $communeCode,
+        ]);
     }
 
     public function create(Request $request)
     {
-        abort_if($request->user()->roleScopeLevel() === 'village', 403);
+        abort_if(
+            $request->user()->roleScopeLevel() === 'commune'
+                && $request->user()->managedVillageCodes() !== [],
+            403
+        );
 
         $village = new Village;
         $provinces = $this->villages->provincesFor($request->user());
         $user = $request->user();
         $provinceCode = $user->hasRole(Role::SYSTEM_ADMIN) ? '' : $user->province_code;
-        $communeCode = in_array($user->roleScopeLevel(), ['commune', 'village'], true)
+        $communeCode = $user->roleScopeLevel() === 'commune'
             ? $user->commune_code
             : '';
 
-        return view('villages.create', compact('village', 'provinces', 'provinceCode', 'communeCode'));
+        return response()->json([
+            'village' => $village,
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+            'commune_code' => $communeCode,
+        ]);
+    }
+
+    public function show(string $code, Request $request)
+    {
+        $village = $this->villages->findWithCommune($code);
+        $this->villages->assertCanUseCommune($request->user(), $village->commune_code, $village);
+
+        return response()->json(['data' => $village]);
     }
 
     public function store(Request $request)
     {
+        $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate(array_merge([
-            'code' => 'required|string|max:20|unique:villages,code',
-            'name' => 'required|string|max:255',
-        ], $this->locationRules($request)));
-        $this->villages->create($request->user(), $data);
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('villages', 'name')->where('commune_code', $request->input('commune_code')),
+            ],
+        ], $this->locationRules($request)), [
+            'name.unique' => 'Tên thôn/xóm đã tồn tại trong xã này.',
+        ]);
+        $village = $this->villages->create($request->user(), $data);
+        $village->load('commune.province');
 
-        return redirect()->to(route('villages.index', [], false))
-            ->with('success', 'Thêm mới thôn/bản thành công!');
+        return response()->json([
+            'message' => 'Thêm mới thôn/bản thành công!',
+            'village' => $village,
+        ], 201);
     }
 
     public function edit(string $code, Request $request)
@@ -60,7 +100,11 @@ class VillageController extends Controller
         $provinceCode = $village->commune->province_code;
         $provinces = $this->villages->provincesFor($request->user());
 
-        return view('villages.edit', compact('village', 'provinces', 'provinceCode'));
+        return response()->json([
+            'village' => $village,
+            'provinces' => $provinces,
+            'province_code' => $provinceCode,
+        ]);
     }
 
     public function update(Request $request, string $code)
@@ -68,13 +112,27 @@ class VillageController extends Controller
         $village = $this->villages->findWithCommune($code);
         $this->villages->assertCanUseCommune($request->user(), $village->commune_code, $village);
 
+        $request->merge(['name' => trim((string) $request->input('name'))]);
         $data = $request->validate(array_merge([
-            'name' => 'required|string|max:255',
-        ], $this->locationRules($request)));
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('villages', 'name')
+                    ->where('commune_code', $request->input('commune_code'))
+                    ->ignore($village->code, 'code'),
+            ],
+            'operational_status' => ['sometimes', Rule::in(['active', 'paused'])],
+        ], $this->locationRules($request)), [
+            'name.unique' => 'Tên thôn/xóm đã tồn tại trong xã này.',
+        ]);
         $this->villages->update($request->user(), $village, $data);
+        $village->refresh()->load('commune.province');
 
-        return redirect()->to(route('villages.index', [], false))
-            ->with('success', 'Cập nhật thông tin thôn/bản thành công!');
+        return response()->json([
+            'message' => 'Cập nhật thông tin thôn/bản thành công!',
+            'village' => $village,
+        ]);
     }
 
     public function destroy(Request $request, string $code)
@@ -82,12 +140,7 @@ class VillageController extends Controller
         $village = $this->villages->findWithCommune($code);
         $this->villages->delete($request->user(), $village);
 
-        if ($request->expectsJson()) {
-            return response()->json(['message' => 'Đã xóa thôn/bản thành công!']);
-        }
-
-        return redirect()->to(route('villages.index', [], false))
-            ->with('success', 'Đã xóa thôn/bản thành công!');
+        return response()->json(['message' => 'Đã xóa thôn/bản thành công!']);
     }
 
     private function locationRules(Request $request): array

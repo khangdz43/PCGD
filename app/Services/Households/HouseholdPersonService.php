@@ -10,13 +10,18 @@ use App\Models\PersonEducation;
 use App\Models\Province;
 use App\Models\Role;
 use App\Models\School;
+use App\Models\SchoolYear;
 use App\Models\User;
+use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class HouseholdPersonService
 {
+    public function __construct(private readonly ?VillageService $villages = null) {}
+
     public function headFor(Household $household): ?Person
     {
         return $household->persons()->where('relationship_with_head', 'Chủ hộ')->first();
@@ -45,6 +50,7 @@ class HouseholdPersonService
             'ethnicity',
             'educations',
             'educations.school',
+            'educations.schoolYearRecord',
             'disability',
         ])->findOrFail($personId);
     }
@@ -56,7 +62,11 @@ class HouseholdPersonService
 
     public function latestEducation(Person $person): ?PersonEducation
     {
-        return $person->educations()->orderByDesc('school_year')->first();
+        return $person->educations()
+            ->with('schoolYearRecord')
+            ->get()
+            ->sortByDesc(fn (PersonEducation $education): ?string => $education->schoolYearRecord?->start_time?->toDateString())
+            ->first();
     }
 
     public function formData(
@@ -65,9 +75,11 @@ class HouseholdPersonService
         User $user,
         ?string $householdSchoolYear = null
     ): array {
-        $educationQuery = $person->educations()->with('school');
+        $educationQuery = $person->educations()->with(['school', 'schoolYearRecord']);
         $education = $person->exists
-            ? $educationQuery->orderByDesc('school_year')->first()
+            ? $educationQuery->get()
+                ->sortByDesc(fn (PersonEducation $item): ?string => $item->schoolYearRecord?->start_time?->toDateString())
+                ->first()
             : null;
         $education ??= new PersonEducation([
             'school_year' => $householdSchoolYear ?: $this->currentSchoolYear(),
@@ -77,22 +89,27 @@ class HouseholdPersonService
         $disability ??= new PersonDisability;
 
         $provinceQuery = Province::query()->orderBy('name');
-        $schoolQuery = School::query()->orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
             $provinceQuery->where('code', $user->province_code);
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true)) {
-                $schoolQuery->where('commune_code', $user->commune_code);
-            } else {
-                $schoolQuery->where('province_code', $user->province_code);
-            }
         }
+        $selectedSchool = $education->school_code
+            ? $education->school
+            : null;
 
         return [
             'education' => $education,
             'disability' => $disability,
             'ethnicities' => Ethnicity::orderBy('name')->get(['code', 'name']),
             'provinces' => $provinceQuery->get(['code', 'name']),
-            'schools' => $schoolQuery->get(['code', 'name', 'level', 'province_code', 'commune_code']),
+            'schools' => $selectedSchool
+                ? [[
+                    'code' => $selectedSchool->code,
+                    'name' => $selectedSchool->name,
+                    'level' => $selectedSchool->level,
+                    'province_code' => $selectedSchool->province_code,
+                    'commune_code' => $selectedSchool->commune_code,
+                ]]
+                : [],
         ];
     }
 
@@ -120,14 +137,24 @@ class HouseholdPersonService
     public function create(Household $household, array $data, bool $isHouseholdHead): Person
     {
         if ($isHouseholdHead) {
-            $data['last_name'] = $household->head_last_name;
-            $data['first_name'] = $household->head_first_name;
             $data['relationship_with_head'] = 'Chủ hộ';
         }
         [$personData, $educationData, $disabilityData] = $this->splitFormData($data);
 
         return DB::transaction(function () use ($household, $personData, $educationData, $disabilityData): Person {
+            $this->lockHouseholdForPersonChanges($household);
+            $this->lockOpenVillages([$household->village_code]);
+            $this->assertRelationshipSlotAvailable(
+                $household,
+                (string) ($personData['relationship_with_head'] ?? ''),
+            );
             $person = $household->persons()->create($personData);
+            if ($person->relationship_with_head === 'Chủ hộ') {
+                $household->update([
+                    'head_first_name' => $person->first_name,
+                    'head_last_name' => $person->last_name,
+                ]);
+            }
             $person->educations()->create($educationData);
             $person->disability()->create($disabilityData);
 
@@ -146,6 +173,8 @@ class HouseholdPersonService
         if ($isHouseholdHead) {
             $personData['relationship_with_head'] = 'Chủ hộ';
             DB::transaction(function () use ($person, $household, $personData, $education, $educationData, $disabilityData): void {
+                $this->lockHouseholdForPersonChanges($household);
+                $this->lockOpenVillages([$household->village_code]);
                 $person->update($personData);
                 $household->update([
                     'head_first_name' => $personData['first_name'],
@@ -157,25 +186,36 @@ class HouseholdPersonService
             return;
         }
 
-        DB::transaction(function () use ($person, $education, $personData, $educationData, $disabilityData): void {
+        DB::transaction(function () use ($person, $household, $education, $personData, $educationData, $disabilityData): void {
+            $this->lockHouseholdForPersonChanges($household);
+            $this->lockOpenVillages([$household->village_code]);
+            $newRelationship = (string) ($personData['relationship_with_head'] ?? '');
+            if ($this->relationshipSlot($newRelationship) !== $this->relationshipSlot((string) $person->relationship_with_head)) {
+                $this->assertRelationshipSlotAvailable($household, $newRelationship, $person);
+            }
             $person->update($personData);
             $this->saveEducationAndDisability($person, $education, $educationData, $disabilityData);
         });
     }
 
-    public function delete(Person $person, Household $household): ?bool
+    public function delete(Person $person, Household $household, User $user): ?bool
     {
-        $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
-        if (
-            $isHouseholdHead
-            && $household->persons()->where('relationship_with_head', '!=', 'Chủ hộ')->exists()
-        ) {
-            return null;
-        }
+        return DB::transaction(function () use ($person, $household, $user): ?bool {
+            $this->lockOpenVillages([$household->village_code]);
+            $isHouseholdHead = $person->relationship_with_head === 'Chủ hộ';
+            if (
+                $isHouseholdHead
+                && $household->persons()->whereKeyNot($person->getKey())->exists()
+            ) {
+                return null;
+            }
 
-        $person->delete();
+            $person->deleted_by = $user->id;
+            $person->save();
+            $person->delete();
 
-        return $isHouseholdHead;
+            return $isHouseholdHead;
+        });
     }
 
     public function findManyForDeletion(User $user, array $personIds): Collection
@@ -204,11 +244,79 @@ class HouseholdPersonService
         return false;
     }
 
-    public function deleteMany(Collection $persons): void
+    public function deleteMany(Collection $persons, User $user): void
     {
-        DB::transaction(function () use ($persons): void {
-            Person::whereIn('id', $persons->modelKeys())->delete();
+        DB::transaction(function () use ($persons, $user): void {
+            $householdCodes = Household::withTrashed()
+                ->whereIn('id', $persons->pluck('household_id')->unique())
+                ->pluck('village_code')
+                ->all();
+            $this->lockOpenVillages($householdCodes);
+
+            foreach ($persons as $person) {
+                $person->deleted_by = $user->id;
+                $person->save();
+                $person->delete();
+            }
         });
+    }
+
+    private function lockOpenVillages(array $villageCodes): void
+    {
+        $villageCodes = array_values(array_unique(array_filter(
+            $villageCodes,
+            fn ($villageCode): bool => $villageCode !== null && $villageCode !== ''
+        )));
+        sort($villageCodes);
+
+        foreach ($villageCodes as $villageCode) {
+            $this->villageService()->assertAcceptsHouseholds($villageCode, true);
+        }
+    }
+
+    private function lockHouseholdForPersonChanges(Household $household): void
+    {
+        $household->newQuery()
+            ->whereKey($household->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+
+    private function relationshipSlot(string $relationship): ?array
+    {
+        return match ($relationship) {
+            'Vợ', 'Chồng' => ['Vợ', 'Chồng'],
+            'Cha', 'Mẹ' => ['Cha', 'Mẹ'],
+            default => null,
+        };
+    }
+
+    private function assertRelationshipSlotAvailable(
+        Household $household,
+        string $relationship,
+        ?Person $person = null,
+    ): void {
+        $slot = $this->relationshipSlot($relationship);
+        if ($slot === null) {
+            return;
+        }
+
+        $query = $household->persons()->whereIn('relationship_with_head', $slot);
+        if ($person !== null) {
+            $query->whereKeyNot($person->getKey());
+        }
+
+        if ($query->exists()) {
+            $label = $slot[0] === 'Vợ' ? 'vợ hoặc chồng' : 'cha hoặc mẹ';
+            throw ValidationException::withMessages([
+                'relationship_with_head' => ["Phiếu đã có {$label}; mỗi phiếu chỉ được có một người thuộc nhóm này."],
+            ]);
+        }
+    }
+
+    private function villageService(): VillageService
+    {
+        return $this->villages ?? app(VillageService::class);
     }
 
     public function splitFormData(array $data): array
@@ -217,7 +325,22 @@ class HouseholdPersonService
         unset($personData['education'], $personData['disability'], $personData['school_province_code'], $personData['school_commune_code']);
 
         $educationData = $data['education'];
+        $schoolYear = SchoolYear::resolveOrCreateFromLabel($educationData['school_year']);
+        $educationData['school_year_id'] = $schoolYear->id;
+        unset($educationData['school_year']);
         $educationData['is_complementary'] = (bool) ($educationData['is_complementary'] ?? false);
+        preg_match(
+            '/^\s*(?:lớp\s*)?(\d{1,2})(?=\D|$)/iu',
+            (string) ($educationData['current_class'] ?? ''),
+            $classNumber,
+        );
+        $classGrade = isset($classNumber[1]) ? (int) $classNumber[1] : null;
+        if ($classGrade !== null && $classGrade >= 1 && $classGrade <= 12) {
+            $educationData['academic_block'] = (string) $classGrade;
+        } elseif (blank($educationData['academic_block'] ?? null)) {
+            preg_match('/\d+/u', (string) ($educationData['current_class'] ?? ''), $classNumber);
+            $educationData['academic_block'] = $classNumber[0] ?? null;
+        }
 
         $disabilityData = $data['disability'] ?? [];
         foreach ($this->disabilityBooleanFields() as $field) {

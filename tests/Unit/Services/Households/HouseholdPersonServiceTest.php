@@ -6,11 +6,31 @@ use App\Models\Household;
 use App\Models\Person;
 use App\Services\Households\HouseholdPersonService;
 use Carbon\Carbon;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class HouseholdPersonServiceTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
+        DB::table('school_years')->insert([
+            'start_time' => '2025-08-01',
+            'end_time' => '2026-07-31',
+            'status' => false,
+        ]);
+    }
+
     protected function tearDown(): void
     {
         Carbon::setTestNow();
@@ -63,7 +83,11 @@ class HouseholdPersonServiceTest extends TestCase
         [$person, $education, $disability] = (new HouseholdPersonService)->splitFormData($data);
 
         self::assertSame(['first_name' => 'An'], $person);
-        self::assertSame(['school_year' => '2025-2026', 'is_complementary' => false], $education);
+        self::assertSame([
+            'school_year_id' => 1,
+            'is_complementary' => false,
+            'academic_block' => null,
+        ], $education);
         self::assertSame([
             'autism' => true,
             'mobility_disability' => false,

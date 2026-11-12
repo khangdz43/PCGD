@@ -6,6 +6,7 @@ use App\Models\Household;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\Schema;
 
 final class DataAccessScope
 {
@@ -15,19 +16,42 @@ final class DataAccessScope
             return $query;
         }
 
-        return match ($user->roleScopeLevel()) {
-            'global' => $query,
-            'province' => $user->province_code
-                ? $query->where('province_code', $user->province_code)
-                : $query->whereRaw('1 = 0'),
-            'commune' => $user->commune_code
-                ? $query->where('commune_code', $user->commune_code)
-                : $query->whereRaw('1 = 0'),
-            'village' => $user->managedVillageCodes() !== []
-                ? $query->whereIn('village_code', $user->managedVillageCodes())
-                : $query->whereRaw('1 = 0'),
-            default => $query->whereRaw('1 = 0'),
-        };
+        if ($user->roleScopeLevel() === 'global') {
+            return $query;
+        }
+        if (! in_array($user->roleScopeLevel(), ['province', 'commune'], true)) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        if (! Schema::hasTable('user_operating_areas')) {
+            return match ($user->roleScopeLevel()) {
+                'province' => $user->province_code
+                    ? $query->where('province_code', $user->province_code)
+                    : $query->whereRaw('1 = 0'),
+                'commune' => $user->commune_code
+                    ? $query->where('commune_code', $user->commune_code)
+                        ->when($user->managedVillageCodes() !== [], fn (Builder $builder) => $builder
+                            ->whereIn('village_code', $user->managedVillageCodes()))
+                    : $query->whereRaw('1 = 0'),
+            };
+        }
+
+        $table = $query->getModel()->getTable();
+
+        return $query->whereExists(function ($areas) use ($table, $user): void {
+            $areas->selectRaw('1')
+                ->from('user_operating_areas')
+                ->where('user_operating_areas.user_id', $user->id)
+                ->whereColumn('user_operating_areas.province_code', "{$table}.province_code")
+                ->where(function ($communes) use ($table): void {
+                    $communes->whereNull('user_operating_areas.commune_code')
+                        ->orWhereColumn('user_operating_areas.commune_code', "{$table}.commune_code");
+                })
+                ->where(function ($villages) use ($table): void {
+                    $villages->whereNull('user_operating_areas.village_code')
+                        ->orWhereColumn('user_operating_areas.village_code', "{$table}.village_code");
+                });
+        });
     }
 
     public static function canAccessHousehold(User $user, Household $household): bool
@@ -36,15 +60,13 @@ final class DataAccessScope
             return true;
         }
 
-        $inLocation = match ($user->roleScopeLevel()) {
-            'global' => true,
-            'province' => $user->province_code !== null && $household->province_code === $user->province_code,
-            'commune' => $user->commune_code !== null && $household->commune_code === $user->commune_code,
-            'village' => in_array($household->village_code, $user->managedVillageCodes(), true),
-            default => false,
-        };
-
-        return $inLocation;
+        return $user->roleScopeLevel() === 'global'
+            || (in_array($user->roleScopeLevel(), ['province', 'commune'], true)
+                && $user->operatesInArea(
+                    (string) $household->province_code,
+                    $household->commune_code,
+                    $household->village_code,
+                ));
     }
 
     public static function assertHouseholdLocation(User $user, array $data): void
@@ -53,18 +75,14 @@ final class DataAccessScope
             return;
         }
 
-        $allowed = match ($user->roleScopeLevel()) {
-            'global' => true,
-            'province' => $user->province_code !== null && $data['province_code'] === $user->province_code,
-            'commune' => $user->commune_code !== null
-                && $data['province_code'] === $user->province_code
-                && $data['commune_code'] === $user->commune_code,
-            'village' => $user->managedVillageCodes() !== []
-                && $data['province_code'] === $user->province_code
-                && $data['commune_code'] === $user->commune_code
-                && in_array($data['village_code'] ?? null, $user->managedVillageCodes(), true),
-            default => false,
-        };
+        $allowed = $user->roleScopeLevel() === 'global'
+            || (in_array($user->roleScopeLevel(), ['province', 'commune'], true)
+                && isset($data['province_code'])
+                && $user->operatesInArea(
+                    (string) $data['province_code'],
+                    $data['commune_code'] ?? null,
+                    $data['village_code'] ?? null,
+                ));
 
         abort_unless($allowed, 403);
     }

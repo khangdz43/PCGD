@@ -5,7 +5,9 @@ namespace App\Services\Households;
 use App\Models\Household;
 use App\Models\Province;
 use App\Models\Role;
+use App\Models\SchoolYear;
 use App\Models\User;
+use App\Services\Geography\VillageService;
 use App\Support\DataAccessScope;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
@@ -13,6 +15,8 @@ use Illuminate\Support\Facades\DB;
 
 class HouseholdService
 {
+    public function __construct(private readonly ?VillageService $villages = null) {}
+
     public function defaultFilters(User $user): array
     {
         $filters = ['school_year' => $this->currentSchoolYear()];
@@ -22,11 +26,11 @@ class HouseholdService
                 $filters['province_code'] = $user->province_code;
             }
 
-            if (in_array($user->roleScopeLevel(), ['commune', 'village'], true) && $user->commune_code !== null) {
+            if ($user->roleScopeLevel() === 'commune' && $user->commune_code !== null) {
                 $filters['commune_code'] = $user->commune_code;
             }
 
-            $managedVillageCodes = $user->roleScopeLevel() === 'village'
+            $managedVillageCodes = $user->roleScopeLevel() === 'commune'
                 ? $user->managedVillageCodes()
                 : [];
             if (count($managedVillageCodes) === 1) {
@@ -37,18 +41,22 @@ class HouseholdService
         return $filters;
     }
 
-    public function paginate(User $user, array $filters): LengthAwarePaginator
+    public function paginate(User $user, array $filters, bool $withPersonDetails = true): LengthAwarePaginator
     {
-        $query = Household::with([
-            'province',
-            'commune',
-            'village',
-            'persons',
-            'persons.ethnicity',
-            'persons.educations',
-            'persons.educations.school',
-            'persons.disability',
-        ])->withCount([
+        $relations = ['province', 'commune', 'village', 'schoolYearRecord'];
+        if ($withPersonDetails) {
+            $relations = [
+                ...$relations,
+                'persons',
+                'persons.ethnicity',
+                'persons.educations',
+                'persons.educations.school',
+                'persons.educations.schoolYearRecord',
+                'persons.disability',
+            ];
+        }
+
+        $query = Household::with($relations)->withCount([
             'persons',
             'persons as head_persons_count' => fn ($builder) => $builder->where('relationship_with_head', 'Chủ hộ'),
         ]);
@@ -73,7 +81,8 @@ class HouseholdService
         }
 
         if (filled($filters['school_year'] ?? null) && $filters['school_year'] !== 'all') {
-            $query->where('school_year', $filters['school_year']);
+            $schoolYearId = SchoolYear::findByLabel((string) $filters['school_year'])?->id;
+            $query->where('school_year_id', $schoolYearId ?? 0);
         }
 
         if (filled($filters['school_code'] ?? null)) {
@@ -82,40 +91,68 @@ class HouseholdService
             });
         }
 
-        return $query->orderBy('household_code')->paginate(7)->withQueryString();
+        return $query
+            ->orderBy('household_code')
+            ->paginate(min(max((int) ($filters['per_page'] ?? 7), 1), 100))
+            ->withQueryString();
     }
 
     public function provincesFor(User $user): Collection
     {
         $query = Province::orderBy('name');
         if (! $user->hasRole(Role::SYSTEM_ADMIN)) {
-            $query->where('code', $user->province_code);
+            $query->whereIn('code', $user->operatingProvinceCodes());
         }
 
         return $query->get(['code', 'name']);
     }
 
-    public function details(Household $household): array
+    public function details(Household $household, ?string $schoolYear = null): array
     {
         $household->load('province', 'commune', 'village');
-        $persons = $household->persons()
-            ->with('ethnicity')
+        $personsQuery = $household->persons()
             ->orderBy('last_name')
-            ->orderBy('first_name')
-            ->get();
+            ->orderBy('first_name');
+        if ($schoolYear === null) {
+            $personsQuery->withDetails();
+        } else {
+            $schoolYearId = SchoolYear::findByLabel($schoolYear)?->id;
+            $personsQuery->with([
+                'ethnicity',
+                'disability',
+                'educations' => fn ($query) => $query
+                    ->when($schoolYearId !== null, function ($educationQuery) use ($schoolYearId): void {
+                        $educationQuery->where(function ($query) use ($schoolYearId): void {
+                            $query->where('school_year_id', $schoolYearId)
+                                ->orWhereRaw(
+                                    '(NOT EXISTS (SELECT 1 FROM person_educations AS matching_education WHERE matching_education.person_id = person_educations.person_id AND matching_education.school_year_id = ?) AND id = (SELECT MIN(fallback_education.id) FROM person_educations AS fallback_education WHERE fallback_education.person_id = person_educations.person_id))',
+                                    [$schoolYearId],
+                                );
+                        });
+                    }, function ($educationQuery): void {
+                        $educationQuery->whereRaw(
+                            'id = (SELECT MIN(fallback_education.id) FROM person_educations AS fallback_education WHERE fallback_education.person_id = person_educations.person_id)'
+                        );
+                    })
+                    ->with('school')
+                    ->with('schoolYearRecord')
+                    ->orderBy('id'),
+            ]);
+        }
+        $persons = $personsQuery->get();
 
         return [
             'persons' => $persons,
             'headPerson' => $persons->firstWhere('relationship_with_head', 'Chủ hộ'),
-            'hasAnyHouseholdHead' => $household->persons()
-                ->where('relationship_with_head', 'Chủ hộ')
-                ->exists(),
+            'hasAnyHouseholdHead' => $persons->contains(
+                fn ($person): bool => $person->relationship_with_head === 'Chủ hộ'
+            ),
         ];
     }
 
     public function villagePlaceholder(User $user): string
     {
-        $managedVillageCodes = $user->roleScopeLevel() === 'village'
+        $managedVillageCodes = $user->roleScopeLevel() === 'commune'
             ? $user->managedVillageCodes()
             : [];
 
@@ -131,7 +168,7 @@ class HouseholdService
             $household->province_code = $user->province_code;
             $household->commune_code = $user->commune_code;
             $villageCodes = $user->managedVillageCodes();
-            if ($user->roleScopeLevel() === 'village' && count($villageCodes) === 1) {
+            if ($user->roleScopeLevel() === 'commune' && count($villageCodes) === 1) {
                 $household->village_code = $villageCodes[0];
             }
         }
@@ -146,7 +183,13 @@ class HouseholdService
         DataAccessScope::assertHouseholdLocation($user, $data);
         $data['household_code'] = $this->nextHouseholdCode($data['school_year']);
 
-        return Household::create($data);
+        return DB::transaction(function () use ($data): Household {
+            if (filled($data['village_code'] ?? null)) {
+                $this->villageService()->assertAcceptsHouseholds($data['village_code'], true);
+            }
+
+            return Household::create($data);
+        });
     }
 
     public function update(Household $household, User $user, array $data): void
@@ -155,6 +198,7 @@ class HouseholdService
         $data['school_year'] = $household->school_year;
 
         DB::transaction(function () use ($household, $data): void {
+            $this->lockOpenVillages([$household->village_code, $data['village_code'] ?? null]);
             $household->update($data);
             $household->persons()->where('relationship_with_head', 'Chủ hộ')->update([
                 'first_name' => $data['head_first_name'],
@@ -163,9 +207,14 @@ class HouseholdService
         });
     }
 
-    public function delete(Household $household): void
+    public function delete(Household $household, User $user): void
     {
-        $household->delete();
+        DB::transaction(function () use ($household, $user): void {
+            $this->lockOpenVillages([$household->village_code]);
+            $household->deleted_by = $user->id;
+            $household->save();
+            $household->delete();
+        });
     }
 
     public function deleteMany(User $user, array $ids): int
@@ -175,14 +224,40 @@ class HouseholdService
             ->get();
         abort_unless($accessibleHouseholds->count() === count($ids), 404);
 
-        return Household::whereIn('id', $accessibleHouseholds->modelKeys())->delete();
+        return DB::transaction(function () use ($accessibleHouseholds, $user): int {
+            $this->lockOpenVillages($accessibleHouseholds->pluck('village_code')->all());
+            foreach ($accessibleHouseholds as $household) {
+                $this->delete($household, $user);
+            }
+
+            return $accessibleHouseholds->count();
+        });
+    }
+
+    private function lockOpenVillages(array $villageCodes): void
+    {
+        $villageCodes = array_values(array_unique(array_filter(
+            $villageCodes,
+            fn ($villageCode): bool => $villageCode !== null && $villageCode !== ''
+        )));
+        sort($villageCodes);
+
+        foreach ($villageCodes as $villageCode) {
+            $this->villageService()->assertAcceptsHouseholds($villageCode, true);
+        }
+    }
+
+    private function villageService(): VillageService
+    {
+        return $this->villages ?? app(VillageService::class);
     }
 
     public function nextHouseholdCode(?string $schoolYear = null): string
     {
-        $query = Household::query();
+        $query = Household::withTrashed();
         if ($schoolYear !== null) {
-            $query->where('school_year', $schoolYear);
+            $schoolYearId = SchoolYear::findByLabel($schoolYear)?->id;
+            $query->where('school_year_id', $schoolYearId ?? 0);
         }
 
         $maxCode = $query

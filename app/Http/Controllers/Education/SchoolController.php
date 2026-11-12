@@ -26,10 +26,24 @@ class SchoolController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $schools = $this->schools->listing($user, $request->only(['q', 'level', 'province_code', 'commune_code']));
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'level' => ['nullable', 'string', 'max:50'],
+            'province_code' => ['nullable', 'string', 'max:50'],
+            'commune_code' => ['nullable', 'string', 'max:50'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
+        $schools = $this->schools->listing($user, $filters);
         $provinces = $this->schools->provincesFor($user);
 
-        return view('schools.index', compact('schools', 'provinces'));
+        return response()->json([
+            'schools' => $schools,
+            'provinces' => $provinces,
+            'school_levels' => $this->schools->levelsForUser($user),
+            'actor_scope_level' => $user->roleScopeLevel(),
+            'commune_code' => $user->commune_code,
+        ]);
     }
 
     public function create(Request $request)
@@ -37,16 +51,29 @@ class SchoolController extends Controller
         $school = new School;
         $provinces = $this->schools->provincesFor($request->user());
 
-        return view('schools.create', compact('school', 'provinces'));
+        return response()->json(['school' => $school, 'provinces' => $provinces]);
+    }
+
+    public function show(int $id, Request $request)
+    {
+        return response()->json([
+            'data' => $this->schools->findAccessible($request->user(), $id),
+        ]);
     }
 
     public function store(Request $request)
     {
-        $data = $request->validate($this->rules($request, true));
-        $this->schools->create($request->user(), $data);
+        $data = $request->validate($this->rules($request), [
+            'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+            'level.in' => 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.',
+        ]);
+        $school = $this->schools->create($request->user(), $data);
+        $school->load('province', 'commune');
 
-        return redirect()->to(route('schools.index', [], false))
-            ->with('success', 'Thêm trường học thành công.');
+        return response()->json([
+            'message' => 'Thêm trường học thành công.',
+            'school' => $school,
+        ], 201);
     }
 
     public function edit(int $id, Request $request)
@@ -54,18 +81,24 @@ class SchoolController extends Controller
         $school = $this->schools->findAccessible($request->user(), $id);
         $provinces = $this->schools->provincesFor($request->user());
 
-        return view('schools.edit', compact('school', 'provinces'));
+        return response()->json(['school' => $school, 'provinces' => $provinces]);
     }
 
     public function update(Request $request, int $id)
     {
         $user = $request->user();
         $school = $this->schools->findAccessible($user, $id);
-        $data = $request->validate($this->rules($request));
+        $data = $request->validate($this->rules($request, $school), [
+            'name.unique' => 'Tên trường cùng cấp học đã tồn tại trong đơn vị này.',
+            'level.in' => 'Trường liên cấp chỉ được chọn cấp học THCS hoặc THPT.',
+        ]);
         $this->schools->update($user, $school, $data);
+        $school->refresh()->load('province', 'commune');
 
-        return redirect()->to(route('schools.index', [], false))
-            ->with('success', 'Cập nhật trường học thành công.');
+        return response()->json([
+            'message' => 'Cập nhật trường học thành công.',
+            'school' => $school,
+        ]);
     }
 
     public function destroy(int $id, Request $request)
@@ -73,28 +106,41 @@ class SchoolController extends Controller
         $school = $this->schools->findAccessible($request->user(), $id);
         $this->schools->delete($school);
 
-        return redirect()->to(route('schools.index', [], false))
-            ->with('success', 'Đã xóa trường học.');
+        return response()->json(['message' => 'Đã xóa trường học.']);
     }
 
-    private function rules(Request $request, bool $creating = false): array
+    private function rules(Request $request, ?School $school = null): array
     {
-        $rules = [
-            'name' => 'required|string|max:255',
-            'level' => ['nullable', Rule::in(['MN', 'TH', 'THCS', 'THPT'])],
-            'province_code' => 'nullable|exists:provinces,code',
-            'commune_code' => [
-                'nullable',
-                Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
-            ],
+        $allowedLevels = $this->schools->levelsForUser($request->user());
+        if ($request->input('type') === 'multi_level') {
+            $allowedLevels = array_values(array_intersect($allowedLevels, ['THCS', 'THPT']));
+        }
+        $levelRules = ['required', Rule::in($allowedLevels)];
+        $provinceRules = ['required', 'exists:provinces,code'];
+        $communeRules = [
+            'required',
+            Rule::exists('communes', 'code')->where('province_code', $request->input('province_code')),
         ];
 
-        if (! $creating) {
-            return $rules;
-        }
-
-        $rules['code'] = 'required|string|max:50|unique:schools,code';
+        $rules = [
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('schools', 'name')
+                    ->where('province_code', $request->input('province_code'))
+                    ->where('commune_code', $request->input('commune_code'))
+                    ->where('level', $request->input('level'))
+                    ->ignore($school?->id),
+            ],
+            'type' => ['required', Rule::in(['single_level', 'multi_level'])],
+            'is_active' => ['required', 'boolean'],
+            'level' => $levelRules,
+            'province_code' => $provinceRules,
+            'commune_code' => $communeRules,
+        ];
 
         return $rules;
     }
+
 }

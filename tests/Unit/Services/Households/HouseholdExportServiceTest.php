@@ -89,7 +89,7 @@ class HouseholdExportServiceTest extends TestCase
         /** @var User&MockInterface $actor */
         $actor = Mockery::mock($actor)->makePartial();
         $actor->shouldReceive('hasRole')->once()->andReturnFalse();
-        $actor->shouldReceive('roleScopeLevel')->once()->andReturn('province');
+        $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('province');
 
         $workbook = $this->exportedWorkbook($actor, [
             'school_code' => 'SCH-01',
@@ -165,7 +165,7 @@ class HouseholdExportServiceTest extends TestCase
         Schema::create('households', function (Blueprint $table): void {
             $table->id();
             $table->string('household_code')->nullable();
-            $table->string('school_year')->nullable();
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('head_first_name')->nullable();
             $table->string('head_last_name')->nullable();
             $table->string('province_code')->nullable();
@@ -174,6 +174,8 @@ class HouseholdExportServiceTest extends TestCase
             $table->string('address')->nullable();
             $table->string('residence_type')->nullable();
             $table->string('residence_status')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
         Schema::create('persons', function (Blueprint $table): void {
@@ -190,12 +192,25 @@ class HouseholdExportServiceTest extends TestCase
             $table->string('parent_name')->nullable();
             $table->string('phone')->nullable();
             $table->text('note')->nullable();
+            $table->unsignedBigInteger('deleted_by')->nullable();
+            $table->softDeletes();
             $table->timestamps();
         });
+        Schema::create('school_years', function (Blueprint $table): void {
+            $table->id();
+            $table->date('start_time');
+            $table->date('end_time');
+            $table->boolean('status');
+        });
+        DB::table('school_years')->insert([
+            'start_time' => '2025-08-01',
+            'end_time' => '2026-07-31',
+            'status' => false,
+        ]);
         Schema::create('person_educations', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('person_id');
-            $table->string('school_year')->nullable();
+            $table->unsignedBigInteger('school_year_id')->nullable();
             $table->string('academic_block')->nullable();
             $table->string('current_class')->nullable();
             $table->string('school_code')->nullable();
@@ -273,6 +288,15 @@ class HouseholdExportServiceTest extends TestCase
 
     private function insertHousehold(array $attributes): int
     {
+        if (isset($attributes['school_year'])) {
+            [$startYear, $endYear] = array_map('intval', explode('-', $attributes['school_year']));
+            $attributes['school_year_id'] = DB::table('school_years')
+                ->whereYear('start_time', $startYear)
+                ->whereYear('end_time', $endYear)
+                ->value('id');
+            unset($attributes['school_year']);
+        }
+
         return DB::table('households')->insertGetId(array_merge([
             'head_first_name' => 'An',
             'head_last_name' => 'Nguyễn',
@@ -290,6 +314,15 @@ class HouseholdExportServiceTest extends TestCase
         $personId = DB::table('persons')->insertGetId(array_merge([
             'household_id' => $householdId,
         ], $person));
+
+        if (isset($education['school_year'])) {
+            [$startYear, $endYear] = array_map('intval', explode('-', $education['school_year']));
+            $education['school_year_id'] = DB::table('school_years')
+                ->whereYear('start_time', $startYear)
+                ->whereYear('end_time', $endYear)
+                ->value('id');
+            unset($education['school_year']);
+        }
 
         DB::table('person_educations')->insert(array_merge([
             'person_id' => $personId,

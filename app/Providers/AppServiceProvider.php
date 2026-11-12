@@ -22,15 +22,29 @@ class AppServiceProvider extends ServiceProvider
     {
         // Gate::before tự động chạy khi gặp @can , can: , authorize ....
         Gate::before(function (User $user, string $ability): ?bool {
+            if (
+                $user->roleScopeLevel() === 'global'
+                && in_array($ability, AccessPermission::mergePermissions(), true)
+            ) {
+                return false;
+            }
+
             if ($user->hasRole(Role::SYSTEM_ADMIN)) {
                 return true;
+            }
+
+            if (
+                in_array($ability, AccessPermission::systemManagementPermissions(), true)
+                && ! $user->isAccountAdministrator()
+            ) {
+                return false;
             }
 
             if (array_key_exists($ability, AccessPermission::definitions())) {
                 return $user->hasPermissionTo($ability);
             }
             // can:name trong permission đấy
-            if (Permission::where('name', $ability)->where('guard_name', config('auth.defaults.guard', 'web'))->exists()) {
+            if (Permission::where('name', $ability)->where('guard_name', config('auth.permission_guard', 'web'))->exists()) {
                 return $user->hasPermissionTo($ability);
             }
 

@@ -11,7 +11,12 @@ final class HouseholdImportChunkReadFilter implements IReadFilter
         private readonly int $endRow,
     ) {}
 
-    public function readCell(string $columnAddress, int $row, string $worksheetName = ''): bool
+    /**
+     * @param string $columnAddress
+     * @param int $row
+     * @param string $worksheetName
+     */
+    public function readCell($columnAddress, $row, $worksheetName = ''): bool
     {
         return $row === 2 || ($row >= $this->startRow && $row <= $this->endRow);
     }

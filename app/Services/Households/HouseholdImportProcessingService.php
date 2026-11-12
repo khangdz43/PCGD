@@ -6,13 +6,16 @@ use App\Models\Ethnicity;
 use App\Models\Household;
 use App\Models\ImportLog;
 use App\Models\School;
+use App\Models\SchoolYear;
 use App\Models\User;
 use App\Support\DataAccessScope;
 use App\Support\HouseholdImportChunkReadFilter;
+use App\Support\HouseholdImportErrorReadFilter;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -20,8 +23,12 @@ use Throwable;
 
 class HouseholdImportProcessingService
 {
+    /** @var array<string, mixed> */
+    private array $cachedRowValues = [];
+
     public function process(ImportLog $importLog, User $user, UploadedFile $file): JsonResponse
     {
+        $this->cachedRowValues = [];
         $context = $importLog->context ?? [];
         $data = [
             'file' => $file,
@@ -36,51 +43,60 @@ class HouseholdImportProcessingService
             $reader = IOFactory::createReaderForFile($data['file']->getRealPath());
             $worksheetInfo = $reader->listWorksheetInfo($data['file']->getRealPath());
             $worksheetName = null;
-            $visibleDataWorksheet = null;
-            foreach ($worksheetInfo as $info) {
-                if (
-                    $visibleDataWorksheet === null
-                    && $info['sheetState'] === 'visible'
-                    && $info['totalColumns'] >= 15
-                    && $info['totalRows'] >= 5
-                ) {
-                    $visibleDataWorksheet = $info['worksheetName'];
-                }
+            $reader->setReadFilter(new HouseholdImportChunkReadFilter(2, 2));
+            $headerWorkbook = $reader->load($data['file']->getRealPath());
+            try {
+                foreach ($worksheetInfo as $info) {
+                    if (($info['sheetState'] ?? 'visible') !== 'visible') {
+                        continue;
+                    }
 
-                $reader->setLoadSheetsOnly([$info['worksheetName']]);
-                $reader->setReadFilter(new HouseholdImportChunkReadFilter(2, 2));
-                $headerWorkbook = $reader->load($data['file']->getRealPath());
-                $headerSheet = $headerWorkbook->getSheet(0);
-                $matchesTemplate = $this->normalize($this->cell($headerSheet, 'O2')) === 'sophieu'
-                    && $this->normalize($this->cell($headerSheet, 'AY2')) === 'ghichu';
-                $headerWorkbook->disconnectWorksheets();
-                if ($matchesTemplate) {
-                    $worksheetName = $info['worksheetName'];
-                    break;
+                    $headerSheet = $headerWorkbook->getSheetByName($info['worksheetName']);
+                    if (
+                        $headerSheet !== null
+                        && $headerSheet->getSheetState() === 'visible'
+                        && $this->normalizeHeader($this->cell($headerSheet, 'O2')) === 'sốphiếu'
+                        && $this->normalizeHeader($this->cell($headerSheet, 'AY2')) === 'ghichú'
+                    ) {
+                        $worksheetName = $info['worksheetName'];
+                        break;
+                    }
                 }
+            } finally {
+                $headerWorkbook->disconnectWorksheets();
             }
-            $worksheetName ??= $visibleDataWorksheet;
             if ($worksheetName === null) {
-                throw new \RuntimeException('File Excel không có trang tính dữ liệu.');
+                throw new \RuntimeException(
+                    "File Excel không đúng biểu mẫu phiếu điều tra: cần có tiêu đề 'Số phiếu' tại ô O2 và 'Ghi chú' tại ô AY2. Vui lòng tải biểu mẫu mới nhất và giữ nguyên cấu trúc cột.",
+                );
             }
             $worksheet = collect($worksheetInfo)->firstWhere('worksheetName', $worksheetName);
             $highestDataRow = (int) ($worksheet['totalRows'] ?? 0);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            $message = str_contains($exception->getMessage(), 'File Excel không đúng biểu mẫu')
+                ? $exception->getMessage()
+                : 'Không đọc được file Excel. Hãy kiểm tra file và thử tải lại theo mẫu mới nhất.';
+            $context['processing_error'] = $message;
             $importLog->update([
                 'status' => 'FAILED',
+                'context' => $context,
+            ]);
+            Log::error('Không đọc được file Excel khi xử lý nhập dữ liệu.', [
+                'import_log_id' => $importLog->id,
+                'exception' => $exception,
             ]);
 
-            return response()->json(['message' => 'Không đọc được file Excel. Hãy tải và nhập theo file mẫu.'], 422);
+            return response()->json(['message' => $message], 422);
         }
-
         $ethnicityCodes = [];
         foreach (Ethnicity::query()->get(['code', 'name']) as $ethnicity) {
             // lưu mảng code của dân tộc để cho vào db
             $ethnicityCodes[$this->normalize($ethnicity->name)] = $ethnicity->code;
         }
         // Lưu cả xã của trường để từ chối mã trường thuộc ngoài xã đang nhập.
-        $schoolCommuneCodes = School::query()->pluck('commune_code', 'code');
+        $schoolCommuneCodes = School::query()->where('is_active', true)->pluck('commune_code', 'code');
         $schoolYear = $data['school_year'];
+        $schoolYearId = SchoolYear::resolveOrCreateFromLabel($schoolYear)->id;
         $groups = [];
         $errors = new HouseholdImportErrorCollector($highestDataRow);
         $totalRows = 0;
@@ -90,14 +106,28 @@ class HouseholdImportProcessingService
             'processed_rows' => 0,
         ]);
 
-        for ($chunkStart = 5; $chunkStart <= $highestDataRow; $chunkStart += 500) {
-            $chunkEnd = min($chunkStart + 499, $highestDataRow);
+        $chunkSize = 2000;
+        for ($chunkStart = 5; $chunkStart <= $highestDataRow; $chunkStart += $chunkSize) {
+            $chunkEnd = min($chunkStart + $chunkSize - 1, $highestDataRow);
             $reader->setLoadSheetsOnly([$worksheetName]);
             $reader->setReadFilter(new HouseholdImportChunkReadFilter($chunkStart, $chunkEnd));
             $chunkWorkbook = $reader->load($data['file']->getRealPath());
             $sheet = $chunkWorkbook->getSheetByName($worksheetName);
+            $chunkRows = $sheet->rangeToArray(
+                "A{$chunkStart}:AY{$chunkEnd}",
+                '',
+                true,
+                true,
+                true,
+            );
 
             for ($row = $chunkStart; $row <= $chunkEnd; $row++) {
+                $rowValues = $chunkRows[$row] ?? [];
+                $this->cachedRowValues = [];
+                foreach ($rowValues as $column => $value) {
+                    $this->cachedRowValues[$column.$row] = $value;
+                }
+
                 if (($row - 4) % 500 === 0) {
                     $importLog->update(['processed_rows' => $row - 4]);
                 }
@@ -110,6 +140,7 @@ class HouseholdImportProcessingService
                 if ($householdCode === '' && $lastName === '' && $firstName === '') {
                     continue;
                 }
+                $totalRows++;
 
                 if ($householdCode === '' || $lastName === '' || $firstName === '') {
                     $errors->add($row, 'Cần có Số phiếu, Họ đệm và Tên.');
@@ -125,7 +156,6 @@ class HouseholdImportProcessingService
                 } elseif ($ethnicityCode === null) {
                     $errors->add($row, "Dân tộc '{$ethnicityName}' chưa có trong danh mục.");
                 }
-
                 $birthDate = $this->birthDate($sheet, $row);
 
                 if ($birthDate['date'] === null) {
@@ -216,20 +246,14 @@ class HouseholdImportProcessingService
                 $recordsByCode[] = $record;
                 // value của mảng mà key đó sẽ bằng mảng mới
                 $groups[$householdCode] = $recordsByCode;
-                $totalRows++;
             }
+            unset($chunkRows);
             $chunkWorkbook->disconnectWorksheets();
         }
         $importLog->update(['processed_rows' => max(0, $highestDataRow - 4)]);
 
         if ($totalRows === 0) {
             $errors->add(null, 'Không tìm thấy dòng dữ liệu. Dữ liệu cần bắt đầu từ dòng 5.');
-        }
-
-        if ($errors->hasErrors()) {
-            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
-
-            return response()->json(['message' => $errors->summary()], 422);
         }
 
         // $groups = [
@@ -243,6 +267,17 @@ class HouseholdImportProcessingService
         // ];
 
         foreach ($groups as $householdCode => $records) {
+            $records = array_values(array_filter(
+                $records,
+                fn (array $record): bool => ! $errors->hasErrorsForRow($record['row']),
+            ));
+            if ($records === []) {
+                unset($groups[$householdCode]);
+
+                continue;
+            }
+            $groups[$householdCode] = $records;
+
             // records là value của từng householdCode(key)
             $headLastName = $this->firstValue($records, 'head_last_name');
             $headFirstName = $this->firstValue($records, 'head_first_name');
@@ -271,7 +306,31 @@ class HouseholdImportProcessingService
                         $errors->add($record['row'], "Phiếu '{$householdCode}' có nhiều chủ hộ. Vui lòng kiểm tra các dòng được đánh dấu.");
                     }
                 }
-            } elseif ($headCount === 1) {
+            }
+
+            foreach ([
+                [['Vợ', 'Chồng'], 'vợ hoặc chồng'],
+                [['Cha', 'Mẹ'], 'cha hoặc mẹ'],
+            ] as [$relationshipSet, $label]) {
+                $matchingRecords = array_values(array_filter(
+                    $records,
+                    fn (array $record): bool => in_array(
+                        $this->normalize((string) $record['relationship_with_head']),
+                        array_map(fn (string $relationship): string => $this->normalize($relationship), $relationshipSet),
+                        true,
+                    ),
+                ));
+                if (count($matchingRecords) > 1) {
+                    foreach ($matchingRecords as $record) {
+                        $errors->add(
+                            $record['row'],
+                            "Phiếu '{$householdCode}' chỉ được có một người là {$label}.",
+                        );
+                    }
+                }
+            }
+
+            if ($headCount === 1) {
                 foreach ($records as $record) {
                     if ($record['row'] === $headRecord['row'] || $record['dob']['date'] === null) {
                         continue;
@@ -289,36 +348,30 @@ class HouseholdImportProcessingService
             }
         }
 
-        if ($errors->hasErrors()) {
-            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
+        foreach ($groups as $householdCode => $records) {
+            $records = array_values(array_filter(
+                $records,
+                fn (array $record): bool => ! $errors->hasErrorsForRow($record['row']),
+            ));
+            if ($records === []) {
+                unset($groups[$householdCode]);
 
-            return response()->json(['message' => $errors->summary()], 422);
+                continue;
+            }
+            $groups[$householdCode] = $records;
         }
 
-        // check query có tồn tại cái mã hộ này k
-        $existingCode = Household::query()
-            ->where('school_year', $schoolYear)
+        $existingCodes = Household::query()
+            ->where('school_year_id', $schoolYearId)
             ->whereIn('household_code', array_keys($groups))
-            ->value('household_code');
-        if ($existingCode !== null) {
+            ->pluck('household_code')
+            ->all();
+        foreach ($existingCodes as $existingCode) {
             $duplicateMessage = "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.";
             foreach ($groups[$existingCode] ?? [] as $record) {
                 $errors->add($record['row'], $duplicateMessage);
             }
-            if (! $errors->hasErrors()) {
-                $errors->add(null, $duplicateMessage);
-            }
-            $this->recordFailedImport(
-                $importLog,
-                $data['file']->getRealPath(),
-                $worksheetName,
-                $totalRows,
-                $errors,
-            );
-
-            return response()->json([
-                'message' => "Mã phiếu '{$existingCode}' đã tồn tại. Không nhập file để tránh ghi đè hoặc nhân đôi dữ liệu.",
-            ], 422);
+            unset($groups[$existingCode]);
         }
 
         $importLog->update([
@@ -326,168 +379,430 @@ class HouseholdImportProcessingService
             'status' => 'PROCESSING',
         ]);
 
-        try {
-            // dùng transaction để rollback nếu có err
-            DB::transaction(function () use ($groups, $data, $schoolYear, $importLog, &$totalRows) {
-                // thêm vào household
-                foreach ($groups as $householdCode => $records) {
-                    $headLastName = $this->firstValue($records, 'head_last_name');
-                    $headFirstName = $this->firstValue($records, 'head_first_name');
-                    $firstRecord = $records[0];
-                    $household = Household::create([
-                        'household_code' => $householdCode,
-                        'school_year' => $schoolYear,
-                        'head_last_name' => $headLastName,
-                        'head_first_name' => $headFirstName,
-                        'province_code' => $data['province_code'],
-                        'commune_code' => $data['commune_code'],
-                        'village_code' => $data['village_code'] ?? null,
-                        'address' => $this->firstValue($records, 'address'),
-                        'residence_type' => $this->residenceType($this->firstValue($records, 'residence_type')),
-                        'residence_status' => $this->firstValue($records, 'residence_status'),
-                        'import_log_id' => $importLog->id,
-                    ]);
-
-                    $hasHeadPerson = false;
-                    // thêm vào person
-                    foreach ($records as $record) {
-                        $isHead = $this->normalize((string) $record['relationship_with_head']) === $this->normalize('Chủ hộ')
-                            || ($headLastName !== '' && $headFirstName !== ''
-                                && $this->normalize($record['last_name']) === $this->normalize($headLastName)
-                                && $this->normalize($record['first_name']) === $this->normalize($headFirstName));
-                        $relationship = $isHead ? 'Chủ hộ' : $record['relationship_with_head'];
-                        $hasHeadPerson = $hasHeadPerson || $isHead;
-
-                        $person = $household->persons()->create([
-                            'import_log_id' => $importLog->id,
-                            'last_name' => $record['last_name'],
-                            'first_name' => $record['first_name'],
-                            'dob' => $record['dob']['date'],
-                            'dob_str' => $record['dob']['raw'],
-                            'gender' => $record['gender'],
-                            'ethnicity_code' => $record['ethnicity_code'],
-                            'religion' => $record['religion'],
-                            'priority_type' => $record['priority_type'],
-                            'relationship_with_head' => $relationship,
-                            'parent_name' => $record['parent_name'],
-                            'phone' => $record['phone'],
-                            'note' => $record['note'],
-                        ]);
-
-                        if ($this->hasEducationData($record)) {
-                            // lưu vào education
-                            $person->educations()->create([
-                                'import_log_id' => $importLog->id,
-                                'school_year' => $schoolYear,
-                                'academic_block' => $record['academic_block'],
-                                'current_class' => $record['current_class'],
-                                'school_code' => $record['school_code'],
-                                'graduation_level' => $record['graduation_level'],
-                                'is_complementary' => $record['is_complementary'],
-                                'graduation_year' => $record['graduation_year'],
-                                'vocational_grad_level' => $record['vocational_grad_level'],
-                                'vocational_grad_year' => $record['vocational_grad_year'],
-                                'finished_class' => $record['finished_class'],
-                                'finished_year' => $record['finished_year'],
-                                'dropped_class' => $record['dropped_class'],
-                                'dropped_year' => $record['dropped_year'],
-                                'literacy_current_class' => $record['literacy_current_class'],
-                                'literacy_completed_class' => $record['literacy_completed_class'],
-                                'literacy_relapse_level' => $record['literacy_relapse_level'],
-                            ]);
+        $successRows = 0;
+        foreach (array_chunk($groups, 200, true) as $batch) {
+            try {
+                DB::transaction(fn () => $this->persistHouseholdBatch($batch, $data, $schoolYear, $schoolYearId, $importLog));
+                foreach ($batch as $records) {
+                    $successRows += count($records);
+                }
+            } catch (Throwable $batchException) {
+                Log::warning('Không thể nhập theo lô; chuyển sang nhập riêng từng phiếu.', [
+                    'import_log_id' => $importLog->id,
+                    'exception' => $batchException,
+                ]);
+                foreach ($batch as $householdCode => $records) {
+                    try {
+                        DB::transaction(
+                            fn () => $this->persistHousehold($householdCode, $records, $data, $schoolYear, $schoolYearId, $importLog),
+                        );
+                        $successRows += count($records);
+                    } catch (Throwable $exception) {
+                        foreach ($records as $record) {
+                            $errors->add(
+                                $record['row'],
+                                "Không thể nhập phiếu '{$householdCode}': ".$exception->getMessage(),
+                            );
                         }
-                        // khuyết tật
-                        if ($this->hasDisabilityData($record['disability'])) {
-                            $person->disability()->create($record['disability']);
-                        }
-                    }
-                    //
-                    if (! $hasHeadPerson && ($headLastName !== '' || $headFirstName !== '')) {
-                        // thêm chủ hộ vào person
-                        $household->persons()->create([
-                            'import_log_id' => $importLog->id,
-                            'last_name' => $headLastName ?: $firstRecord['last_name'],
-                            'first_name' => $headFirstName ?: $firstRecord['first_name'],
-                            'gender' => 'NAM',
-                            'relationship_with_head' => 'Chủ hộ',
-                        ]);
                     }
                 }
-
-                $importLog->update([
-                    'status' => 'SUCCESS',
-                    'success_rows' => $totalRows,
-                ]);
-            });
-        } catch (Throwable $exception) {
-            $errors->add(null, $exception->getMessage());
-            $this->recordFailedImport($importLog, $data['file']->getRealPath(), $worksheetName, $totalRows, $errors);
-
-            return response()->json(['message' => 'Nhập dữ liệu thất bại: '.$exception->getMessage()], 422);
+            }
         }
 
+        $this->recordImportResult(
+            $importLog,
+            $data['file']->getRealPath(),
+            $worksheetName,
+            $highestDataRow,
+            $totalRows,
+            $successRows,
+            $errors,
+        );
+
         $destination = $user->can('view-households')
-            ? route('households.index', [], false)
-            : route('index', [], false);
+            ? route('api.households.index')
+            : route('api.dashboard');
 
         return response()->json([
-            'success' => true,
+            'success' => $successRows > 0,
             'destination' => $destination,
-            'message' => "Đã nhập {$totalRows} dòng nhân khẩu từ file Excel.",
+            'message' => "Đã nhập {$successRows} dòng nhân khẩu; {$errors->errorRowCount()} dòng cần kiểm tra.",
         ]);
+    }
+
+    private function persistHouseholdBatch(
+        array $batch,
+        array $data,
+        string $schoolYear,
+        int $schoolYearId,
+        ImportLog $importLog,
+    ): void {
+        $timestamp = now();
+        $householdRows = [];
+        foreach ($batch as $householdCode => $records) {
+            $householdRows[] = [
+                'household_code' => $householdCode,
+                'school_year_id' => $schoolYearId,
+                'head_last_name' => $this->firstValue($records, 'head_last_name'),
+                'head_first_name' => $this->firstValue($records, 'head_first_name'),
+                'province_code' => $data['province_code'],
+                'commune_code' => $data['commune_code'],
+                'village_code' => $data['village_code'] ?? null,
+                'address' => $this->firstValue($records, 'address'),
+                'residence_type' => $this->residenceType($this->firstValue($records, 'residence_type')),
+                'residence_status' => $this->firstValue($records, 'residence_status'),
+                'import_log_id' => $importLog->id,
+                'created_at' => $timestamp,
+                'updated_at' => $timestamp,
+            ];
+        }
+        $this->insertRows('households', $householdRows);
+
+        $householdIds = DB::table('households')
+            ->where('school_year_id', $schoolYearId)
+            ->whereIn('household_code', array_keys($batch))
+            ->whereNull('deleted_at')
+            ->pluck('id', 'household_code')
+            ->all();
+        if (count($householdIds) !== count($batch)) {
+            throw new \RuntimeException('Không thể xác định mã phiếu vừa nhập.');
+        }
+
+        $personRows = [];
+        $personRecords = [];
+        foreach ($batch as $householdCode => $records) {
+            $headLastName = $this->firstValue($records, 'head_last_name');
+            $headFirstName = $this->firstValue($records, 'head_first_name');
+            $hasHeadPerson = false;
+            foreach ($records as $record) {
+                $isHead = $this->isHouseholdHead($record, $headLastName, $headFirstName);
+                $hasHeadPerson = $hasHeadPerson || $isHead;
+                $personRows[] = $this->personImportRow(
+                    (int) $householdIds[$householdCode],
+                    $record,
+                    $isHead ? 'Chủ hộ' : $record['relationship_with_head'],
+                    $importLog->id,
+                    $timestamp,
+                );
+                $personRecords[$householdCode][] = $record;
+            }
+
+            if (! $hasHeadPerson && ($headLastName !== '' || $headFirstName !== '')) {
+                $firstRecord = $records[0];
+                $personRows[] = [
+                    'household_id' => (int) $householdIds[$householdCode],
+                    'import_log_id' => $importLog->id,
+                    'last_name' => $headLastName ?: $firstRecord['last_name'],
+                    'first_name' => $headFirstName ?: $firstRecord['first_name'],
+                    'gender' => 'NAM',
+                    'relationship_with_head' => 'Chủ hộ',
+                    'created_at' => $timestamp,
+                    'updated_at' => $timestamp,
+                ];
+                $personRecords[$householdCode][] = null;
+            }
+        }
+        $this->insertRows('persons', $personRows);
+
+        $personIdsByHousehold = [];
+        DB::table('persons')
+            ->whereIn('household_id', array_values($householdIds))
+            ->orderBy('household_id')
+            ->orderBy('id')
+            ->get(['id', 'household_id'])
+            ->each(function (object $person) use (&$personIdsByHousehold): void {
+                $personIdsByHousehold[$person->household_id][] = $person->id;
+            });
+
+        $educationRows = [];
+        $disabilityRows = [];
+        foreach ($personRecords as $householdCode => $records) {
+            $householdId = $householdIds[$householdCode];
+            $personIds = $personIdsByHousehold[$householdId] ?? [];
+            if (count($personIds) !== count($records)) {
+                throw new \RuntimeException('Không thể ghép nhân khẩu với dữ liệu nhập tương ứng.');
+            }
+
+            foreach ($records as $index => $record) {
+                if ($record === null) {
+                    continue;
+                }
+
+                $personId = $personIds[$index];
+                if ($this->hasEducationData($record)) {
+                    $educationRows[] = [
+                        'person_id' => $personId,
+                        'import_log_id' => $importLog->id,
+                        'school_year_id' => $schoolYearId,
+                        'academic_block' => $record['academic_block'],
+                        'current_class' => $record['current_class'],
+                        'school_code' => $record['school_code'],
+                        'graduation_level' => $record['graduation_level'],
+                        'is_complementary' => $record['is_complementary'],
+                        'graduation_year' => $record['graduation_year'],
+                        'vocational_grad_level' => $record['vocational_grad_level'],
+                        'vocational_grad_year' => $record['vocational_grad_year'],
+                        'finished_class' => $record['finished_class'],
+                        'finished_year' => $record['finished_year'],
+                        'dropped_class' => $record['dropped_class'],
+                        'dropped_year' => $record['dropped_year'],
+                        'literacy_current_class' => $record['literacy_current_class'],
+                        'literacy_completed_class' => $record['literacy_completed_class'],
+                        'literacy_relapse_level' => $record['literacy_relapse_level'],
+                        'created_at' => $timestamp,
+                        'updated_at' => $timestamp,
+                    ];
+                }
+
+                if ($this->hasDisabilityData($record['disability'])) {
+                    $disabilityRows[] = [
+                        'person_id' => $personId,
+                        ...$record['disability'],
+                        'created_at' => $timestamp,
+                        'updated_at' => $timestamp,
+                    ];
+                }
+            }
+        }
+
+        $this->insertRows('person_educations', $educationRows);
+        $this->insertRows('person_disabilities', $disabilityRows);
+    }
+
+    private function persistHousehold(
+        string|int $householdCode,
+        array $records,
+        array $data,
+        string $schoolYear,
+        int $schoolYearId,
+        ImportLog $importLog,
+    ): void {
+        $headLastName = $this->firstValue($records, 'head_last_name');
+        $headFirstName = $this->firstValue($records, 'head_first_name');
+        $firstRecord = $records[0];
+        $household = Household::create([
+            'household_code' => $householdCode,
+            'school_year' => $schoolYear,
+            'head_last_name' => $headLastName,
+            'head_first_name' => $headFirstName,
+            'province_code' => $data['province_code'],
+            'commune_code' => $data['commune_code'],
+            'village_code' => $data['village_code'] ?? null,
+            'address' => $this->firstValue($records, 'address'),
+            'residence_type' => $this->residenceType($this->firstValue($records, 'residence_type')),
+            'residence_status' => $this->firstValue($records, 'residence_status'),
+            'import_log_id' => $importLog->id,
+        ]);
+
+        $hasHeadPerson = false;
+        foreach ($records as $record) {
+            $isHead = $this->isHouseholdHead($record, $headLastName, $headFirstName);
+            $relationship = $isHead ? 'Chủ hộ' : $record['relationship_with_head'];
+            $hasHeadPerson = $hasHeadPerson || $isHead;
+            $person = $household->persons()->create(
+                $this->personImportRow($household->id, $record, $relationship, $importLog->id),
+            );
+
+            if ($this->hasEducationData($record)) {
+                $person->educations()->create([
+                    'import_log_id' => $importLog->id,
+                    'school_year_id' => $schoolYearId,
+                    'academic_block' => $record['academic_block'],
+                    'current_class' => $record['current_class'],
+                    'school_code' => $record['school_code'],
+                    'graduation_level' => $record['graduation_level'],
+                    'is_complementary' => $record['is_complementary'],
+                    'graduation_year' => $record['graduation_year'],
+                    'vocational_grad_level' => $record['vocational_grad_level'],
+                    'vocational_grad_year' => $record['vocational_grad_year'],
+                    'finished_class' => $record['finished_class'],
+                    'finished_year' => $record['finished_year'],
+                    'dropped_class' => $record['dropped_class'],
+                    'dropped_year' => $record['dropped_year'],
+                    'literacy_current_class' => $record['literacy_current_class'],
+                    'literacy_completed_class' => $record['literacy_completed_class'],
+                    'literacy_relapse_level' => $record['literacy_relapse_level'],
+                ]);
+            }
+
+            if ($this->hasDisabilityData($record['disability'])) {
+                $person->disability()->create($record['disability']);
+            }
+        }
+
+        if (! $hasHeadPerson && ($headLastName !== '' || $headFirstName !== '')) {
+            $household->persons()->create([
+                'import_log_id' => $importLog->id,
+                'last_name' => $headLastName ?: $firstRecord['last_name'],
+                'first_name' => $headFirstName ?: $firstRecord['first_name'],
+                'gender' => 'NAM',
+                'relationship_with_head' => 'Chủ hộ',
+            ]);
+        }
+    }
+
+    private function insertRows(string $table, array $rows): void
+    {
+        foreach (array_chunk($rows, 40) as $chunk) {
+            DB::table($table)->insert($chunk);
+        }
+    }
+
+    private function personImportRow(
+        int $householdId,
+        array $record,
+        ?string $relationship,
+        int $importLogId,
+        ?\DateTimeInterface $timestamp = null,
+    ): array {
+        $person = [
+            'household_id' => $householdId,
+            'import_log_id' => $importLogId,
+            'last_name' => $record['last_name'],
+            'first_name' => $record['first_name'],
+            'dob' => $record['dob']['date'],
+            'dob_str' => $record['dob']['raw'],
+            'gender' => $record['gender'],
+            'ethnicity_code' => $record['ethnicity_code'],
+            'religion' => $record['religion'],
+            'priority_type' => $record['priority_type'],
+            'relationship_with_head' => $relationship,
+            'parent_name' => $record['parent_name'],
+            'phone' => $record['phone'],
+            'note' => $record['note'],
+        ];
+
+        if ($timestamp !== null) {
+            $person['created_at'] = $timestamp;
+            $person['updated_at'] = $timestamp;
+        }
+
+        return $person;
+    }
+
+    private function isHouseholdHead(array $record, string $headLastName, string $headFirstName): bool
+    {
+        return $this->normalize((string) $record['relationship_with_head']) === $this->normalize('Chủ hộ')
+            || ($headLastName !== '' && $headFirstName !== ''
+                && $this->normalize($record['last_name']) === $this->normalize($headLastName)
+                && $this->normalize($record['first_name']) === $this->normalize($headFirstName));
     }
 
     private function cell(Worksheet $sheet, string $coordinate): string
     {
+        if (array_key_exists($coordinate, $this->cachedRowValues)) {
+            return trim((string) $this->cachedRowValues[$coordinate]);
+        }
+
         // tìm tới vị trí $coordinate lấy value
         return trim((string) $sheet->getCell($coordinate)->getFormattedValue());
     }
 
-    private function recordFailedImport(
+    private function recordImportResult(
         ImportLog $importLog,
         string $filePath,
         string $worksheetName,
+        int $highestDataRow,
         int $totalRows,
+        int $successRows,
         HouseholdImportErrorCollector $errors,
     ): void {
         $errorFilePath = null;
-        try {
-            $spreadsheet = IOFactory::load($filePath);
-            $sheet = $spreadsheet->getSheetByName($worksheetName);
-            if ($sheet === null) {
-                throw new \RuntimeException('Không tìm thấy trang tính dữ liệu để ghi chú lỗi.');
-            }
+        if ($errors->hasErrors()) {
+            $spreadsheet = null;
+            try {
+                $reader = IOFactory::createReaderForFile($filePath);
+                $reader->setReadFilter(
+                    new HouseholdImportErrorReadFilter($errors, $worksheetName),
+                );
+                $spreadsheet = $reader->load($filePath);
+                $sheet = $spreadsheet->getSheetByName($worksheetName);
+                if ($sheet === null) {
+                    throw new \RuntimeException('Không tìm thấy trang tính dữ liệu để ghi chú lỗi.');
+                }
 
-            foreach ($errors->errors() as $error) {
-                $cell = $error['row'] === null ? 'A1' : 'A'.$error['row'];
-                $existingValue = $error['first_for_row'] ? '' : trim((string) $sheet->getCell($cell)->getValue());
-                $message = $existingValue === ''
-                    ? $error['message']
-                    : $existingValue.' | '.$error['message'];
-                $sheet->setCellValue($cell, $message);
-                $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
-                $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
-            }
-            $sheet->getColumnDimension('A')->setWidth(45);
+                $errorRows = [];
+                foreach ($errors->errors() as $error) {
+                    $sourceRow = $error['row'];
+                    $cell = $sourceRow === null ? 'A1' : 'A'.$sourceRow;
+                    $existingValue = $error['first_for_row'] ? '' : trim((string) $sheet->getCell($cell)->getValue());
+                    $message = $existingValue === ''
+                        ? $error['message']
+                        : $existingValue.' | '.$error['message'];
+                    $sheet->setCellValue($cell, $message);
+                    $sheet->getStyle($cell)->getFont()->getColor()->setARGB('FFDC3545');
+                    $sheet->getStyle($cell)->getAlignment()->setWrapText(true);
+                    if ($sourceRow !== null && $error['first_for_row']) {
+                        $errorRows[] = $sourceRow;
+                    }
+                }
 
-            $writerType = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'xls' ? 'Xls' : 'Xlsx';
-            $errorFilePath = dirname($importLog->file_path).'/error-'.basename($importLog->file_path);
-            IOFactory::createWriter($spreadsheet, $writerType)
-                ->save(Storage::disk('local')->path($errorFilePath));
-            $spreadsheet->disconnectWorksheets();
-        } catch (Throwable $exception) {
-            $errorFilePath = null;
-            Log::error('Không thể tạo file Excel có ghi chú lỗi khi nhập dữ liệu.', [
-                'import_log_id' => $importLog->id,
-                'exception' => $exception,
-            ]);
+                sort($errorRows, SORT_NUMERIC);
+                $lastErrorRow = 4;
+                $highestColumn = min(
+                    Coordinate::columnIndexFromString($sheet->getHighestDataColumn()),
+                    Coordinate::columnIndexFromString('AY'),
+                );
+                foreach ($errorRows as $index => $sourceRow) {
+                    $targetRow = 5 + $index;
+                    if ($sourceRow !== $targetRow) {
+                        for ($column = 1; $column <= $highestColumn; $column++) {
+                            $columnName = Coordinate::stringFromColumnIndex($column);
+                            $source = $sheet->getCell($columnName.$sourceRow);
+                            $value = $source->getValue();
+                            $dataType = $source->getDataType();
+                            $styleIndex = $source->getXfIndex();
+                            $target = $sheet->getCell($columnName.$targetRow);
+                            $target->setValueExplicit($value, $dataType);
+                            $target->setXfIndex($styleIndex);
+                        }
+                    }
+                    $lastErrorRow = $targetRow;
+                }
+                if ($highestDataRow > $lastErrorRow) {
+                    $sheet->removeRow($lastErrorRow + 1, $highestDataRow - $lastErrorRow);
+                }
+                $sheet->getColumnDimension('A')->setWidth(45);
+                $spreadsheet->setActiveSheetIndex(
+                    $spreadsheet->getIndex($sheet),
+                );
+                $sheet->setSelectedCell('A1');
+                $sheet->setTopLeftCell('A1');
+                $spreadsheet->setShowHorizontalScroll(true);
+                $spreadsheet->setShowVerticalScroll(true);
+
+                $hasMacros = strtolower(pathinfo($filePath, PATHINFO_EXTENSION)) === 'xlsm'
+                    || $spreadsheet->hasMacros();
+                $errorExtension = $hasMacros
+                    ? 'xlsm'
+                    : 'xlsx';
+                $errorFilePath = dirname($importLog->file_path).'/error-'.pathinfo($importLog->file_path, PATHINFO_FILENAME).'.'.$errorExtension;
+                IOFactory::createWriter($spreadsheet, 'Xlsx')
+                    ->save(Storage::disk('local')->path($errorFilePath));
+            } catch (Throwable $exception) {
+                $errorFilePath = null;
+                Log::error('Không thể tạo file Excel có ghi chú lỗi khi nhập dữ liệu.', [
+                    'import_log_id' => $importLog->id,
+                    'exception' => $exception,
+                ]);
+            } finally {
+                $spreadsheet?->disconnectWorksheets();
+            }
+        }
+
+        $context = $importLog->context ?? [];
+        if ($errorFilePath !== null) {
+            $context['error_file_active_sheet_checked'] = true;
+            $context['error_file_view_options_checked'] = true;
         }
 
         $importLog->update([
-            'status' => 'FAILED',
+            'status' => $successRows === 0 ? 'FAILED' : ($errors->hasErrors() ? 'PARTIAL' : 'SUCCESS'),
             'total_rows' => $totalRows,
+            'success_rows' => $successRows,
             'error_rows' => $errors->errorRowCount(),
             'error_file_path' => $errorFilePath,
+            'context' => $context,
         ]);
     }
 
@@ -583,6 +898,11 @@ class HouseholdImportProcessingService
 
         // xóa sạch ép chữ thường
         return strtolower(preg_replace('/[^a-z0-9]/i', '', $ascii === false ? $value : $ascii));
+    }
+
+    private function normalizeHeader(string $value): string
+    {
+        return preg_replace('/[\s\p{P}\p{S}]+/u', '', mb_strtolower(trim($value), 'UTF-8'));
     }
 
     private function firstValue(array $records, string $key): string

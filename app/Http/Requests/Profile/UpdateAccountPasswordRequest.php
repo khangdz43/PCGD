@@ -16,7 +16,7 @@ class UpdateAccountPasswordRequest extends FormRequest
     {
         return [
             'current_password' => ['required', 'current_password'],
-            'password' => ['required', 'confirmed', 'different:current_password', Password::min(12)],
+            'password' => ['required', 'confirmed', 'different:current_password', Password::min(12)->max(18)],
         ];
     }
 
@@ -27,6 +27,7 @@ class UpdateAccountPasswordRequest extends FormRequest
             'password.confirmed' => 'Xác nhận mật khẩu mới không khớp.',
             'password.different' => 'Mật khẩu mới phải khác mật khẩu hiện tại.',
             'password.min' => 'Mật khẩu mới phải có ít nhất 12 ký tự.',
+            'password.max' => 'Mật khẩu mới không được vượt quá 18 ký tự.',
         ];
     }
 }

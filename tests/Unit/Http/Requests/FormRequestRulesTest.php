@@ -27,6 +27,7 @@ class FormRequestRulesTest extends TestCase
         self::assertSame([
             'username' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
+            'remember' => ['sometimes', 'boolean'],
         ], $request->rules());
     }
 
@@ -43,6 +44,7 @@ class FormRequestRulesTest extends TestCase
             'password.confirmed' => 'Xác nhận mật khẩu mới không khớp.',
             'password.different' => 'Mật khẩu mới phải khác mật khẩu hiện tại.',
             'password.min' => 'Mật khẩu mới phải có ít nhất 12 ký tự.',
+            'password.max' => 'Mật khẩu mới không được vượt quá 18 ký tự.',
         ], $request->messages());
     }
 
@@ -63,7 +65,12 @@ class FormRequestRulesTest extends TestCase
         $rules = $request->rules();
 
         self::assertTrue($request->authorize());
-        self::assertSame(['required', 'file', 'mimes:xls,xlsx', 'max:20480'], $rules['file']);
+        self::assertSame(
+            ['required_without:files', 'prohibits:files', 'file', 'mimes:xls,xlsx', 'max:20480'],
+            $rules['file'],
+        );
+        self::assertSame(['required_without:file', 'prohibits:file', 'array', 'min:1', 'max:5'], $rules['files']);
+        self::assertSame(['required', 'file', 'mimes:xls,xlsx', 'max:20480'], $rules['files.*']);
         self::assertSame('required', $rules['school_year'][0]);
         self::assertSame('in:"2024-2025"', (string) $rules['school_year'][1]);
         self::assertSame(['required', 'exists:provinces,code'], $rules['province_code']);

@@ -4,6 +4,7 @@ namespace App\Services\Households;
 
 use App\Models\Household;
 use App\Models\Person;
+use App\Models\SchoolYear;
 use App\Models\User;
 use App\Support\DataAccessScope;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -29,7 +30,7 @@ class HouseholdExportService
             'village',
             'persons.ethnicity',
             'persons.disability',
-            'persons.educations',
+            'persons.educations.schoolYearRecord',
         ]);
         DataAccessScope::households($query, $user);
 
@@ -45,7 +46,8 @@ class HouseholdExportService
                 ->where('school_code', $filters['school_code']));
         }
         if (filled($filters['school_year'] ?? null) && $filters['school_year'] !== 'all') {
-            $query->where('school_year', $filters['school_year']);
+            $schoolYearId = SchoolYear::findByLabel((string) $filters['school_year'])?->id;
+            $query->where('school_year_id', $schoolYearId ?? 0);
         }
         foreach (['province_code', 'commune_code', 'village_code'] as $field) {
             if (filled($queryFilters[$field] ?? null)) {
@@ -92,7 +94,9 @@ class HouseholdExportService
 
     private function writeExportRow(Worksheet $sheet, int $row, int $sequence, object $household, ?Person $person): void
     {
-        $education = $person?->educations->sortByDesc('school_year')->first();
+        $education = $person?->educations
+            ->sortByDesc(fn ($item) => $item->schoolYearRecord?->start_time?->toDateString())
+            ->first();
         $disability = $person?->disability;
         $date = $person?->dob ? strtotime((string) $person->dob) : false;
         $values = [

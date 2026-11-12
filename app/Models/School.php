@@ -5,16 +5,28 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class School extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'code',
         'name',
+        'type',
+        'is_active',
         'level',
         'province_code',
         'commune_code',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+        ];
+    }
 
     public function getDisplayNameAttribute(): string
     {

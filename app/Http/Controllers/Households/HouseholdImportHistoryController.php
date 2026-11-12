@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Households;
 use App\Http\Controllers\Controller;
 use App\Models\ImportLog;
 use App\Services\Households\HouseholdImportHistoryService;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -13,24 +12,37 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class HouseholdImportHistoryController extends Controller
 {
-    public function __invoke(Request $request): View
+    public function __invoke(Request $request): JsonResponse
     {
+        $filters = $request->validate([
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
+        ]);
         $imports = ImportLog::query()
             ->where('user_id', $request->user()->id)
+            ->with('user:id,name')
             ->latest('created_at')
-            ->paginate(20)
+            ->paginate($filters['per_page'] ?? 20)
             ->withQueryString();
+        $imports->getCollection()->each(function (ImportLog $import): void {
+            $import->setAttribute('uploaded_by_name', $import->user?->name);
+            $import->unsetRelation('user');
+        });
         $pendingImportIds = ImportLog::query()
             ->where('status', 'PENDING')
             ->oldest('created_at')
             ->oldest('id')
             ->pluck('id');
         $queuePositions = $pendingImportIds->values()->mapWithKeys(
-            fn (int $id, int $index): array => [$id => $index + 1],
+            fn(int $id, int $index): array => [$id => $index + 1],
         );
         $queueTotal = $pendingImportIds->count();
 
-        return view('households.import-history', compact('imports', 'queuePositions', 'queueTotal'));
+        return response()->json([
+            'imports' => $imports,
+            'queue_positions' => $queuePositions,
+            'queue_total' => $queueTotal,
+        ]);
     }
 
     public function download(Request $request, ImportLog $importLog): BinaryFileResponse
@@ -55,12 +67,13 @@ class HouseholdImportHistoryController extends Controller
         HouseholdImportHistoryService $historyService,
     ): BinaryFileResponse {
         abort_unless($importLog->user_id === $request->user()->id, 404);
-        abort_unless($importLog->status === 'FAILED' && $importLog->file_path !== null, 404);
+        abort_unless(in_array($importLog->status, ['PARTIAL', 'FAILED'], true) && $importLog->file_path !== null, 404);
 
         $errorFilePath = $historyService->errorFilePath($importLog);
 
-        $extension = pathinfo($importLog->file_name, PATHINFO_EXTENSION);
-        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME).'-loi'.($extension !== '' ? '.'.$extension : '');
+        $fileName = pathinfo($importLog->file_name, PATHINFO_FILENAME)
+            . '-loi.'
+            . strtolower(pathinfo($errorFilePath, PATHINFO_EXTENSION));
 
         return response()->download(
             Storage::disk('local')->path($errorFilePath),

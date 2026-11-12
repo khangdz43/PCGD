@@ -9,13 +9,13 @@ use Illuminate\Support\Facades\DB;
 class SeedUsernames extends Command
 {
     protected $signature = 'users:seed-usernames';
-    protected $description = 'Set username from email prefix for users that have no username';
+    protected $description = 'Set username from phone number for users that have no username';
 
     public function handle(): void
     {
         $users = User::whereNull('username')->get();
         foreach ($users as $user) {
-            $base = explode('@', $user->email)[0];
+            $base = preg_replace('/\D+/', '', (string) $user->phone) ?: 'user'.$user->id;
             $uname = $base;
             $i = 1;
             while (User::where('username', $uname)->where('id', '!=', $user->id)->exists()) {

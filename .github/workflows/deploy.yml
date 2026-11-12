@@ -1,0 +1,109 @@
+name: CI/CD Pipeline - PCGD
+
+on:
+  push:
+    branches:
+      - '**' # Chạy CI Test trên TẤT CẢ các nhánh (feature/*, test, master...)
+  pull_request:
+    branches:
+      - master # Chạy kiểm tra khi mở PR vào master
+
+jobs:
+  # ==========================================
+  # GIAI ĐOẠN 1 (CI): CHẠY TEST TRÊN MỌI NHÁNH
+  # ==========================================
+  ci-test:
+    name: Run Tests & Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_sqlite, fileinfo, gd, zip
+
+      - name: Install Composer (bao gồm cả gói dev để chạy PHPUnit)
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Laravel Tests
+        env:
+          APP_ENV: testing
+          APP_KEY: base64:iqt+7MGg3fwjSzuZt9D5YA+ub0EqeSwXws1Hz0D0YTs=
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+        run: php artisan test
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check Vue Frontend Build
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+  # ==========================================
+  # GIAI ĐOẠN 2 (CD): CHỈ DEPLOY KHI MERGE VÀO MASTER
+  # ==========================================
+  cd-deploy:
+    name: Deploy to TinoHost
+    needs: ci-test # Bắt buộc ci-test phải PASS (xanh) thì mới chạy bước này
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build Vue Production
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Merge Frontend into Laravel
+        run: |
+          rm -rf public/assets
+          cp -r frontend/dist/assets public/assets
+          mkdir -p resources/views
+          cp frontend/dist/index.html resources/views/app.blade.php
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_mysql, fileinfo, gd, zip
+
+      - name: Install Composer (Production - No Dev)
+        run: composer install --no-dev --optimize-autoloader --no-interaction
+
+      - name: Sync files to TinoHost via FTPS
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            frontend/**
+            tests/**
+            .env
+            storage/**

@@ -18,7 +18,7 @@ class DelegatedAccessTest extends TestCase
         self::assertSame(['global', 'province'], DelegatedAccess::manageableRoleLevels($actor));
 
         $actor = Mockery::mock(User::class);
-        $actor->shouldReceive('hasRole')->twice()->with(Role::SYSTEM_ADMIN)->andReturnTrue();
+        $actor->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnTrue();
         $actor->shouldReceive('canManageSubordinateUsers')->never();
 
         self::assertSame(['global', 'province'], DelegatedAccess::manageableAccountLevels($actor));
@@ -27,7 +27,7 @@ class DelegatedAccessTest extends TestCase
     public function test_non_admin_role_levels_follow_the_actor_scope_hierarchy(): void
     {
         $cases = [
-            'global' => ['province'],
+            'global' => ['global', 'province'],
             'province' => ['province', 'commune'],
             'commune' => ['commune'],
         ];
@@ -35,6 +35,7 @@ class DelegatedAccessTest extends TestCase
         foreach ($cases as $scope => $expected) {
             $actor = Mockery::mock(User::class);
             $actor->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
+            $actor->shouldReceive('isAccountAdministrator')->once()->andReturnTrue();
             $actor->shouldReceive('roleScopeLevel')->once()->andReturn($scope);
 
             self::assertSame($expected, DelegatedAccess::manageableRoleLevels($actor), $scope);
@@ -45,8 +46,7 @@ class DelegatedAccessTest extends TestCase
     {
         $actor = Mockery::mock(User::class);
         $actor->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
-        $actor->shouldReceive('canManageSubordinateUsers')->once()->andReturnFalse();
-        $actor->shouldReceive('can')->once()->with('view-users')->andReturnFalse();
+        $actor->shouldReceive('isAccountAdministrator')->once()->andReturnFalse();
 
         try {
             DelegatedAccess::manageableAccountLevels($actor);
@@ -56,8 +56,8 @@ class DelegatedAccessTest extends TestCase
         }
 
         $actor = Mockery::mock(User::class);
-        $actor->shouldReceive('hasRole')->twice()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
-        $actor->shouldReceive('canManageSubordinateUsers')->once()->andReturnTrue();
+        $actor->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
+        $actor->shouldReceive('isAccountAdministrator')->once()->andReturnTrue();
         $actor->shouldReceive('roleScopeLevel')->once()->andReturn('unsupported');
 
         try {
@@ -68,22 +68,25 @@ class DelegatedAccessTest extends TestCase
         }
     }
 
-    public function test_view_users_permission_allows_account_lists_without_account_management_rights(): void
+    public function test_regular_user_with_view_permission_cannot_open_account_management(): void
     {
         $actor = Mockery::mock(User::class);
-        $actor->shouldReceive('hasRole')->twice()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
-        $actor->shouldReceive('canManageSubordinateUsers')->once()->andReturnFalse();
-        $actor->shouldReceive('can')->once()->with('view-users')->andReturnTrue();
-        $actor->shouldReceive('roleScopeLevel')->once()->andReturn('global');
+        $actor->shouldReceive('hasRole')->once()->with(Role::SYSTEM_ADMIN)->andReturnFalse();
+        $actor->shouldReceive('isAccountAdministrator')->once()->andReturnFalse();
 
-        self::assertSame(['province'], DelegatedAccess::manageableAccountLevels($actor));
+        try {
+            DelegatedAccess::manageableAccountLevels($actor);
+            self::fail('Expected a non-administrator to be forbidden.');
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $exception) {
+            self::assertSame(403, $exception->getStatusCode());
+        }
     }
 
     public function test_province_actor_can_create_only_province_and_commune_scope_assignments(): void
     {
         $actor = $this->actorWithAttributes(['province_code' => 'P01', 'commune_code' => null]);
         $actor->shouldReceive('hasRole')->with(Role::SYSTEM_ADMIN)->zeroOrMoreTimes()->andReturnFalse();
-        $actor->shouldReceive('canManageSubordinateUsers')->zeroOrMoreTimes()->andReturnTrue();
+        $actor->shouldReceive('isAccountAdministrator')->zeroOrMoreTimes()->andReturnTrue();
         $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('province');
 
         self::assertTrue(DelegatedAccess::scopeIsAllowed(
@@ -108,7 +111,7 @@ class DelegatedAccessTest extends TestCase
     {
         $actor = $this->actorWithAttributes(['province_code' => 'P01', 'commune_code' => 'C02']);
         $actor->shouldReceive('hasRole')->with(Role::SYSTEM_ADMIN)->zeroOrMoreTimes()->andReturnFalse();
-        $actor->shouldReceive('canManageSubordinateUsers')->zeroOrMoreTimes()->andReturnTrue();
+        $actor->shouldReceive('isAccountAdministrator')->zeroOrMoreTimes()->andReturnTrue();
         $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('commune');
         $actor->shouldReceive('managedVillageCodes')->zeroOrMoreTimes()->andReturn(['V03', 'V04']);
 
@@ -135,6 +138,7 @@ class DelegatedAccessTest extends TestCase
     {
         $actor = $this->actorWithAttributes(['id' => 8]);
         $actor->shouldReceive('hasRole')->with(Role::SYSTEM_ADMIN)->zeroOrMoreTimes()->andReturnFalse();
+        $actor->shouldReceive('isAccountAdministrator')->zeroOrMoreTimes()->andReturnTrue();
         $actor->shouldReceive('roleScopeLevel')->zeroOrMoreTimes()->andReturn('commune');
 
         self::assertTrue(DelegatedAccess::roleBelongsToActorArea(

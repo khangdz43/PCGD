@@ -10,6 +10,12 @@ class Role extends Model
 {
     public const SYSTEM_ADMIN = 'system-admin';
 
+    public const CENTRAL_ADMIN = 'Quản lý tài khoản Trung ương';
+
+    public const PROVINCE_ADMIN_NAMES = ['Quản trị cấp tỉnh', 'Quản trị tỉnh'];
+
+    public const COMMUNE_ADMIN_NAMES = ['Quản trị xã', 'Quản trị cấp xã'];
+
     protected $appends = ['permissions'];
 
     protected $fillable = [
@@ -118,5 +124,19 @@ class Role extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function isSystemAccountAdministrator(): bool
+    {
+        if (! $this->is_system || $this->guard_name !== 'web') {
+            return false;
+        }
+
+        return match ($this->scope_level) {
+            'global' => $this->name === self::CENTRAL_ADMIN,
+            'province' => in_array($this->name, self::PROVINCE_ADMIN_NAMES, true),
+            'commune' => in_array($this->name, self::COMMUNE_ADMIN_NAMES, true),
+            default => false,
+        };
     }
 }

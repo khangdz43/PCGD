@@ -7,6 +7,7 @@ export interface User {
     scope_area?: string;
     role_name?: string;
     can_view_dashboard?: boolean;
+    is_account_administrator?: boolean;
     school_year?: string;
     province_code: string | null;
     commune_code: string | null;

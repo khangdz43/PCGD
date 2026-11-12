@@ -20,6 +20,7 @@ const props = defineProps<{
     permissions: string[];
     scopeLevel: string | null;
     canViewDashboard: boolean;
+    isAccountAdministrator: boolean;
 }>();
 const emit = defineEmits<{ select: [module: ModuleKey] }>();
 
@@ -38,7 +39,9 @@ const groups = computed(() => [
         items: [
             { key: 'users' as const, label: 'Tài khoản & phân quyền', icon: 'users', permission: 'view-users' },
             { key: 'roles' as const, label: 'Nhóm người dùng', icon: 'shield', permission: 'view-roles' },
-        ].filter(item => props.permissions.includes(item.permission)),
+        ].filter(item =>
+            props.isAccountAdministrator && props.permissions.includes(item.permission),
+        ),
     },
     {
         id: 'catalog',

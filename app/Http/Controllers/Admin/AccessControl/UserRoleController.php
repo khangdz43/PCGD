@@ -114,6 +114,7 @@ class UserRoleController extends Controller
         abort_unless($actor->can('create-users'), 403);
         $accountLevels = DelegatedAccess::manageableAccountLevels($actor);
         $provinces = $this->users->manageableProvinces($actor);
+        $availablePrimaryAdminProvinceCodes = $this->users->availablePrimaryAdminProvinceCodes($actor);
         $selectedLocations = $this->users->selectedLocations($actor);
         $selectedLocations['village_codes'] = [];
         $selectedLocations['villages'] = [];
@@ -132,9 +133,10 @@ class UserRoleController extends Controller
                 ])),
             'account_levels' => $accountLevels,
             'available_primary_admin_scopes' => [
-                'province' => $provinces->isNotEmpty(),
+                'province' => $availablePrimaryAdminProvinceCodes !== [],
                 'commune' => $this->users->hasAvailablePrimaryAdminScope($actor, 'commune'),
             ],
+            'available_primary_admin_province_codes' => $availablePrimaryAdminProvinceCodes,
             'provinces' => $provinces,
             'selected_locations' => $selectedLocations,
             'actor_scope_level' => $actor->roleScopeLevel(),
@@ -227,6 +229,7 @@ class UserRoleController extends Controller
         $roles = $this->users->rolesForForm($actor, $accountLevels);
         abort_unless($this->users->canEditUserConfiguration($actor, $user, $roles), 403);
         $provinces = $this->users->manageableProvinces($actor, $user);
+        $availablePrimaryAdminProvinceCodes = $this->users->availablePrimaryAdminProvinceCodes($actor, $user);
         $selectedLocations = $this->users->selectedLocations($user);
         $canAssignCommuneAdmin = $roles->contains(
             fn (Role $role): bool => $role->is_primary_admin
@@ -256,10 +259,11 @@ class UserRoleController extends Controller
             'account_levels' => $accountLevels,
             'account_scope_level' => $user->scope_level,
             'available_primary_admin_scopes' => [
-                'province' => $provinces->isNotEmpty(),
+                'province' => $availablePrimaryAdminProvinceCodes !== [],
                 'commune' => $canAssignCommuneAdmin
                     && $this->users->hasAvailablePrimaryAdminScope($actor, 'commune', $user),
             ],
+            'available_primary_admin_province_codes' => $availablePrimaryAdminProvinceCodes,
             'provinces' => $provinces,
             'selected_locations' => $selectedLocations,
             'actor_scope_level' => $actor->roleScopeLevel(),

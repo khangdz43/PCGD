@@ -145,6 +145,7 @@ const roleScopeLevels = ref<string[]>(["global", "province", "commune"]);
 const accountLevels = ref<string[]>([]);
 const roleOptions = ref<Row[]>([]);
 const availablePrimaryAdminScopes = ref<Record<string, boolean>>({});
+const availablePrimaryAdminProvinceCodes = ref<string[]>([]);
 const formOptionsBusy = ref(false);
 const provinces = ref<Row[]>([]);
 const formCommunes = ref<Row[]>([]);
@@ -871,6 +872,26 @@ const assignableUserRoles = computed(() => {
             role.assignable_scope_levels.includes(level),
     );
 });
+const selectedUserRole = computed(() =>
+    assignableUserRoles.value.find(
+        (role) => String(role.id) === form.value.role_id,
+    ),
+);
+const userFormProvinces = computed(() => {
+    if (
+        props.moduleKey !== "users" ||
+        form.value.scope_level !== "province" ||
+        selectedUserRole.value?.is_primary_admin !== true
+    ) {
+        return provinces.value;
+    }
+
+    return provinces.value.filter((province) =>
+        availablePrimaryAdminProvinceCodes.value.includes(
+            String(province.code),
+        ),
+    );
+});
 const selectedRoleIsCommuneAdmin = computed(() =>
     assignableUserRoles.value.some(
         (role) =>
@@ -919,13 +940,9 @@ const selectedRoleUsesVillageScope = computed(() =>
 const primaryAdminUnavailableMessage = computed(() => {
     if (props.moduleKey !== "users" || !form.value.scope_level) return "";
 
-    const hasPrimaryAdminRole = assignableUserRoles.value.some(
-        (role) =>
-            role.is_primary_admin === true &&
-            role.scope_level === form.value.scope_level,
-    );
     if (
-        !hasPrimaryAdminRole ||
+        selectedUserRole.value?.is_primary_admin !== true ||
+        selectedUserRole.value.scope_level !== form.value.scope_level ||
         availablePrimaryAdminScopes.value[form.value.scope_level] !== false
     )
         return "";
@@ -1333,29 +1350,6 @@ const permissionLabels: Record<string, string> = {
 };
 const permissionGroups = [
     {
-        key: "accounts",
-        label: "Tài khoản",
-        permissions: [
-            "manage-user-accounts",
-            "view-users",
-            "create-users",
-            "update-users",
-            "delete-users",
-            "view-organization-accounts",
-        ],
-    },
-    {
-        key: "roles",
-        label: "Nhóm người dùng",
-        permissions: [
-            "manage-access-control",
-            "view-roles",
-            "create-roles",
-            "update-roles",
-            "delete-roles",
-        ],
-    },
-    {
         key: "villages",
         label: "Thôn / xóm",
         permissions: [
@@ -1420,17 +1414,6 @@ const permissionsByScope: Record<string, string[]> = {
         "delete-households",
         "import-households",
         "export-households",
-        "manage-access-control",
-        "manage-user-accounts",
-        "view-organization-accounts",
-        "view-users",
-        "create-users",
-        "update-users",
-        "delete-users",
-        "view-roles",
-        "create-roles",
-        "update-roles",
-        "delete-roles",
         "view-schools",
         "create-schools",
         "update-schools",
@@ -1450,16 +1433,6 @@ const permissionsByScope: Record<string, string[]> = {
     ],
     province: [
         "manage-schools",
-        "manage-access-control",
-        "manage-user-accounts",
-        "view-users",
-        "create-users",
-        "update-users",
-        "delete-users",
-        "view-roles",
-        "create-roles",
-        "update-roles",
-        "delete-roles",
         "view-schools",
         "create-schools",
         "update-schools",
@@ -1476,16 +1449,6 @@ const permissionsByScope: Record<string, string[]> = {
         "export-households",
         "manage-villages",
         "manage-schools",
-        "manage-access-control",
-        "manage-user-accounts",
-        "view-users",
-        "create-users",
-        "update-users",
-        "delete-users",
-        "view-roles",
-        "create-roles",
-        "update-roles",
-        "delete-roles",
         "view-schools",
         "create-schools",
         "update-schools",
@@ -1509,37 +1472,6 @@ const permissionsByScope: Record<string, string[]> = {
     ],
 };
 const permissionMatrix: PermissionMatrixNode[] = [
-    {
-        key: "system",
-        label: "Hệ thống",
-        children: [
-            {
-                key: "organization",
-                label: "Thông tin đơn vị",
-                actions: { view: ["view-organization-accounts"] },
-            },
-            {
-                key: "users",
-                label: "Tài khoản & phân quyền",
-                actions: {
-                    view: ["view-users"],
-                    create: ["create-users"],
-                    update: ["update-users"],
-                    delete: ["delete-users"],
-                },
-            },
-            {
-                key: "roles",
-                label: "Nhóm người dùng",
-                actions: {
-                    view: ["view-roles"],
-                    create: ["create-roles"],
-                    update: ["update-roles"],
-                    delete: ["delete-roles"],
-                },
-            },
-        ],
-    },
     {
         key: "catalog",
         label: "Danh mục",
@@ -1677,6 +1609,32 @@ const legacyPermissionAliases: Record<string, string[]> = {
     "import-households": ["view-imports", "create-imports", "delete-imports"],
     "export-households": ["view-exports", "create-exports"],
     "delete-households": ["view-trash", "update-trash", "delete-trash"],
+};
+const permissionPrerequisites: Record<string, string[]> = {
+    "create-households": ["view-households"],
+    "update-households": ["view-households"],
+    "delete-households": ["view-households"],
+    "import-households": ["view-households"],
+    "export-households": ["view-households"],
+    "create-users": ["view-users"],
+    "update-users": ["view-users"],
+    "delete-users": ["view-users"],
+    "create-roles": ["view-roles"],
+    "update-roles": ["view-roles"],
+    "delete-roles": ["view-roles"],
+    "create-schools": ["view-schools"],
+    "update-schools": ["view-schools"],
+    "delete-schools": ["view-schools"],
+    "create-school-merges": ["view-school-merges"],
+    "create-villages": ["view-villages"],
+    "update-villages": ["view-villages"],
+    "delete-villages": ["view-villages"],
+    "create-village-merges": ["view-village-merges"],
+    "create-imports": ["view-imports"],
+    "delete-imports": ["view-imports"],
+    "create-exports": ["view-exports"],
+    "update-trash": ["view-trash"],
+    "delete-trash": ["view-trash"],
 };
 const matrixOptionsByName = computed(() => {
     const allowed = new Set(permissionsByScope[form.value.scope_level] ?? []);
@@ -1823,8 +1781,29 @@ function setMatrixPermissions(names: string[], checked: boolean): void {
 
     names.forEach((name) => {
         if (checked) selectedNames.add(name);
-        else selectedNames.delete(name);
+        else {
+            selectedNames.delete(name);
+            for (const [dependent, prerequisites] of Object.entries(
+                permissionPrerequisites,
+            )) {
+                if (prerequisites.includes(name)) {
+                    selectedNames.delete(dependent);
+                }
+            }
+        }
     });
+    const pending = [...selectedNames];
+    while (pending.length > 0) {
+        const permission = pending.pop();
+        if (!permission) continue;
+
+        for (const prerequisite of permissionPrerequisites[permission] ?? []) {
+            if (availableNames.has(prerequisite) && !selectedNames.has(prerequisite)) {
+                selectedNames.add(prerequisite);
+                pending.push(prerequisite);
+            }
+        }
+    }
     permissionIds.value = [...selectedNames]
         .map((name) => availableNames.get(name))
         .filter((id): id is string => Boolean(id));
@@ -2919,6 +2898,17 @@ async function changeFormCommune(): Promise<void> {
 }
 
 async function changeUserFormRole(): Promise<void> {
+    if (
+        selectedUserRole.value?.is_primary_admin === true &&
+        form.value.scope_level === "province" &&
+        !availablePrimaryAdminProvinceCodes.value.includes(
+            form.value.province_code,
+        )
+    ) {
+        form.value.province_code = "";
+        form.value.commune_code = "";
+    }
+
     try {
         await loadUserFormCommunes();
     } catch (cause) {
@@ -3640,6 +3630,11 @@ async function beginEdit(row?: Row): Promise<void> {
                           boolean
                       >)
                     : {};
+            availablePrimaryAdminProvinceCodes.value = Array.isArray(
+                data.available_primary_admin_province_codes,
+            )
+                ? data.available_primary_admin_province_codes.map(String)
+                : [];
             const user =
                 typeof data.user === "object" && data.user !== null
                     ? (data.user as Row)
@@ -8262,7 +8257,9 @@ onMounted(async () => {
                         >
                             <option value="">Chọn tỉnh / thành phố</option>
                             <option
-                                v-for="province in provinces"
+                                v-for="province in moduleKey === 'users'
+                                    ? userFormProvinces
+                                    : provinces"
                                 :key="String(province.code)"
                                 :value="String(province.code)"
                             >

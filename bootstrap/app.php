@@ -10,9 +10,10 @@ use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
-        api: __DIR__.'/../routes/api.php',
+        api: __DIR__ . '/../routes/api.php',
         apiPrefix: 'api',
-        commands: __DIR__.'/../routes/console.php', // khai báo các arisan command custom
+        web: __DIR__ . '/../routes/web.php',
+        commands: __DIR__ . '/../routes/console.php', // khai báo các arisan command custom
         health: '/up', // url up này để check app die hay k
     )
     ->withCommands() // theo url app/console/command nó quét các file trong đấy
@@ -24,7 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'active' => EnsureUserIsActive::class,
         ]);
         $middleware->redirectGuestsTo(
-            fn (Request $request): ?string => $request->is('api/*') ? null : route('login'),
+            fn(Request $request): ?string => $request->is('api/*') ? null : route('login'),
         );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
@@ -36,6 +37,6 @@ return Application::configure(basePath: dirname(__DIR__))
             return null;
         });
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request, Throwable $exception): bool => $request->is('api/*') || $request->expectsJson(),
+            fn(Request $request, Throwable $exception): bool => $request->is('api/*') || $request->expectsJson(),
         );
     })->create();

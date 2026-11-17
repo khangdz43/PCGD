@@ -1,4 +1,64 @@
-# ==========================================
+name: CI/CD Pipeline - PCGD
+
+on:
+  push:
+    branches:
+      - '**' # Chạy CI Test trên TẤT CẢ các nhánh (feature/*, test, master...)
+  pull_request:
+    branches:
+      - master # Chạy kiểm tra khi mở PR vào master
+
+jobs:
+  # ==========================================
+  # GIAI ĐOẠN 1 (CI): CHẠY TEST TRÊN MỌI NHÁNH
+  # ==========================================
+  ci-test:
+    name: Run Tests & Build Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, pdo_sqlite, fileinfo, gd, zip
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install Composer (bao gồm cả gói dev để chạy PHPUnit)
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Laravel Tests
+        env:
+          APP_ENV: testing
+          APP_KEY: base64:iqt+7MGg3fwjSzuZt9D5YA+ub0EqeSwXws1Hz0D0YTs=
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+        run: php artisan test
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Check Vue Frontend Build
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+  # ==========================================
   # GIAI ĐOẠN 2 (CD): CHỈ DEPLOY KHI MERGE VÀO MASTER
   # ==========================================
   cd-deploy:
@@ -10,8 +70,6 @@
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 2 # Lấy thêm 1 commit trước đó để kiểm tra xem composer.lock có đổi không
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -51,8 +109,8 @@
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftp          # Đổi từ ftps sang ftp để tránh rớt gói tin TLSSocket trên shared host
-          max-connections: 2     # Giới hạn 2 luồng để TinoHost không chặn IP
+          protocol: ftp
+          max-connections: 2
           timeout: 60000
           exclude: |
             **/.git*
@@ -62,4 +120,4 @@
             tests/**
             .env
             storage/**
-            vendor/**            # Loại trừ thư mục vendor/ gốc, chỉ đẩy file vendor.zip
+            vendor/**

@@ -27,7 +27,16 @@ Thumbs.db
 _1789835327_TOISUAL2.XLS
 PCGD.txt
 note.txt
-/app/Console
+/app/Console/*
+!/app/Console/Commands/
+/app/Console/Commands/*
+!/app/Console/Commands/CreateAdminCommand.php
 sql.php
 pcgd.sql
 quy trình.md
+COPILOT.md
+/public/assets/
+/resources/views/app.blade.php
+/docs
+/postman
+/database/pcgd.dbml

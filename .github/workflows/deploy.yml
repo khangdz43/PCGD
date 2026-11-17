@@ -26,6 +26,14 @@ jobs:
           php-version: '8.2'
           extensions: mbstring, pdo_sqlite, fileinfo, gd, zip
 
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
       - name: Install Composer (bao gồm cả gói dev để chạy PHPUnit)
         run: composer install --no-interaction --prefer-dist
 
@@ -92,13 +100,18 @@ jobs:
       - name: Install Composer (Production - No Dev)
         run: composer install --no-dev --optimize-autoloader --no-interaction
 
-      - name: Sync files to TinoHost via FTPS
+      - name: Zip vendor directory
+        run: zip -rq vendor.zip vendor/
+
+      - name: Sync files to TinoHost via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
+          protocol: ftp
+          max-connections: 2
+          timeout: 60000
           exclude: |
             **/.git*
             **/.git*/**
@@ -107,3 +120,4 @@ jobs:
             tests/**
             .env
             storage/**
+            vendor/**

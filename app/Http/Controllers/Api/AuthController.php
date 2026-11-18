@@ -24,12 +24,12 @@ class AuthController extends Controller
         $authenticationService->authenticate(
             $request->validated('username'),
             $request->validated('password'),
-            $request->ip(),
+            $request->ip(), // get ip của user
             $request->boolean('remember'),
         );
-        $request->session()->regenerate();
-        $user = $request->user();
-        abort_unless($user instanceof User, 401);
+        $request->session()->regenerate(); // tạo session Id mới 
+        $user = $request->user(); // lấy user hiện tại
+        abort_unless($user instanceof User, 401); // nếu mà k login ném 401
 
         return ApiResponse::success(
             ['user' => $this->userData($user, $profileService, $households)],
@@ -41,8 +41,7 @@ class AuthController extends Controller
         Request $request,
         AccountProfileService $profileService,
         HouseholdService $households,
-    ): JsonResponse
-    {
+    ): JsonResponse {
         $user = $request->user();
         abort_unless($user instanceof User, 401);
 
@@ -68,8 +67,7 @@ class AuthController extends Controller
         User $user,
         AccountProfileService $profileService,
         HouseholdService $households,
-    ): array
-    {
+    ): array {
         $scope = $profileService->scopeSummary($user);
 
         return [

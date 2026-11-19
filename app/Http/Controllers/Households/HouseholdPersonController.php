@@ -167,12 +167,13 @@ class HouseholdPersonController extends Controller
             ], 422);
         }
 
-        $this->people->create($household, $data, $isHouseholdHead);
+        $person = $this->people->create($household, $data, $isHouseholdHead);
 
         return response()->json([
             'message' => $isHouseholdHead
                 ? 'Đã thêm chủ hộ vào danh sách nhân khẩu. Bây giờ có thể thêm các thành viên khác.'
                 : 'Đã thêm thành viên vào hộ.',
+            'person_id' => $person->id,
         ], 201);
     }
 

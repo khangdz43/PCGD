@@ -456,9 +456,13 @@ class HouseholdCrudFlowTest extends TestCase
             'head_last_name' => 'Nguyễn',
         ]);
 
-        $this->actingAs($user)
+        $response = $this->actingAs($user)
             ->postJson(route('api.households.persons.store', $household) . '?is_head=1', $this->personPayload(null))
             ->assertCreated();
+        $response->assertJsonPath(
+            'data.person_id',
+            (int) DB::table('persons')->where('household_id', $household->id)->value('id'),
+        );
 
         $this->assertDatabaseHas('persons', [
             'household_id' => $household->id,

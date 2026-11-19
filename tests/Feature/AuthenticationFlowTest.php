@@ -197,17 +197,20 @@ class AuthenticationFlowTest extends TestCase
         Schema::create('provinces', function (Blueprint $table): void {
             $table->string('code')->primary();
             $table->string('name');
+            $table->timestamps();
         });
         Schema::create('communes', function (Blueprint $table): void {
             $table->string('code')->primary();
             $table->string('name')->nullable();
             $table->string('province_code');
+            $table->timestamps();
         });
         Schema::create('villages', function (Blueprint $table): void {
             $table->string('code')->primary();
             $table->string('name')->nullable();
             $table->string('commune_code');
             $table->string('merged_into_code')->nullable();
+            $table->timestamps();
         });
         Schema::create('schools', function (Blueprint $table): void {
             $table->id();
@@ -217,6 +220,7 @@ class AuthenticationFlowTest extends TestCase
             $table->string('province_code')->nullable();
             $table->string('commune_code')->nullable();
             $table->timestamp('deleted_at')->nullable();
+            $table->timestamps();
         });
         Schema::create('households', function (Blueprint $table): void {
             $table->id();
@@ -254,27 +258,41 @@ class AuthenticationFlowTest extends TestCase
             $table->string('learning_capacity')->nullable();
         });
 
-        DB::table('provinces')->insert([
-            ['code' => 'P01', 'name' => 'Tỉnh Một'],
-            ['code' => 'P02', 'name' => 'Tỉnh Hai'],
-        ]);
-        DB::table('communes')->insert([
-            ['code' => 'C01', 'name' => 'Xã Một', 'province_code' => 'P01'],
-            ['code' => 'C02', 'name' => 'Xã Hai', 'province_code' => 'P02'],
-        ]);
-        DB::table('villages')->insert([
-            ['code' => 'V01', 'name' => 'Thôn Một', 'commune_code' => 'C01'],
-            ['code' => 'V02', 'name' => 'Thôn Hai', 'commune_code' => 'C02'],
-        ]);
-        DB::table('schools')->insert([
-            'code' => 'S01',
-            'name' => 'Trường Một',
-            'province_code' => 'P01',
-            'commune_code' => 'C01',
-        ]);
-
         $schoolYear = (new \App\Services\Households\HouseholdService)->currentSchoolYear();
         $schoolYearStart = (int) substr($schoolYear, 0, 4);
+        $currentYearCreatedAt = "{$schoolYearStart}-09-01 12:00:00";
+        $previousYearCreatedAt = '2021-07-31 23:59:59';
+        DB::table('provinces')->insert([
+            ['code' => 'P01', 'name' => 'Tỉnh Một', 'created_at' => $currentYearCreatedAt, 'updated_at' => $currentYearCreatedAt],
+            ['code' => 'P02', 'name' => 'Tỉnh Hai', 'created_at' => $previousYearCreatedAt, 'updated_at' => $previousYearCreatedAt],
+        ]);
+        DB::table('communes')->insert([
+            ['code' => 'C01', 'name' => 'Xã Một', 'province_code' => 'P01', 'created_at' => $currentYearCreatedAt, 'updated_at' => $currentYearCreatedAt],
+            ['code' => 'C02', 'name' => 'Xã Hai', 'province_code' => 'P02', 'created_at' => $previousYearCreatedAt, 'updated_at' => $previousYearCreatedAt],
+        ]);
+        DB::table('villages')->insert([
+            ['code' => 'V01', 'name' => 'Thôn Một', 'commune_code' => 'C01', 'created_at' => $currentYearCreatedAt, 'updated_at' => $currentYearCreatedAt],
+            ['code' => 'V02', 'name' => 'Thôn Hai', 'commune_code' => 'C02', 'created_at' => $previousYearCreatedAt, 'updated_at' => $previousYearCreatedAt],
+        ]);
+        DB::table('schools')->insert([
+            [
+                'code' => 'S01',
+                'name' => 'Trường Một',
+                'province_code' => 'P01',
+                'commune_code' => 'C01',
+                'created_at' => $currentYearCreatedAt,
+                'updated_at' => $currentYearCreatedAt,
+            ],
+            [
+                'code' => 'S02',
+                'name' => 'Trường Hai',
+                'province_code' => 'P02',
+                'commune_code' => 'C02',
+                'created_at' => $previousYearCreatedAt,
+                'updated_at' => $previousYearCreatedAt,
+            ],
+        ]);
+
         DB::table('school_years')->insert([
             ['id' => 1, 'start_time' => "{$schoolYearStart}-08-01", 'end_time' => ($schoolYearStart + 1).'-07-31', 'status' => true],
             ['id' => 2, 'start_time' => '2020-08-01', 'end_time' => '2021-07-31', 'status' => false],
@@ -369,9 +387,9 @@ class AuthenticationFlowTest extends TestCase
         $this->getJson('/api/v1/dashboard/overview')
             ->assertOk()
             ->assertJsonPath('data.school_year', $schoolYear)
-            ->assertJsonPath('data.totals.provinces', 2)
-            ->assertJsonPath('data.totals.communes', 2)
-            ->assertJsonPath('data.totals.villages', 2)
+            ->assertJsonPath('data.totals.provinces', 1)
+            ->assertJsonPath('data.totals.communes', 1)
+            ->assertJsonPath('data.totals.villages', 1)
             ->assertJsonPath('data.totals.schools', 1)
             ->assertJsonPath('data.totals.active_users', 1)
             ->assertJsonPath('data.totals.households', 3)
@@ -394,9 +412,24 @@ class AuthenticationFlowTest extends TestCase
             ->assertJsonPath('data.provinces.0.households', 2)
             ->assertJsonPath('data.school_years.0', $schoolYear);
 
+        $historicalUser = User::create([
+            'name' => 'Tài khoản năm cũ',
+            'username' => 'historical-user',
+            'password' => Hash::make('Correct-password-1'),
+        ]);
+        $historicalUser->forceFill([
+            'is_active' => true,
+            'created_at' => $previousYearCreatedAt,
+        ])->save();
+
         $this->getJson('/api/v1/dashboard/overview?school_year=2020-2021')
             ->assertOk()
             ->assertJsonPath('data.school_year', '2020-2021')
+            ->assertJsonPath('data.totals.provinces', 1)
+            ->assertJsonPath('data.totals.communes', 1)
+            ->assertJsonPath('data.totals.villages', 1)
+            ->assertJsonPath('data.totals.active_users', 1)
+            ->assertJsonPath('data.totals.schools', 1)
             ->assertJsonPath('data.totals.households', 1)
             ->assertJsonPath('data.totals.persons', 1)
             ->assertJsonPath('data.provinces.0.name', 'Tỉnh Hai')

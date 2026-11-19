@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Village;
 use App\Services\Households\HouseholdService;
 use App\Support\DataAccessScope;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
@@ -27,6 +28,11 @@ class SystemOverviewService
         $schoolYear ??= $this->households->currentSchoolYear();
         $schoolYearRecord = SchoolYear::findByLabel($schoolYear);
         $schoolYearId = $schoolYearRecord?->id ?? 0;
+        $createdDuringSchoolYear = fn (EloquentBuilder $query) => $this->filterCreatedDuringSchoolYear(
+            $query,
+            $schoolYearRecord,
+            $schoolYear,
+        );
         $householdsForYear = fn ($query) => $query->where('school_year_id', $schoolYearId);
         $schoolYearStart = (int) substr($schoolYear, 0, 4);
         $ageReferenceDate = sprintf('%04d-12-31', $schoolYearStart);
@@ -39,11 +45,17 @@ class SystemOverviewService
             'age_reference_date' => $ageReferenceDate,
             'school_years' => array_reverse($this->households->schoolYears()),
             'totals' => [
-                'provinces' => Province::query()->count(),
-                'communes' => Commune::query()->count(),
-                'villages' => Village::query()->count(),
-                'schools' => School::query()->whereNull('deleted_at')->count(),
-                'active_users' => User::query()->where('is_active', true)->count(),
+                'provinces' => Province::query()->tap($createdDuringSchoolYear)->count(),
+                'communes' => Commune::query()->tap($createdDuringSchoolYear)->count(),
+                'villages' => Village::query()->tap($createdDuringSchoolYear)->count(),
+                'schools' => School::query()
+                    ->whereNull('deleted_at')
+                    ->tap($createdDuringSchoolYear)
+                    ->count(),
+                'active_users' => User::query()
+                    ->where('is_active', true)
+                    ->tap($createdDuringSchoolYear)
+                    ->count(),
                 'households' => Household::query()->where('school_year_id', $schoolYearId)->count(),
                 'persons' => Person::query()
                     ->whereHas('household', $householdsForYear)
@@ -248,6 +260,23 @@ class SystemOverviewService
         return $this->households->schoolYears();
     }
 
+    private function filterCreatedDuringSchoolYear(
+        EloquentBuilder $query,
+        ?SchoolYear $schoolYearRecord,
+        string $schoolYear,
+    ): EloquentBuilder {
+        $startYear = (int) substr($schoolYear, 0, 4);
+        $createdAtStart = $schoolYearRecord?->start_time->toDateString()
+            ?? sprintf('%04d-08-01', $startYear);
+        $createdAtEnd = $schoolYearRecord !== null
+            ? $schoolYearRecord->end_time->copy()->addDay()->toDateString()
+            : sprintf('%04d-08-01', $startYear + 1);
+
+        return $query
+            ->where('created_at', '>=', $createdAtStart)
+            ->where('created_at', '<', $createdAtEnd);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -257,6 +286,11 @@ class SystemOverviewService
         $scopeLevel = $user->roleScopeLevel();
         $schoolYearRecord = SchoolYear::findByLabel($schoolYear);
         $schoolYearId = $schoolYearRecord?->id ?? 0;
+        $createdDuringSchoolYear = fn (EloquentBuilder $query) => $this->filterCreatedDuringSchoolYear(
+            $query,
+            $schoolYearRecord,
+            $schoolYear,
+        );
         $schoolYearStart = (int) substr($schoolYear, 0, 4);
         $households = DataAccessScope::households(Household::query(), $user)
             ->where('school_year_id', $schoolYearId);
@@ -270,15 +304,21 @@ class SystemOverviewService
         $area = $scopeLevel === 'province'
             ? Province::query()->whereIn('code', $provinceCodes)->firstOrFail()
             : Commune::query()->whereIn('code', $communeCodes)->firstOrFail();
-        $schoolQuery = School::query()->whereNull('deleted_at');
+        $schoolQuery = School::query()
+            ->whereNull('deleted_at')
+            ->tap($createdDuringSchoolYear);
         if ($scopeLevel === 'province') {
             $schoolQuery->whereIn('province_code', $provinceCodes);
-            $communeCount = Commune::query()->whereIn('province_code', $provinceCodes)->count();
+            $communeCount = Commune::query()
+                ->whereIn('province_code', $provinceCodes)
+                ->tap($createdDuringSchoolYear)
+                ->count();
             $villageCount = Village::query()
                 ->whereIn('commune_code', Commune::query()
                     ->select('code')
                     ->whereIn('province_code', $provinceCodes))
                 ->whereNull('merged_into_code')
+                ->tap($createdDuringSchoolYear)
                 ->count();
             $units = Commune::query()
                 ->whereIn('province_code', $provinceCodes)
@@ -305,8 +345,11 @@ class SystemOverviewService
             if ($managedVillageCodes !== []) {
                 $villageQuery->whereIn('code', $managedVillageCodes);
             }
-            $villageCount = (clone $villageQuery)->count();
-            $communeCount = count($communeCodes);
+            $villageCount = (clone $villageQuery)->tap($createdDuringSchoolYear)->count();
+            $communeCount = Commune::query()
+                ->whereIn('code', $communeCodes)
+                ->tap($createdDuringSchoolYear)
+                ->count();
             $units = (clone $villageQuery)
                 ->withCount(['households as households_count' => fn ($query) => $query
                     ->where('school_year_id', $schoolYearId)])
@@ -329,7 +372,10 @@ class SystemOverviewService
                     ->whereIn('villages.code', $managedVillageCodes));
             }
         }
-        $activeAccounts = (clone $accountQuery)->where('is_active', true)->count();
+        $activeAccounts = (clone $accountQuery)
+            ->where('is_active', true)
+            ->tap($createdDuringSchoolYear)
+            ->count();
         $schoolCount = $schoolQuery->count();
         $educationSummary = $schoolYearRecord
             ? $this->educationSummary($schoolYearRecord->id, $schoolYear, $schoolYearStart, $user)

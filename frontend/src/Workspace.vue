@@ -5632,8 +5632,18 @@ async function saveInlineHouseholdMember(
             disability,
         };
 
-        if (person.id === undefined) {
-            await api.post(`/households/${householdId}/persons`, body);
+        if (person.id === undefined || person.id === null) {
+            const response = await api.post<unknown>(
+                `/households/${householdId}/persons`,
+                body,
+            );
+            const created = apiData<Row>(response.data);
+            if (
+                typeof created.person_id === "number" ||
+                typeof created.person_id === "string"
+            ) {
+                person.id = created.person_id;
+            }
         } else {
             await api.put(
                 `/households/${householdId}/persons/${person.id}`,
@@ -6036,6 +6046,29 @@ async function save(): Promise<void> {
             return;
         }
     }
+    const changedHouseholdMembers =
+        props.moduleKey === "households" && editing.value
+            ? householdEditPersons.value
+                  .map((person, index) => ({ person, index }))
+                  .filter(({ person, index }) =>
+                      inlineHouseholdPersonChanged(person, index),
+                  )
+            : [];
+    for (const { person, index } of changedHouseholdMembers) {
+        const validationIssue = inlineMemberValidationError(person);
+        if (validationIssue) {
+            markInlineMemberFieldErrors(index, {
+                [validationIssue.field]: validationIssue.message,
+            });
+            error.value = validationIssue.message;
+            managementResult.value = {
+                success: false,
+                title: "Không thể lưu phiếu điều tra",
+                message: validationIssue.message,
+            };
+            return;
+        }
+    }
     if (props.moduleKey === "schools") {
         schoolFormSubmitted.value = true;
         if (!schoolFormReady.value) return;
@@ -6155,6 +6188,39 @@ async function save(): Promise<void> {
             const householdId = isUpdatingCreatedHousehold
                 ? createdHouseholdId.value
                 : id;
+            if (
+                props.moduleKey === "households" &&
+                editing.value &&
+                changedHouseholdMembers.length > 0
+            ) {
+                const householdIdValue =
+                    householdDetail.value?.id ?? selected.value?.id;
+                if (
+                    typeof householdIdValue !== "number" &&
+                    typeof householdIdValue !== "string"
+                ) {
+                    throw new Error("Không xác định được mã phiếu điều tra.");
+                }
+
+                for (const { person, index } of changedHouseholdMembers) {
+                    const saved = await saveInlineHouseholdMember(
+                        person,
+                        index,
+                        false,
+                    );
+                    if (!saved) {
+                        managementResult.value = {
+                            success: false,
+                            title: "Cập nhật phiếu điều tra thất bại",
+                            message:
+                                error.value ||
+                                "Không thể lưu thông tin nhân khẩu đã chỉnh sửa.",
+                        };
+                        return;
+                    }
+                }
+                await refreshHouseholdEditPersons(householdIdValue);
+            }
             if (
                 props.moduleKey === "households" &&
                 editing.value &&

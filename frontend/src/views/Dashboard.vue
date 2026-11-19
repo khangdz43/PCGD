@@ -252,12 +252,12 @@ onMounted(() => {
                     <article class="central-metric-card metric-geography">
                         <span class="central-metric-label">Tỉnh / thành phố</span>
                         <strong>{{ systemOverview.totals.provinces.toLocaleString('vi-VN') }}</strong>
-                        <small>Đơn vị cấp tỉnh</small>
+                        <small>Được tạo trong năm học {{ systemOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-communes">
                         <span class="central-metric-label">Xã / phường</span>
                         <strong>{{ systemOverview.totals.communes.toLocaleString('vi-VN') }}</strong>
-                        <small>Đơn vị cấp xã trên toàn quốc</small>
+                        <small>Được tạo trong năm học {{ systemOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-households">
                         <span class="central-metric-label">Phiếu điều tra</span>
@@ -272,12 +272,12 @@ onMounted(() => {
                     <article class="central-metric-card metric-schools">
                         <span class="central-metric-label">Trường học</span>
                         <strong>{{ systemOverview.totals.schools.toLocaleString('vi-VN') }}</strong>
-                        <small>Danh mục trường toàn quốc</small>
+                        <small>Được tạo trong năm học {{ systemOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-users">
                         <span class="central-metric-label">Tài khoản hoạt động</span>
                         <strong>{{ systemOverview.totals.active_users.toLocaleString('vi-VN') }}</strong>
-                        <small>Đang được phép đăng nhập</small>
+                        <small>Đang hoạt động, tạo trong năm học {{ systemOverview.school_year }}</small>
                     </article>
                 </section>
 
@@ -361,8 +361,8 @@ onMounted(() => {
                     <article class="central-catalog-card">
                         <span class="section-eyebrow">MẠNG LƯỚI GIÁO DỤC</span>
                         <h3>Quy mô địa bàn</h3>
-                        <div><span>Thôn / xóm</span><strong>{{ systemOverview.totals.villages.toLocaleString('vi-VN') }}</strong></div>
-                        <div><span>Trường học</span><strong>{{ systemOverview.totals.schools.toLocaleString('vi-VN') }}</strong></div>
+                        <div><span>Thôn / xóm (năm học {{ systemOverview.school_year }})</span><strong>{{ systemOverview.totals.villages.toLocaleString('vi-VN') }}</strong></div>
+                        <div><span>Trường học (năm học {{ systemOverview.school_year }})</span><strong>{{ systemOverview.totals.schools.toLocaleString('vi-VN') }}</strong></div>
                         <div><span>Đơn vị cấp xã</span><strong>{{ systemOverview.totals.communes.toLocaleString('vi-VN') }}</strong></div>
                         <section
                             v-if="canViewOrganizationTree"
@@ -488,22 +488,22 @@ onMounted(() => {
                     <article v-if="territorialOverview.scope_level === 'province'" class="central-metric-card metric-geography">
                         <span class="central-metric-label">Xã / phường</span>
                         <strong>{{ territorialOverview.totals.communes.toLocaleString('vi-VN') }}</strong>
-                        <small>Trong tỉnh / thành phố</small>
+                        <small>Được tạo trong năm học {{ territorialOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-communes">
                         <span class="central-metric-label">Thôn / xóm</span>
                         <strong>{{ territorialOverview.totals.villages.toLocaleString('vi-VN') }}</strong>
-                        <small>Địa bàn đang quản lý</small>
+                        <small>Được tạo trong năm học {{ territorialOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-schools">
                         <span class="central-metric-label">Trường học</span>
                         <strong>{{ territorialOverview.totals.schools.toLocaleString('vi-VN') }}</strong>
-                        <small>Danh mục trong địa bàn</small>
+                        <small>Được tạo trong năm học {{ territorialOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-users">
                         <span class="central-metric-label">Tài khoản hoạt động</span>
                         <strong>{{ territorialOverview.totals.active_users.toLocaleString('vi-VN') }}</strong>
-                        <small>Được phân công trong địa bàn</small>
+                        <small>Đang hoạt động, tạo trong năm học {{ territorialOverview.school_year }}</small>
                     </article>
                     <article class="central-metric-card metric-households">
                         <span class="central-metric-label">Phiếu điều tra</span>

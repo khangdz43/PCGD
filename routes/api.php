@@ -41,7 +41,7 @@ Route::middleware('web')->group(function (): void {
             Route::get('/provinces/{provinceCode}/communes', [ProvinceController::class, 'getCommunes'])->name('provinces.communes.index');
             Route::get('/communes/{communeCode}/villages', [CommuneController::class, 'getVillages'])->name('communes.villages.index');
             Route::get('/provinces/{provinceCode}/schools', [SchoolController::class, 'getByProvince'])->name('provinces.schools.index');
-
+            // phân quyền , xem phiếu chỉ xem phiếu
             Route::middleware('can:view-households')->group(function (): void {
                 Route::get('/households', [HouseholdController::class, 'index'])->name('households.index');
                 Route::get('/households/{household}', [HouseholdController::class, 'show'])->whereNumber('household')->name('households.show');
@@ -161,7 +161,7 @@ Route::middleware('web')->group(function (): void {
             Route::middleware('can:view-roles')->group(function (): void {
                 Route::get('/roles', [RoleController::class, 'index'])->name('roles.index');
                 Route::get('/roles/{role}/users', [RoleController::class, 'members'])->name('roles.users.index');
-                Route::get('/roles/{role}', [RoleController::class, 'show'])->name('roles.show');
+                // Route::get('/roles/{role}', [RoleController::class, 'show'])->name('roles.show');
             });
             Route::middleware('can:update-roles')->group(function (): void {
                 Route::get('/roles/{role}/edit', [RoleController::class, 'edit'])->name('roles.edit');

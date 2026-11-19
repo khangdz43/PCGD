@@ -3,18 +3,16 @@ name: CI/CD Pipeline - PCGD
 on:
   push:
     branches:
-      - '**' # Chạy CI Test trên TẤT CẢ các nhánh (feature/*, test, master...)
+      - "**" # chạy ci trên all nhánh
   pull_request:
     branches:
-      - master # Chạy kiểm tra khi mở PR vào master
+      - develop # khi mà có pr vào develop thì sẽ check trước
 
 jobs:
-  # ==========================================
-  # GIAI ĐOẠN 1 (CI): CHẠY TEST TRÊN MỌI NHÁNH
-  # ==========================================
+  # chạy test
   ci-test:
     name: Run Tests & Build Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # chạy trên máy áo của github có
 
     steps:
       - name: Checkout source code
@@ -23,7 +21,7 @@ jobs:
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.2'
+          php-version: "8.2"
           extensions: mbstring, pdo_sqlite, fileinfo, gd, zip
 
       - name: Cache Composer dependencies
@@ -42,14 +40,14 @@ jobs:
           APP_ENV: testing
           APP_KEY: base64:iqt+7MGg3fwjSzuZt9D5YA+ub0EqeSwXws1Hz0D0YTs=
           DB_CONNECTION: sqlite
-          DB_DATABASE: ':memory:'
+          DB_DATABASE: ":memory:"
         run: php artisan test
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Check Vue Frontend Build
@@ -57,13 +55,11 @@ jobs:
         run: |
           npm ci
           npm run build
-# ==========================================
-  # GIAI ĐOẠN 2 (CD): CHỈ DEPLOY KHI MERGE VÀO MASTER
-  # ==========================================
+  # cd
   cd-deploy:
     name: Deploy to TinoHost
     needs: ci-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop' #chạy khi có push và merge vào develop
     runs-on: ubuntu-latest
 
     steps:
@@ -73,8 +69,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
       - name: Build Vue Production
@@ -82,7 +78,7 @@ jobs:
         run: |
           npm ci
           npm run build
-
+        # làm các bước lấy code từ các tư mục fe cho vào public/asset của laravel
       - name: Merge Frontend into Laravel
         run: |
           rm -rf public/assets
@@ -98,7 +94,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
           security: loose
-          max-connections: 1
+          max-connections: 1 #1 luồng connect tránh thằng tino nó bảo spam
           timeout: 120000
           exclude: |
             **/.git*

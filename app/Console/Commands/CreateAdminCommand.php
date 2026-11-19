@@ -6,7 +6,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
-
+// tạo admin quan command (AI)
 class CreateAdminCommand extends Command
 {
     protected $signature = 'app:create-admin';

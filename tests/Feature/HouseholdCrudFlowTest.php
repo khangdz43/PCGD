@@ -1452,6 +1452,29 @@ class HouseholdCrudFlowTest extends TestCase
         $this->assertDatabaseMissing('villages', ['name' => 'Thôn ngoài vùng']);
     }
 
+    public function test_village_search_accepts_full_or_short_name(): void
+    {
+        $user = $this->userWithPermissions([AccessPermission::VIEW_VILLAGES]);
+        DB::table('villages')->insert([
+            ['code' => 'C01_001', 'name' => 'Thôn Hạ', 'commune_code' => 'C01', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'C01_002', 'name' => 'Thôn Thanh Hạ', 'commune_code' => 'C01', 'created_at' => now(), 'updated_at' => now()],
+            ['code' => 'C01_003', 'name' => 'Xóm Trên', 'commune_code' => 'C01', 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        $this->actingAs($user)
+            ->getJson(route('api.villages.index', ['q' => 'Hạ']))
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Thôn Hạ'])
+            ->assertJsonMissing(['name' => 'Thôn Thanh Hạ'])
+            ->assertJsonMissing(['name' => 'Xóm Trên']);
+
+        $this->actingAs($user)
+            ->getJson(route('api.villages.index', ['q' => 'Thôn Hạ']))
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Thôn Hạ'])
+            ->assertJsonMissing(['name' => 'Thôn Thanh Hạ']);
+    }
+
     public function test_village_status_can_be_changed_from_its_edit_form(): void
     {
         $user = $this->userWithPermissions([AccessPermission::MANAGE_VILLAGES]);

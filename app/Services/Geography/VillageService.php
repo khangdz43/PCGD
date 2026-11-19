@@ -26,9 +26,19 @@ class VillageService
 
         if (filled($filters['q'] ?? null)) {
             $search = trim((string) $filters['q']);
-            $query->where(function (Builder $builder) use ($search): void {
+            $normalizedSearch = $this->normalizeVillageSearch($search);
+
+            $query->where(function (Builder $builder) use ($search, $normalizedSearch): void {
                 $builder->where('code', 'like', "%{$search}%")
-                    ->orWhere('name', 'like', "%{$search}%");
+                    ->orWhere('name', '=', $search);
+
+                if ($normalizedSearch !== '') {
+                    $builder->orWhere('name', '=', $normalizedSearch);
+                    foreach (['Thôn', 'Xóm', 'Bản'] as $prefix) {
+                        $builder->orWhere('name', '=', "{$prefix} {$normalizedSearch}");
+                        $builder->orWhere('name', 'like', "{$prefix} {$normalizedSearch} %");
+                    }
+                }
             });
         }
 
@@ -451,6 +461,13 @@ class VillageService
                     ->whereIn('code', $user->managedVillageCodes())),
             default => $query->whereRaw('1 = 0'),
         };
+    }
+
+    private function normalizeVillageSearch(string $search): string
+    {
+        $search = trim($search);
+
+        return trim((string) preg_replace('/^(?:thôn|xóm|bản)\s+/iu', '', $search));
     }
 
     private function assertUniqueName(string $name, string $communeCode, ?string $exceptCode = null): void

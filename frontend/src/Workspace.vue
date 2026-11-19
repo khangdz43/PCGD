@@ -5912,12 +5912,20 @@ function schoolFormState(): string {
 
 function householdFormState(): string {
     return JSON.stringify(
-        Object.fromEntries(
-            Object.keys(newFormValues()).map((field) => [
-                field,
-                form.value[field]?.trim() ?? "",
-            ]),
-        ),
+        {
+            household: Object.fromEntries(
+                Object.keys(newFormValues()).map((field) => [
+                    field,
+                    form.value[field]?.trim() ?? "",
+                ]),
+            ),
+            persons: householdEditPersons.value
+                .map((person, index) => ({
+                    key: inlineHouseholdPersonKey(person, index),
+                    state: inlineHouseholdPersonSnapshot(person),
+                }))
+                .sort((left, right) => left.key.localeCompare(right.key)),
+        },
     );
 }
 
